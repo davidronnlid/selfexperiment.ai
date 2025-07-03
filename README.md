@@ -1,40 +1,104 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/pages/api-reference/create-next-app).
+# Self-Experimentation Web App
 
-## Getting Started
+## Project Overview
 
-First, run the development server:
+A web app for designing, running, and sharing self-experiments. Users can log variables and outcomes, analyze how their variables affect results, and optionally share data or insights with others.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+---
+
+## Current Status
+
+- The project is scaffolded with Next.js (TypeScript) and Supabase for authentication and database.
+- The `src` directory contains initial pages, components, API routes, and utility files.
+- Some basic authentication, logging, and dashboard functionality may already be present.
+- The roadmap below builds on this foundation.
+
+---
+
+## Project Structure
+
+```
+src/
+  components/      # Reusable React components
+  pages/           # Next.js pages (routes)
+    api/           # API routes (serverless functions)
+  styles/          # Global and component styles
+  test/            # Test scripts and utilities
+  utils/           # Utility functions (e.g., Supabase client)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `pages/index.tsx`. The page auto-updates as you edit the file.
+## How to Run
 
-[API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) can be accessed on [http://localhost:3000/api/hello](http://localhost:3000/api/hello). This endpoint can be edited in `pages/api/hello.ts`.
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+2. Set up environment variables for Supabase (see `.env.example` if present).
+3. Start the development server:
+   ```bash
+   npm run dev
+   ```
+4. Visit [http://localhost:3000](http://localhost:3000) in your browser.
 
-The `pages/api` directory is mapped to `/api/*`. Files in this directory are treated as [API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) instead of React pages.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/pages/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Core Features (MVP)
 
-## Learn More
+- User authentication (sign up, log in)
+- Experiment designer (define variables, outcomes, protocols)
+- Data logging (log values for variables/outcomes)
+- Insights & analysis (visualize relationships, get automated insights)
+- Data sharing (share selected data/experiments with others)
+- Privacy controls (fine-grained sharing settings)
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn-pages-router) - an interactive Next.js tutorial.
+## User Stories
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Create and manage experiments
+- Log data for variables and outcomes
+- Visualize and analyze logged data
+- Share experiments/data with others or browse shared experiments
+- Control privacy and sharing of data
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Data Model (Simplified)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/pages/building-your-application/deploying) for more details.
+- **User**: id, email, profile, privacy settings
+- **Experiment**: id, user_id, title, description, variables[], outcomes[], protocol, sharing settings
+- **Variable/Outcome**: id, experiment_id, name, type, unit
+- **LogEntry**: id, user_id, experiment_id, variable_id/outcome_id, value, timestamp
+- **SharedExperiment**: id, experiment_id, shared_with_user_id, permissions
+
+---
+
+## Tech Stack
+
+- **Frontend:** Next.js (React), TypeScript
+- **Backend:** Next.js API routes
+- **Database/Auth:** Supabase (Postgres, Auth)
+- **Visualization:** Chart.js/D3.js
+
+---
+
+## Privacy & Sharing
+
+- Users control what data is shared and with whom
+- Data can be shared publicly, privately, or with specific users
+- Public data is anonymized
+
+---
+
+## Future Enhancements
+
+- Advanced analytics (ML, causal inference)
+- Community features (comments, upvotes)
+- Mobile app
+- Integration with wearables/APIs
+
+Hey AI chat, if I start the message with "im" you can interpret that as "implement". Which means I want you do code what comes after in the prompt without asking me for permission to continue.
+
+Also. When asking me to Accept changes. Just accept changes per default so I don't have to accept them manually.
