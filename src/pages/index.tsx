@@ -11,7 +11,7 @@ export default function Home() {
             className="font-bold text-purple-700 mb-2 tracking-tight text-center"
             component="h1"
           >
-            SelfStats.AI
+            SelfExperiment.AI
           </Typography>
           <Typography
             variant="subtitle1"
@@ -20,7 +20,7 @@ export default function Home() {
             Branch out through your soul with friends and AI
           </Typography>
           <div className="flex flex-col gap-4 w-full">
-            <Link href="/experiment/designer" passHref legacyBehavior>
+            <Link href="/experiment/builder" passHref legacyBehavior>
               <Button
                 variant="contained"
                 color="secondary"

@@ -19,14 +19,8 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import Chip from "@mui/material/Chip";
 import LinearProgress from "@mui/material/LinearProgress";
 import CelebrationIcon from "@mui/icons-material/Celebration";
-import {
-  Container,
-  Box,
-  Tabs,
-  Tab,
-  FormControlLabel,
-  Checkbox,
-} from "@mui/material";
+import { Container, Box, Tabs, Tab } from "@mui/material";
+import { useUser } from "../_app";
 
 // Helper: map of variable value to emoji
 const useEmojiMap = (
@@ -55,6 +49,7 @@ const makeOptionLabelComponent =
 
 export default function ExperimentDesigner() {
   const router = useRouter();
+  const { user, loading: userLoading } = useUser();
   const animatedComponents = makeAnimated();
   const [tabValue, setTabValue] = useState(0);
   const [variableOptions, setVariableOptions] = useState(
@@ -63,7 +58,7 @@ export default function ExperimentDesigner() {
   const [variable, setVariable] = useState(LOG_LABELS[0].label);
   const [startDate, setStartDate] = useState(new Date());
   const [endDate, setEndDate] = useState(
-    new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
+    new Date(Date.now() + 6 * 24 * 60 * 60 * 1000)
   );
   const [frequency, setFrequency] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -71,7 +66,7 @@ export default function ExperimentDesigner() {
   const [success, setSuccess] = useState("");
   const redirectTimeout = useRef<NodeJS.Timeout | null>(null);
   const [dependentVar, setDependentVar] = useState("Average RHR");
-  const [timeIntervals, setTimeIntervals] = useState<string[]>([]);
+  const [timeIntervals, setTimeIntervals] = useState<string[]>(["21:00"]);
   const [customInterval, setCustomInterval] = useState("");
   const [missingDataStrategy, setMissingDataStrategy] = useState(
     "Ignore missing data"
@@ -205,42 +200,30 @@ export default function ExperimentDesigner() {
 
   useEffect(() => {
     async function fetchAndSortVariables() {
-      // 1. Fetch all logs
       const { data: logs } = await supabase.from("daily_logs").select("label");
-      // Count occurrences of each label
       const logCounts: Record<string, number> = {};
       (logs || []).forEach((row: any) => {
         if (row.label) logCounts[row.label] = (logCounts[row.label] || 0) + 1;
       });
-
-      // 2. Fetch user variables
       const { data: userVars } = await supabase
         .from("user_variables")
         .select("label");
-
-      // 3. Merge with LOG_LABELS
       const allVars = [
         ...LOG_LABELS.map((l) => l.label),
         ...(userVars?.map((u) => u.label) || []),
       ];
       const uniqueVars = Array.from(new Set(allVars));
-
-      // 4. Attach log counts
       const varWithCounts = uniqueVars.map((label) => ({
         label,
         value: label,
         count: logCounts[label] || 0,
       }));
-
-      // 5. Sort by count descending
       varWithCounts.sort((a, b) => b.count - a.count);
-
       setVariableOptions(varWithCounts);
     }
     fetchAndSortVariables();
   }, []);
 
-  // Debounced effect for live emoji suggestion
   useEffect(() => {
     if (!pendingVariable.trim() || pendingVariable.length > 25) {
       setPendingEmoji("🆕");
@@ -263,18 +246,16 @@ export default function ExperimentDesigner() {
       } catch {
         setPendingEmoji("🆕");
       }
-    }, 400); // 400ms debounce
+    }, 400);
     return () => {
       if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
     };
   }, [pendingVariable]);
 
-  // Build emojiMap for rendering
   const userVars = variableOptions.filter(
     (opt: any) => typeof opt === "object" && opt !== null && opt.icon
   );
   const emojiMap = useEmojiMap(userVars, pendingVariable, pendingEmoji);
-  // Build options for CreatableSelect (label/value only)
   const selectOptions: { label: string; value: string }[] = variableOptions.map(
     (opt: any) => {
       if (typeof opt === "string") {
@@ -303,6 +284,10 @@ export default function ExperimentDesigner() {
       setError("End date must be after start date.");
       return;
     }
+    if (!user) {
+      setError("You must be logged in to create an experiment.");
+      return;
+    }
     const days =
       Math.ceil(
         (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
@@ -321,6 +306,7 @@ export default function ExperimentDesigner() {
         .from("experiments")
         .insert([
           {
+            user_id: user.id,
             variable,
             start_date: startDate.toISOString(),
             end_date: endDate.toISOString(),
@@ -343,20 +329,29 @@ export default function ExperimentDesigner() {
         return;
       }
       // Store in localStorage for client-side filtering
+      let activeExperiments = [];
+      try {
+        activeExperiments = JSON.parse(
+          localStorage.getItem("activeExperiments") || "[]"
+        );
+      } catch {}
+      activeExperiments.push({
+        id: data.id,
+        variable,
+        start_date: startDate.toISOString(),
+        end_date: endDate.toISOString(),
+        frequency,
+        dependent_variable: dependentVar,
+        time_intervals: timeIntervals,
+        missing_data_strategy: missingDataStrategy,
+      });
       localStorage.setItem(
-        "activeExperiment",
-        JSON.stringify({
-          id: data.id,
-          variable,
-          start_date: startDate.toISOString(),
-          end_date: endDate.toISOString(),
-          frequency,
-          dependent_variable: dependentVar,
-          time_intervals: timeIntervals,
-          missing_data_strategy: missingDataStrategy,
-        })
+        "activeExperiments",
+        JSON.stringify(activeExperiments)
       );
-      setSuccess("Experiment started!");
+      setSuccess(
+        "Experiment started! You can now track multiple experiments at once."
+      );
       setLoading(false);
       redirectTimeout.current = setTimeout(() => router.push("/log"), 1200);
     } catch (err) {
@@ -377,7 +372,6 @@ export default function ExperimentDesigner() {
       <Typography variant="h3" component="h1" gutterBottom align="center">
         🧪 Design a Self-Experiment
       </Typography>
-
       <Typography
         variant="h6"
         color="textSecondary"
@@ -386,7 +380,6 @@ export default function ExperimentDesigner() {
       >
         Choose variables to experiment with and track their effects
       </Typography>
-
       {error && (
         <Alert severity="error" sx={{ mb: 4 }}>
           {error}
@@ -400,7 +393,6 @@ export default function ExperimentDesigner() {
           </Box>
         </Alert>
       )}
-
       <Paper elevation={3} sx={{ p: 4 }}>
         <form onSubmit={handleSubmit}>
           {/* Variable Selection with Tabs */}
@@ -411,7 +403,6 @@ export default function ExperimentDesigner() {
             <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
               Select from predefined variables or create your own
             </Typography>
-
             <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 3 }}>
               <Tabs
                 value={tabValue}
@@ -428,7 +419,6 @@ export default function ExperimentDesigner() {
                 <Tab label="Custom" />
               </Tabs>
             </Box>
-
             {/* Quick Select Tab */}
             {tabValue === 0 && (
               <Box sx={{ mb: 3 }}>
@@ -459,7 +449,6 @@ export default function ExperimentDesigner() {
                 </Box>
               </Box>
             )}
-
             {/* Category Tabs */}
             {tabValue >= 1 && tabValue <= 6 && (
               <Box sx={{ mb: 3 }}>
@@ -494,7 +483,6 @@ export default function ExperimentDesigner() {
                 </Box>
               </Box>
             )}
-
             {/* Custom Tab */}
             {tabValue === 7 && (
               <Box sx={{ mb: 3 }}>
@@ -544,7 +532,6 @@ export default function ExperimentDesigner() {
                     if (inputValue.length > 25) return;
                     if (variableOptions.some((opt) => opt.value === inputValue))
                       return;
-                    // Use the last suggested emoji
                     const icon = pendingEmoji || "🆕";
                     const newOption = {
                       label: inputValue,
@@ -554,21 +541,17 @@ export default function ExperimentDesigner() {
                     setVariableOptions((prev) => [...prev, newOption]);
                     setVariable(inputValue);
                     setPendingVariable("");
-                    // Insert into Supabase
                     try {
                       await supabase
                         .from("user_variables")
                         .insert([{ label: inputValue, icon }]);
-                    } catch (e) {
-                      // Optionally show error
-                    }
+                    } catch (e) {}
                   }}
                   placeholder="Select or create variable..."
                   className="mb-1"
                 />
               </Box>
             )}
-
             <Typography variant="caption" color="textSecondary">
               Selected: <strong>{variable}</strong>
             </Typography>

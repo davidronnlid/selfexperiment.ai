@@ -7,6 +7,10 @@ import Box from "@mui/material/Box";
 import Link from "next/link";
 import Avatar from "@mui/material/Avatar";
 import { useUser } from "@/pages/_app";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
+import { useState } from "react";
+import { supabase } from "@/utils/supaBase";
 
 export default function Header() {
   const { user, loading } = useUser();
@@ -19,6 +23,20 @@ export default function Header() {
   const navLinkClass =
     "relative px-2 py-1 text-black font-medium transition hover:text-purple-700 focus:text-purple-700" +
     " after:content-[''] after:absolute after:left-0 after:bottom-0 after:w-0 after:h-0.5 after:bg-purple-500 after:transition-all after:duration-300 hover:after:w-full focus:after:w-full";
+
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const open = Boolean(anchorEl);
+  const handleAvatarClick = (event: React.MouseEvent<HTMLElement>) => {
+    setAnchorEl(event.currentTarget);
+  };
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+  };
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setAnchorEl(null);
+    window.location.href = "/";
+  };
 
   return (
     <AppBar
@@ -33,7 +51,7 @@ export default function Header() {
         >
           <Box>
             <Typography variant="h5" component="span">
-              SelfStats.AI
+              SelfExperiment.AI
             </Typography>
             <Typography
               variant="subtitle1"
@@ -50,11 +68,14 @@ export default function Header() {
           </Box>
         </Link>
         <Box className="flex items-center gap-6">
-          <Link href="/experiment/designer" className={navLinkClass}>
+          <Link href="/experiment/builder" className={navLinkClass}>
             Build Experiment
           </Link>
           <Link href="/log" className={navLinkClass}>
             Log Now
+          </Link>
+          <Link href="/community" className={navLinkClass}>
+            Community
           </Link>
           {!loading && !user && (
             <Link href="/auth">
@@ -72,16 +93,31 @@ export default function Header() {
               <Link href="/analytics" className={navLinkClass}>
                 Analytics
               </Link>
-              <Link href="/profile">
-                <Avatar
-                  alt={displayName}
-                  src={profilePic || undefined}
-                  className="ml-2 ring-2 ring-purple-400 shadow-lg cursor-pointer hover:ring-4 hover:ring-pink-400 transition-all duration-200"
-                  sx={{ width: 44, height: 44 }}
+              <Avatar
+                alt={displayName}
+                src={profilePic || undefined}
+                className="ml-2 ring-2 ring-purple-400 shadow-lg cursor-pointer hover:ring-4 hover:ring-pink-400 transition-all duration-200"
+                sx={{ width: 44, height: 44 }}
+                onClick={handleAvatarClick}
+              >
+                {displayName?.[0]?.toUpperCase() || "U"}
+              </Avatar>
+              <Menu
+                anchorEl={anchorEl}
+                open={open}
+                onClose={handleMenuClose}
+                anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+                transformOrigin={{ vertical: "top", horizontal: "right" }}
+              >
+                <MenuItem
+                  component={Link}
+                  href="/profile"
+                  onClick={handleMenuClose}
                 >
-                  {displayName?.[0]?.toUpperCase() || "U"}
-                </Avatar>
-              </Link>
+                  Profile
+                </MenuItem>
+                <MenuItem onClick={handleLogout}>Logout</MenuItem>
+              </Menu>
             </>
           )}
         </Box>

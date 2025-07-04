@@ -1,4 +1,4 @@
-# Self-Experimentation Web App
+# SelfExperiment.AI
 
 ## Project Overview
 

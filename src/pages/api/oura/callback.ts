@@ -10,6 +10,13 @@ export default async function handler(
   const clientSecret = process.env.OURA_CLIENT_SECRET!;
   const redirectUri = "http://localhost:3000/api/oura/callback";
 
+  // Get user_id from state parameter
+  const user_id = req.query.state as string;
+  if (!user_id) {
+    console.error("[Oura Callback] No user_id found in state param");
+    return res.status(401).send("No user_id found in state param");
+  }
+
   try {
     const response = await fetch("https://api.ouraring.com/oauth/token", {
       method: "POST",
@@ -31,11 +38,12 @@ export default async function handler(
 
     const tokenData = await response.json();
 
-    // Save access_token and refresh_token to Supabase
+    // Save access_token, refresh_token, and user_id to Supabase
     const { error } = await supabase.from("oura_tokens").insert([
       {
         access_token: tokenData.access_token,
         refresh_token: tokenData.refresh_token,
+        user_id: user_id,
       },
     ]);
 
@@ -45,7 +53,8 @@ export default async function handler(
     }
 
     console.log("✅ Oura Token Response:", tokenData);
-    res.status(200).send("✅ Oura Connected! You can close this tab.");
+    // Redirect to analytics page with success message
+    res.redirect("/analytics?oura=success");
   } catch (error) {
     console.error("OAuth error:", error);
     res.status(500).send("OAuth failed");

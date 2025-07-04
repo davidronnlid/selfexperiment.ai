@@ -16,6 +16,7 @@ import DropdownInput from "@/components/DropdownInput";
 import Link from "next/link";
 import { Container, Box, Tabs, Tab, Chip } from "@mui/material";
 import { useUser } from "../pages/_app";
+import SearchIcon from "@mui/icons-material/Search";
 
 const LABEL_OPTIONS = [
   "Mood",
@@ -74,8 +75,11 @@ export default function LogPage() {
   const [value, setValue] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
   const [date, setDate] = useState<Date>(new Date());
-  const [activeExperiment, setActiveExperiment] = useState<any>(null);
-  const [experimentLogsToday, setExperimentLogsToday] = useState<LogEntry[]>(
+  const [activeExperiments, setActiveExperiments] = useState<any[]>([]);
+  const [experimentsLogsToday, setExperimentsLogsToday] = useState<
+    Record<string, LogEntry[]>
+  >({});
+  const [experimentsNeedingLogs, setExperimentsNeedingLogs] = useState<any[]>(
     []
   );
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -89,6 +93,16 @@ export default function LogPage() {
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
   const [variableSettings, setVariableSettings] = useState<any[]>([]);
   const [privacyLoading, setPrivacyLoading] = useState(true);
+  const [isLogPrivate, setIsLogPrivate] = useState(false);
+  const [editExperimentLog, setEditExperimentLog] = useState<LogEntry | null>(
+    null
+  );
+  const [editValue, setEditValue] = useState<string>("");
+  const [editNotes, setEditNotes] = useState<string>("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [maxLogsWarning, setMaxLogsWarning] = useState(false);
+  const [maxLogsWarningMsg, setMaxLogsWarningMsg] = useState("");
 
   // Group variables by category for better organization
   const groupedVariables = {
@@ -186,49 +200,45 @@ export default function LogPage() {
     ],
   };
 
-  // Load experiment from localStorage
+  // Load all active experiments from localStorage
   useEffect(() => {
     try {
-      const exp = localStorage.getItem("activeExperiment");
-      if (exp) {
-        const parsed = JSON.parse(exp);
-        if (
-          !parsed.variable ||
-          !parsed.start_date ||
-          !parsed.end_date ||
-          !parsed.frequency
-        ) {
-          setExpError(
-            "Experiment data is incomplete. Please set up your experiment again."
-          );
-          setActiveExperiment(null);
+      const expArr = localStorage.getItem("activeExperiments");
+      if (expArr) {
+        const parsed = JSON.parse(expArr);
+        if (Array.isArray(parsed)) {
+          setActiveExperiments(parsed);
         } else {
-          setActiveExperiment(parsed);
-          setExpError("");
+          setActiveExperiments([]);
         }
       } else {
-        setActiveExperiment(null);
-        setExpError("");
+        setActiveExperiments([]);
       }
     } catch (e) {
-      setExpError(
-        "Failed to load experiment. Please set up your experiment again."
-      );
-      setActiveExperiment(null);
+      setActiveExperiments([]);
     }
   }, []);
 
-  // If experiment is active, filter logs for today and the experiment variable
+  // For each experiment, check if today's logs are complete
   useEffect(() => {
-    if (!activeExperiment) return;
+    if (!activeExperiments.length) return;
     const today = new Date();
-    const logsToday = logs.filter(
-      (log) =>
-        log.label === activeExperiment.variable &&
-        new Date(log.date).toDateString() === today.toDateString()
-    );
-    setExperimentLogsToday(logsToday);
-  }, [logs, activeExperiment]);
+    const logsByExp: Record<string, LogEntry[]> = {};
+    const needsLogs: any[] = [];
+    activeExperiments.forEach((exp) => {
+      const logsToday = logs.filter(
+        (log) =>
+          log.label === exp.variable &&
+          new Date(log.date).toDateString() === today.toDateString()
+      );
+      logsByExp[exp.variable] = logsToday;
+      if (logsToday.length < exp.frequency) {
+        needsLogs.push(exp);
+      }
+    });
+    setExperimentsLogsToday(logsByExp);
+    setExperimentsNeedingLogs(needsLogs);
+  }, [logs, activeExperiments]);
 
   // Fetch user variables on load
   useEffect(() => {
@@ -271,15 +281,15 @@ export default function LogPage() {
   // When experiment or date changes, set default interval
   useEffect(() => {
     if (
-      activeExperiment &&
-      activeExperiment.time_intervals &&
-      activeExperiment.time_intervals.length > 0
+      activeExperiments.length > 0 &&
+      activeExperiments[0].time_intervals &&
+      activeExperiments[0].time_intervals.length > 0
     ) {
       // Try to match current time to an interval
       const now = new Date();
       const hour = now.getHours();
-      let defaultInterval = activeExperiment.time_intervals[0];
-      for (const interval of activeExperiment.time_intervals) {
+      let defaultInterval = activeExperiments[0].time_intervals[0];
+      for (const interval of activeExperiments[0].time_intervals) {
         // Preset logic
         if (interval === "Morning" && hour >= 5 && hour < 12)
           defaultInterval = interval;
@@ -300,7 +310,7 @@ export default function LogPage() {
       }
       setSelectedInterval(defaultInterval);
     }
-  }, [activeExperiment, date]);
+  }, [activeExperiments, date]);
 
   // Call fetchLogs on mount
   useEffect(() => {
@@ -401,22 +411,26 @@ export default function LogPage() {
       return;
     }
 
+    // Only enforce frequency limit for the experiment variable
     if (
-      activeExperiment &&
-      experimentLogsToday.length >= activeExperiment.frequency
+      experimentsNeedingLogs.length > 0 &&
+      label.value === experimentsNeedingLogs[0].variable &&
+      experimentsLogsToday[experimentsNeedingLogs[0].variable].length >=
+        experimentsNeedingLogs[0].frequency
     ) {
       setSuccessMessage("");
       setShowSuccess(false);
-      alert(
-        `You have reached the maximum number of logs for today in this experiment.`
+      setMaxLogsWarningMsg(
+        "You have reached the maximum number of logs for today for this experiment variable. Once your active experiment is complete, you will be able to log this variable as often as you like."
       );
+      setMaxLogsWarning(true);
       return;
     }
 
     if (
-      activeExperiment &&
-      activeExperiment.time_intervals &&
-      activeExperiment.time_intervals.length > 0
+      experimentsNeedingLogs.length > 0 &&
+      experimentsNeedingLogs[0].time_intervals &&
+      experimentsNeedingLogs[0].time_intervals.length > 0
     ) {
       if (!selectedInterval) {
         setExpError("Please select a time interval to log for.");
@@ -425,27 +439,43 @@ export default function LogPage() {
     }
 
     try {
-      const { data, error } = await supabase.from("daily_logs").insert([
-        {
-          user_id: user.id,
-          date: date.toISOString(),
-          label: activeExperiment ? activeExperiment.variable : label.value,
-          value,
-          notes:
-            (notes ? notes + "\n" : "") +
-            (selectedInterval ? `Interval: ${selectedInterval}` : ""),
-        },
-      ]);
+      // Insert log with user_id
+      const { data, error } = await supabase
+        .from("daily_logs")
+        .insert([
+          {
+            user_id: user.id,
+            date: date.toISOString(),
+            label:
+              experimentsNeedingLogs.length > 0
+                ? experimentsNeedingLogs[0].variable
+                : label.value,
+            value,
+            notes:
+              (notes ? notes + "\n" : "") +
+              (selectedInterval ? `Interval: ${selectedInterval}` : ""),
+          },
+        ])
+        .select();
 
       if (error) {
         setSuccessMessage("");
         setShowSuccess(false);
         setExpError("Failed to save log: " + error.message);
       } else {
+        // Insert or update log_privacy_settings for this log
+        if (data && data[0] && data[0].id) {
+          await supabase.from("log_privacy_settings").upsert({
+            user_id: user.id,
+            log_id: data[0].id,
+            is_hidden: isLogPrivate,
+          });
+        }
         setSuccessMessage("✔️ Log saved!");
         setShowSuccess(true);
         setValue("");
         setNotes("");
+        setIsLogPrivate(false);
         fetchLogs();
         setTimeout(() => setShowSuccess(false), 2000);
       }
@@ -483,6 +513,97 @@ export default function LogPage() {
     return setting?.is_shared ?? false;
   };
 
+  // Add flag to require experiment logging first
+  const mustLogExperimentFirst = !!(
+    experimentsNeedingLogs.length > 0 &&
+    experimentsLogsToday[experimentsNeedingLogs[0].variable].length <
+      experimentsNeedingLogs[0].frequency
+  );
+
+  // If mustLogExperimentFirst, force label to experiment variable
+  useEffect(() => {
+    if (mustLogExperimentFirst && experimentsNeedingLogs.length > 0) {
+      setLabel({
+        label: experimentsNeedingLogs[0].variable,
+        value: experimentsNeedingLogs[0].variable,
+      });
+    }
+  }, [mustLogExperimentFirst, experimentsNeedingLogs]);
+
+  // If experiment frequency is 1 and log exists, prefill edit state
+  useEffect(() => {
+    if (
+      experimentsNeedingLogs.length > 0 &&
+      experimentsNeedingLogs[0].frequency === 1 &&
+      experimentsLogsToday[experimentsNeedingLogs[0].variable].length === 1
+    ) {
+      setEditExperimentLog(
+        experimentsLogsToday[experimentsNeedingLogs[0].variable][0]
+      );
+      setEditValue(
+        experimentsLogsToday[experimentsNeedingLogs[0].variable][0].value
+      );
+      setEditNotes(
+        experimentsLogsToday[experimentsNeedingLogs[0].variable][0].notes || ""
+      );
+    } else {
+      setEditExperimentLog(null);
+      setEditValue("");
+      setEditNotes("");
+    }
+  }, [experimentsNeedingLogs, experimentsLogsToday]);
+
+  // Add edit handler
+  const handleEditExperimentLog = async () => {
+    if (!editExperimentLog) return;
+    if (!editValue) {
+      setExpError("Value cannot be empty.");
+      return;
+    }
+    const validation = validateValue(editExperimentLog.label, editValue);
+    if (!validation.isValid) {
+      setExpError(validation.error || "Invalid value");
+      return;
+    }
+    const { error } = await supabase
+      .from("daily_logs")
+      .update({ value: editValue, notes: editNotes })
+      .eq("id", editExperimentLog.id);
+    if (error) {
+      setExpError("Failed to update log: " + error.message);
+    } else {
+      setExpError("");
+      setSuccessMessage("Log updated!");
+      setShowSuccess(true);
+      fetchLogs();
+      setTimeout(() => setShowSuccess(false), 2000);
+    }
+  };
+
+  // Search/filter logic for variables
+  useEffect(() => {
+    if (!searchTerm.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    // Combine all variable options (labelOptions + groupedVariables)
+    const allVars = [
+      ...labelOptions,
+      ...Object.values(groupedVariables).flat(),
+    ];
+    // Remove duplicates by label
+    const uniqueVars = Array.from(
+      new Map(
+        allVars.map((v) => [typeof v === "string" ? v : v.label, v])
+      ).values()
+    );
+    const filtered = uniqueVars.filter((v) => {
+      const label = typeof v === "string" ? v : v.label;
+      return label.toLowerCase().includes(searchTerm.toLowerCase());
+    });
+    setSearchResults(filtered);
+  }, [searchTerm, labelOptions, groupedVariables]);
+
   if (userLoading) return <div>Loading...</div>;
   if (!user) return <div>You must be logged in to use the log page.</div>;
 
@@ -507,40 +628,111 @@ export default function LogPage() {
             {expError}
           </Alert>
         )}
-        {activeExperiment && (
-          <Alert severity="info" className="mb-6">
-            <div className="font-semibold mb-1">Experiment Active:</div>
-            <div>
-              Variable: <b>{activeExperiment.variable}</b>
-            </div>
-            <div>
-              Date Range:{" "}
-              {new Date(activeExperiment.start_date).toLocaleDateString()} to{" "}
-              {new Date(activeExperiment.end_date).toLocaleDateString()}
-            </div>
-            <div>Frequency: {activeExperiment.frequency} logs/day</div>
-            <div className="mt-2 text-sm text-gray-700">
-              Progress today: {experimentLogsToday.length} /{" "}
-              {activeExperiment.frequency}
-            </div>
-            <Button
-              size="small"
-              variant="outlined"
-              className="mt-2"
-              onClick={() => {
-                localStorage.removeItem("activeExperiment");
-                setActiveExperiment(null);
-              }}
-            >
-              Clear Experiment
-            </Button>
-          </Alert>
-        )}
-        {!activeExperiment && (
+        {/* Only show experiment prompt if quota not met */}
+        {experimentsNeedingLogs.length > 0 &&
+          experimentsLogsToday[experimentsNeedingLogs[0].variable].length <
+            experimentsNeedingLogs[0].frequency && (
+            <Alert severity="info" className="mb-6">
+              <div className="font-semibold mb-1">Experiment Active:</div>
+              <div>
+                Variable: <b>{experimentsNeedingLogs[0].variable}</b>
+              </div>
+              <div>
+                Date Range:{" "}
+                {new Date(
+                  experimentsNeedingLogs[0].start_date
+                ).toLocaleDateString()}{" "}
+                to{" "}
+                {new Date(
+                  experimentsNeedingLogs[0].end_date
+                ).toLocaleDateString()}
+              </div>
+              <div>
+                Frequency: {experimentsNeedingLogs[0].frequency} logs/day
+              </div>
+              <div className="mt-2 text-sm text-gray-700">
+                Progress today:{" "}
+                {
+                  experimentsLogsToday[experimentsNeedingLogs[0].variable]
+                    .length
+                }{" "}
+                / {experimentsNeedingLogs[0].frequency}
+              </div>
+              <Button
+                size="small"
+                variant="outlined"
+                className="mt-2"
+                onClick={() => {
+                  localStorage.removeItem("activeExperiments");
+                  setActiveExperiments([]);
+                }}
+              >
+                Clear Experiment
+              </Button>
+            </Alert>
+          )}
+        {/* Show a message if experiment quota is complete for today */}
+        {experimentsNeedingLogs.length > 0 &&
+          experimentsLogsToday[experimentsNeedingLogs[0].variable].length >=
+            experimentsNeedingLogs[0].frequency && (
+            <Alert severity="success" className="mb-6">
+              <div className="font-semibold mb-1">
+                Experiment Complete for Today
+              </div>
+              <div>
+                You have completed all required logs for your active experiment
+                variable today. You can now log any other variables freely. Come
+                back tomorrow to continue your experiment!
+              </div>
+              <Button
+                size="small"
+                variant="outlined"
+                className="mt-2"
+                onClick={() => {
+                  window.location.href = "/experiment/active-experiments";
+                }}
+              >
+                View Active Experiments
+              </Button>
+            </Alert>
+          )}
+        {/* Only force experiment logging if quota not met */}
+        {mustLogExperimentFirst &&
+          experimentsNeedingLogs.length > 0 &&
+          experimentsLogsToday[experimentsNeedingLogs[0].variable].length <
+            experimentsNeedingLogs[0].frequency && (
+            <Alert severity="warning" className="mb-4">
+              Please log your experiment variable (
+              <b>{experimentsNeedingLogs[0].variable}</b>) before logging other
+              variables.
+            </Alert>
+          )}
+        {/* Show a message if all experiment quotas are complete for today but there are active experiments */}
+        {activeExperiments.length > 0 &&
+          experimentsNeedingLogs.length === 0 && (
+            <Alert severity="success" className="mb-4">
+              <div>
+                All required logs for your active experiments are complete for
+                today. You can log freely or view your active experiments.
+              </div>
+              <Button
+                size="small"
+                variant="outlined"
+                sx={{ mt: 1 }}
+                onClick={() => {
+                  window.location.href = "/experiment/active-experiments";
+                }}
+              >
+                View Active Experiments
+              </Button>
+            </Alert>
+          )}
+        {/* Only show 'No experiment is active' if there are truly no active experiments */}
+        {activeExperiments.length === 0 && (
           <Alert severity="warning" className="mb-4">
             No experiment is active. You can log freely or{" "}
             <Link
-              href="/experiment/designer"
+              href="/experiment/builder"
               className="underline text-purple-700"
             >
               design an experiment
@@ -548,6 +740,56 @@ export default function LogPage() {
             .
           </Alert>
         )}
+        {mustLogExperimentFirst &&
+        experimentsNeedingLogs.length > 0 &&
+        experimentsNeedingLogs[0].frequency === 1 &&
+        experimentsLogsToday[experimentsNeedingLogs[0].variable].length === 1 &&
+        editExperimentLog ? (
+          <Box sx={{ mb: 4 }}>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              You have already logged your experiment variable for today. You
+              can edit it below:
+            </Alert>
+            <Typography variant="subtitle1" sx={{ mb: 1 }}>
+              Edit Log for {editExperimentLog.label} (
+              {new Date(editExperimentLog.date).toLocaleDateString()})
+            </Typography>
+            <ValidatedInput
+              label={editExperimentLog.label}
+              value={editValue}
+              onChange={setEditValue}
+              onValidationChange={setIsValueValid}
+              showValidation={true}
+            />
+            <TextField
+              label="Notes (optional)"
+              variant="outlined"
+              fullWidth
+              multiline
+              minRows={3}
+              className="mb-2"
+              value={editNotes}
+              onChange={(e) => setEditNotes(e.target.value)}
+              placeholder="Add any context or observations..."
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <FaStickyNote className="text-purple-400" />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ mt: 2, mb: 2 }}
+            />
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={handleEditExperimentLog}
+              disabled={!isValueValid}
+            >
+              Save Changes
+            </Button>
+          </Box>
+        ) : null}
         <form
           className="flex flex-col space-y-6"
           onSubmit={(e) => {
@@ -555,176 +797,297 @@ export default function LogPage() {
             submitLog();
           }}
         >
-          {/* Variable Selection with Tabs */}
-          <Box sx={{ mb: 4 }}>
-            <Typography variant="h6" gutterBottom>
-              Choose Variable to Log
-            </Typography>
-            <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-              Select from predefined variables or search for custom ones
-            </Typography>
-
-            <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 3 }}>
-              <Tabs
-                value={tabValue}
-                onChange={handleTabChange}
-                aria-label="variable categories"
-              >
-                <Tab label="Quick Select" />
-                <Tab label="Mental & Emotional" />
-                <Tab label="Sleep & Recovery" />
-                <Tab label="Physical Health" />
-                <Tab label="Substances & Diet" />
-                <Tab label="Environment" />
-                <Tab label="Oura Data" />
-                <Tab label="Search" />
-              </Tabs>
-            </Box>
-
-            {/* Quick Select Tab */}
-            {tabValue === 0 && (
-              <Box sx={{ mb: 3 }}>
-                <Typography
-                  variant="body2"
-                  color="textSecondary"
-                  sx={{ mb: 2 }}
-                >
-                  Popular variables to log:
-                </Typography>
-                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
-                  {[
-                    "Stress",
-                    "Sleep Quality",
-                    "Exercise",
-                    "Caffeine (mg)",
-                    "Mood",
-                  ].map((varName) => (
+          {/* Variable selection header text */}
+          {/* Ensure all instructional text is removed as requested */}
+          {!mustLogExperimentFirst && logs.length > 0 && !searchTerm.trim() && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                Your Most Logged Variables
+              </Typography>
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+                {labelOptions.slice(0, 7).map((opt) => {
+                  const fullVar = LOG_LABELS.find(
+                    (l) => l.label.toLowerCase() === opt.label.toLowerCase()
+                  );
+                  return (
                     <Chip
-                      key={varName}
-                      label={varName}
+                      key={opt.label}
+                      label={opt.label}
                       onClick={() =>
-                        setLabel({ label: varName, value: varName })
+                        setLabel(
+                          fullVar
+                            ? { label: fullVar.label, value: fullVar.label }
+                            : { label: opt.label, value: opt.value }
+                        )
                       }
-                      color={label.value === varName ? "primary" : "default"}
-                      variant={label.value === varName ? "filled" : "outlined"}
+                      color={label.value === opt.value ? "primary" : "default"}
+                      variant={
+                        label.value === opt.value ? "filled" : "outlined"
+                      }
                       clickable
+                      size="small"
+                      sx={{ fontSize: 13, height: 28 }}
                     />
-                  ))}
-                </Box>
+                  );
+                })}
               </Box>
-            )}
-
-            {/* Category Tabs */}
-            {tabValue >= 1 && tabValue <= 6 && (
-              <Box sx={{ mb: 3 }}>
-                {/* Per-category shared counter */}
-                <Box
-                  sx={{ mb: 1, display: "flex", alignItems: "center", gap: 2 }}
-                >
-                  <Typography variant="subtitle2" color="primary">
-                    {Object.entries(groupedVariables)[tabValue - 1]?.[0]}
-                  </Typography>
-                  <Chip
-                    label={`$ {
-                      Object.entries(groupedVariables)[tabValue - 1]?.[1]?.filter((v) => getVariableSharingStatus(v.label)).length
-                    }/$ {
-                      Object.entries(groupedVariables)[tabValue - 1]?.[1]?.length
-                    } shared`}
-                    size="small"
-                    color="primary"
-                    variant="outlined"
-                  />
-                </Box>
-                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
-                  {Object.entries(groupedVariables)[tabValue - 1]?.[1]?.map(
-                    (varItem) => (
-                      <Chip
-                        key={varItem.label}
-                        label={
-                          <Box
-                            sx={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 1,
-                            }}
-                          >
-                            <span>{varItem.icon}</span>
-                            <span>{varItem.label}</span>
-                            {getVariableSharingStatus(varItem.label) ? (
-                              <FaGlobe color="green" />
-                            ) : (
-                              <FaLock color="grey" />
-                            )}
-                          </Box>
-                        }
-                        onClick={() =>
-                          setLabel({
-                            label: varItem.label,
-                            value: varItem.label,
-                          })
-                        }
-                        color={
-                          label.value === varItem.label ? "primary" : "default"
-                        }
-                        variant={
-                          label.value === varItem.label ? "filled" : "outlined"
-                        }
-                        clickable
-                      />
-                    )
-                  )}
-                </Box>
-              </Box>
-            )}
-
-            {/* Search Tab */}
-            {tabValue === 7 && (
-              <Box sx={{ mb: 3 }}>
-                <Typography
-                  variant="body2"
-                  color="textSecondary"
-                  sx={{ mb: 2 }}
-                >
-                  Search or create a custom variable:
+            </Box>
+          )}
+          {/* Search Bar for All Variables */}
+          {!mustLogExperimentFirst && (
+            <Box sx={{ mb: 2, display: "flex", alignItems: "center", gap: 1 }}>
+              <SearchIcon color="action" fontSize="small" />
+              <TextField
+                size="small"
+                variant="outlined"
+                placeholder="Search all variables..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                sx={{ flex: 1, minWidth: 0 }}
+                inputProps={{ style: { fontSize: 14, padding: 6 } }}
+              />
+            </Box>
+          )}
+          {/* Show search results if searching */}
+          {!mustLogExperimentFirst && searchTerm.trim() && (
+            <Box sx={{ mb: 2, display: "flex", flexWrap: "wrap", gap: 1 }}>
+              {searchResults.length === 0 ? (
+                <Typography variant="body2" color="textSecondary">
+                  No variables found.
                 </Typography>
-                <Autocomplete
-                  options={labelOptions}
-                  getOptionLabel={(opt) =>
-                    typeof opt === "string" ? opt : opt.label
-                  }
-                  value={label}
-                  onChange={(_, newValue) => {
-                    if (newValue && !Array.isArray(newValue)) {
-                      setLabel(newValue as { label: string; value: string });
-                      setPendingVariable("");
-                    } else {
-                      setLabel({ label: "", value: "" });
-                      setPendingVariable("");
+              ) : (
+                searchResults.map((opt) => (
+                  <Chip
+                    key={typeof opt === "string" ? opt : opt.label}
+                    label={typeof opt === "string" ? opt : opt.label}
+                    onClick={() =>
+                      setLabel({
+                        label: typeof opt === "string" ? opt : opt.label,
+                        value: typeof opt === "string" ? opt : opt.label,
+                      })
                     }
-                  }}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="Search variables..."
-                      variant="outlined"
-                      InputProps={{
-                        ...params.InputProps,
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <FaTag className="text-purple-500" />
-                          </InputAdornment>
-                        ),
-                      }}
-                    />
-                  )}
-                />
-              </Box>
-            )}
+                    color={
+                      label.value ===
+                      (typeof opt === "string" ? opt : opt.label)
+                        ? "primary"
+                        : "default"
+                    }
+                    variant={
+                      label.value ===
+                      (typeof opt === "string" ? opt : opt.label)
+                        ? "filled"
+                        : "outlined"
+                    }
+                    size="small"
+                    clickable
+                    sx={{ fontSize: 13, height: 28 }}
+                  />
+                ))
+              )}
+            </Box>
+          )}
+          {/* Variable Selection with Tabs */}
+          {!searchTerm.trim() && (
+            <Box sx={{ mb: 4 }}>
+              <Typography variant="h6" gutterBottom>
+                Choose Variable to Log
+              </Typography>
+              <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+                Select from predefined variables or search for custom ones
+              </Typography>
 
-            <Typography variant="caption" color="textSecondary">
-              Selected: <strong>{label.value || "None"}</strong>
-            </Typography>
-          </Box>
+              {/* Hide variable selection UI if mustLogExperimentFirst */}
+              {!mustLogExperimentFirst && (
+                <>
+                  <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 3 }}>
+                    <Tabs
+                      value={tabValue}
+                      onChange={handleTabChange}
+                      aria-label="variable categories"
+                    >
+                      <Tab label="Quick Select" />
+                      <Tab label="Mental & Emotional" />
+                      <Tab label="Sleep & Recovery" />
+                      <Tab label="Physical Health" />
+                      <Tab label="Substances & Diet" />
+                      <Tab label="Environment" />
+                      <Tab label="Oura Data" />
+                      <Tab label="Search" />
+                    </Tabs>
+                  </Box>
+
+                  {/* Quick Select Tab */}
+                  {tabValue === 0 && (
+                    <Box sx={{ mb: 3 }}>
+                      <Typography
+                        variant="body2"
+                        color="textSecondary"
+                        sx={{ mb: 2 }}
+                      >
+                        Popular variables to log:
+                      </Typography>
+                      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+                        {[
+                          "Stress",
+                          "Sleep Quality",
+                          "Exercise",
+                          "Caffeine (mg)",
+                          "Mood",
+                        ].map((varName) => (
+                          <Chip
+                            key={varName}
+                            label={varName}
+                            onClick={() =>
+                              setLabel({ label: varName, value: varName })
+                            }
+                            color={
+                              label.value === varName ? "primary" : "default"
+                            }
+                            variant={
+                              label.value === varName ? "filled" : "outlined"
+                            }
+                            clickable
+                          />
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
+
+                  {/* Category Tabs */}
+                  {tabValue >= 1 && tabValue <= 6 && (
+                    <Box sx={{ mb: 3 }}>
+                      {/* Per-category shared counter */}
+                      <Box
+                        sx={{
+                          mb: 1,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 2,
+                        }}
+                      >
+                        <Typography variant="subtitle2" color="primary">
+                          {Object.entries(groupedVariables)[tabValue - 1]?.[0]}
+                        </Typography>
+                        <Chip
+                          label={`${
+                            Object.entries(groupedVariables)[
+                              tabValue - 1
+                            ]?.[1]?.filter((v) =>
+                              getVariableSharingStatus(v.label)
+                            ).length
+                          }/${
+                            Object.entries(groupedVariables)[tabValue - 1]?.[1]
+                              ?.length
+                          } shared`}
+                          onClick={() => (window.location.href = "/profile")}
+                          style={{
+                            cursor: "pointer",
+                            textDecoration: "underline",
+                          }}
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                        />
+                      </Box>
+                      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+                        {Object.entries(groupedVariables)[
+                          tabValue - 1
+                        ]?.[1]?.map((varItem) => (
+                          <Chip
+                            key={varItem.label}
+                            label={
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 1,
+                                }}
+                              >
+                                <span>{varItem.icon}</span>
+                                <span>{varItem.label}</span>
+                                {getVariableSharingStatus(varItem.label) ? (
+                                  <FaGlobe color="green" />
+                                ) : (
+                                  <FaLock color="grey" />
+                                )}
+                              </Box>
+                            }
+                            onClick={() =>
+                              setLabel({
+                                label: varItem.label,
+                                value: varItem.label,
+                              })
+                            }
+                            color={
+                              label.value === varItem.label
+                                ? "primary"
+                                : "default"
+                            }
+                            variant={
+                              label.value === varItem.label
+                                ? "filled"
+                                : "outlined"
+                            }
+                            clickable
+                          />
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
+
+                  {/* Search Tab */}
+                  {tabValue === 7 && (
+                    <Box sx={{ mb: 3 }}>
+                      <Typography
+                        variant="body2"
+                        color="textSecondary"
+                        sx={{ mb: 2 }}
+                      >
+                        Search or create a custom variable:
+                      </Typography>
+                      <Autocomplete
+                        options={labelOptions}
+                        getOptionLabel={(opt) =>
+                          typeof opt === "string" ? opt : opt.label
+                        }
+                        value={label}
+                        onChange={(_, newValue) => {
+                          if (newValue && !Array.isArray(newValue)) {
+                            setLabel(
+                              newValue as { label: string; value: string }
+                            );
+                            setPendingVariable("");
+                          } else {
+                            setLabel({ label: "", value: "" });
+                            setPendingVariable("");
+                          }
+                        }}
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            label="Search variables..."
+                            variant="outlined"
+                            InputProps={{
+                              ...params.InputProps,
+                              startAdornment: (
+                                <InputAdornment position="start">
+                                  <FaTag className="text-purple-500" />
+                                </InputAdornment>
+                              ),
+                            }}
+                          />
+                        )}
+                      />
+                    </Box>
+                  )}
+                </>
+              )}
+
+              <Typography variant="caption" color="textSecondary">
+                Selected: <strong>{label.value || "None"}</strong>
+              </Typography>
+            </Box>
+          )}
           {(() => {
             const variable = LOG_LABELS.find((v) => v.label === label.value);
             const isDropdown = variable?.type === "dropdown";
@@ -769,6 +1132,17 @@ export default function LogPage() {
               ),
             }}
           />
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
+            <input
+              type="checkbox"
+              id="log-private-toggle"
+              checked={isLogPrivate}
+              onChange={(e) => setIsLogPrivate(e.target.checked)}
+            />
+            <label htmlFor="log-private-toggle">
+              Hide this log from others (private)
+            </label>
+          </Box>
           <div className="mb-2">
             <DatePicker
               selected={date}
@@ -776,13 +1150,13 @@ export default function LogPage() {
                 if (d) setDate(d);
               }}
               minDate={
-                activeExperiment
-                  ? new Date(activeExperiment.start_date)
+                experimentsNeedingLogs.length > 0
+                  ? new Date(experimentsNeedingLogs[0].start_date)
                   : undefined
               }
               maxDate={
-                activeExperiment
-                  ? new Date(activeExperiment.end_date)
+                experimentsNeedingLogs.length > 0
+                  ? new Date(experimentsNeedingLogs[0].end_date)
                   : new Date()
               }
               showTimeSelect
@@ -794,9 +1168,9 @@ export default function LogPage() {
               disabled={false}
             />
           </div>
-          {activeExperiment &&
-            activeExperiment.time_intervals &&
-            activeExperiment.time_intervals.length > 0 && (
+          {experimentsNeedingLogs.length > 0 &&
+            experimentsNeedingLogs[0].time_intervals &&
+            experimentsNeedingLogs[0].time_intervals.length > 0 && (
               <div className="mb-4">
                 <TextField
                   select
@@ -806,11 +1180,13 @@ export default function LogPage() {
                   fullWidth
                   SelectProps={{ native: true }}
                 >
-                  {activeExperiment.time_intervals.map((interval: string) => (
-                    <option key={interval} value={interval}>
-                      {interval}
-                    </option>
-                  ))}
+                  {experimentsNeedingLogs[0].time_intervals.map(
+                    (interval: string) => (
+                      <option key={interval} value={interval}>
+                        {interval}
+                      </option>
+                    )
+                  )}
                 </TextField>
                 <div className="text-xs text-gray-500 mt-1">
                   You can only log for the intervals you selected in your
@@ -850,6 +1226,16 @@ export default function LogPage() {
           onClose={() => setShowSuccess(false)}
           message={successMessage}
           anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        />
+        <Snackbar
+          open={maxLogsWarning}
+          autoHideDuration={5000}
+          onClose={() => setMaxLogsWarning(false)}
+          message={maxLogsWarningMsg}
+          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+          ContentProps={{
+            sx: { background: "#f59e42", color: "black", fontWeight: 500 },
+          }}
         />
       </Paper>
     </Container>

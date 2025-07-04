@@ -7,6 +7,8 @@ import {
   Tabs,
   Tab,
   Alert,
+  Divider,
+  Button,
 } from "@mui/material";
 import { useUser } from "./_app";
 import { supabase } from "@/utils/supaBase";
@@ -21,6 +23,7 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
+import { useRouter } from "next/router";
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -55,9 +58,16 @@ function TabPanel(props: TabPanelProps) {
 
 export default function Analytics() {
   const { user } = useUser();
+  const router = useRouter();
   const [tabValue, setTabValue] = useState(0);
   const [userLogs, setUserLogs] = useState<any[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [ouraData, setOuraData] = useState<any[]>([]);
+  const [ouraLoading, setOuraLoading] = useState(false);
+  const [ouraSyncing, setOuraSyncing] = useState(false);
+
+  // Show Oura success message if redirected from callback
+  const showOuraSuccess = router.query.oura === "success";
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
@@ -67,17 +77,98 @@ export default function Analytics() {
   useEffect(() => {
     if (tabValue === 1 && user) {
       setLogsLoading(true);
+      console.log("Current user.id:", user.id);
       supabase
         .from("daily_logs")
-        .select("date,label,value")
+        .select("date,label,value,user_id")
         .eq("user_id", user.id)
         .order("date", { ascending: true })
         .then(({ data }) => {
+          console.log("Logs returned from Supabase:", data);
           setUserLogs(data || []);
           setLogsLoading(false);
         });
     }
   }, [tabValue, user]);
+
+  // Fetch Oura data for the last 2 weeks for the current user
+  useEffect(() => {
+    if (tabValue === 1 && user) {
+      setOuraLoading(true);
+      // Get date 14 days ago
+      const twoWeeksAgo = new Date();
+      twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 13); // include today
+      const isoDate = twoWeeksAgo.toISOString().slice(0, 10);
+      supabase
+        .from("oura_measurements")
+        .select("metric, date, value, user_id")
+        .eq("user_id", user.id)
+        .gte("date", isoDate)
+        .order("date", { ascending: true })
+        .then(({ data }) => {
+          setOuraData(data || []);
+          setOuraLoading(false);
+        });
+    }
+  }, [tabValue, user]);
+
+  // Function to sync Oura data for the current user
+  const syncOuraData = async () => {
+    setOuraSyncing(true);
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token;
+    if (!token) {
+      alert("Not authenticated");
+      setOuraSyncing(false);
+      return;
+    }
+    const res = await fetch("/api/oura/fetch", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (res.ok) {
+      // Refetch Oura data after sync
+      setTimeout(() => {
+        setTabValue(1); // Ensure we're on the right tab
+        setOuraLoading(true);
+        // Get date 14 days ago
+        const twoWeeksAgo = new Date();
+        twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 13);
+        const isoDate = twoWeeksAgo.toISOString().slice(0, 10);
+        supabase
+          .from("oura_measurements")
+          .select("metric, date, value, user_id")
+          .eq("user_id", user?.id)
+          .gte("date", isoDate)
+          .order("date", { ascending: true })
+          .then(({ data }) => {
+            setOuraData(data || []);
+            setOuraLoading(false);
+          });
+      }, 2000); // Wait a bit for the backend to finish
+    } else {
+      alert("Failed to sync Oura data");
+    }
+    setOuraSyncing(false);
+  };
+
+  // Oura Connect Button handler
+  const handleOuraConnect = async () => {
+    if (!user) {
+      alert("You must be logged in to connect Oura.");
+      return;
+    }
+    const userId = user!.id;
+    const clientId = process.env.NEXT_PUBLIC_OURA_CLIENT_ID!;
+    const redirectUri = encodeURIComponent(
+      "http://localhost:3000/api/oura/callback"
+    );
+    const scope = "email personal daily heartrate";
+    const authUrl = `https://cloud.ouraring.com/oauth/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}&scope=${scope}&state=${userId}`;
+    window.location.href = authUrl;
+  };
 
   if (!user) {
     return (
@@ -110,38 +201,14 @@ export default function Analytics() {
           onChange={handleTabChange}
           aria-label="analytics tabs"
         >
-          <Tab label="Data Analysis" />
           <Tab label="Trends & Patterns" />
+          <Tab label="Data Analysis" />
           <Tab label="Community Insights" />
         </Tabs>
       </Box>
 
-      {/* Data Analysis Tab */}
-      <TabPanel value={tabValue} index={0}>
-        <Paper elevation={3} sx={{ p: 4 }}>
-          <Typography variant="h5" gutterBottom>
-            📈 Data Analysis
-          </Typography>
-          <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-            Analyze your logged data to discover patterns and insights.
-          </Typography>
-
-          <Alert severity="info" sx={{ mb: 3 }}>
-            <Typography variant="body2">
-              Data analysis features are coming soon. This will include:
-            </Typography>
-            <Box component="ul" sx={{ mt: 1, pl: 2 }}>
-              <li>Correlation analysis between variables</li>
-              <li>Statistical summaries and trends</li>
-              <li>Custom chart creation</li>
-              <li>Export capabilities</li>
-            </Box>
-          </Alert>
-        </Paper>
-      </TabPanel>
-
       {/* Trends & Patterns Tab */}
-      <TabPanel value={tabValue} index={1}>
+      <TabPanel value={tabValue} index={0}>
         <Paper elevation={3} sx={{ p: 4 }}>
           <Typography variant="h5" gutterBottom>
             📊 Trends & Patterns
@@ -149,6 +216,38 @@ export default function Analytics() {
           <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
             Discover long-term trends and recurring patterns in your data.
           </Typography>
+          {/* Oura Connect Button */}
+          {ouraData.length === 0 && !ouraLoading && (
+            <Box sx={{ mb: 3 }}>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                To view your Oura data, connect your Oura account below.
+              </Alert>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleOuraConnect}
+                sx={{ mb: 2 }}
+              >
+                Connect Oura Account
+              </Button>
+            </Box>
+          )}
+          {showOuraSuccess && (
+            <Alert severity="success" sx={{ mb: 3 }}>
+              Oura connection successful! You can now view your Oura data for
+              the last couple of weeks below.
+            </Alert>
+          )}
+          <Box sx={{ mb: 2, display: "flex", gap: 2, alignItems: "center" }}>
+            <Button
+              variant="outlined"
+              color="secondary"
+              onClick={syncOuraData}
+              disabled={ouraSyncing}
+            >
+              {ouraSyncing ? "Syncing Oura Data..." : "Sync Oura Data"}
+            </Button>
+          </Box>
           {logsLoading ? (
             <Typography>Loading your trends...</Typography>
           ) : userLogs.length === 0 ? (
@@ -200,6 +299,87 @@ export default function Analytics() {
               );
             })
           )}
+          <Divider sx={{ my: 4 }} />
+          <Typography variant="h6" sx={{ mb: 2 }}>
+            Oura Data (Last 2 Weeks)
+          </Typography>
+          {ouraLoading ? (
+            <Typography>Loading Oura data...</Typography>
+          ) : ouraData.length === 0 ? (
+            <Alert severity="info">
+              No Oura data found for the last 2 weeks.
+            </Alert>
+          ) : (
+            Object.entries(
+              ouraData.reduce(
+                (
+                  acc: Record<string, { date: string; value: number }[]>,
+                  row: any
+                ) => {
+                  if (!acc[row.metric]) acc[row.metric] = [];
+                  acc[row.metric].push({
+                    date: row.date,
+                    value: Number(row.value),
+                  });
+                  return acc;
+                },
+                {} as Record<string, { date: string; value: number }[]>
+              )
+            ).map(([metric, rows]) => {
+              const data = {
+                labels: rows.map((r) => new Date(r.date).toLocaleDateString()),
+                datasets: [
+                  {
+                    label: metric,
+                    data: rows.map((r) => r.value),
+                    fill: false,
+                    borderColor: "#10b981",
+                    backgroundColor: "#10b981",
+                    tension: 0.2,
+                  },
+                ],
+              };
+              return (
+                <Box key={metric} sx={{ mb: 5 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 2 }}>
+                    {metric}
+                  </Typography>
+                  <Line
+                    data={data}
+                    options={{
+                      responsive: true,
+                      plugins: { legend: { display: false } },
+                    }}
+                    height={120}
+                  />
+                </Box>
+              );
+            })
+          )}
+        </Paper>
+      </TabPanel>
+
+      {/* Data Analysis Tab */}
+      <TabPanel value={tabValue} index={1}>
+        <Paper elevation={3} sx={{ p: 4 }}>
+          <Typography variant="h5" gutterBottom>
+            📈 Data Analysis
+          </Typography>
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+            Analyze your logged data to discover patterns and insights.
+          </Typography>
+
+          <Alert severity="info" sx={{ mb: 3 }}>
+            <Typography variant="body2">
+              Data analysis features are coming soon. This will include:
+            </Typography>
+            <Box component="ul" sx={{ mt: 1, pl: 2 }}>
+              <li>Correlation analysis between variables</li>
+              <li>Statistical summaries and trends</li>
+              <li>Custom chart creation</li>
+              <li>Export capabilities</li>
+            </Box>
+          </Alert>
         </Paper>
       </TabPanel>
 
