@@ -7,7 +7,28 @@ const sampleWithingsData = [
   {
     year: '2023',
     records: [
-      // Add sample records for 2023
+      {
+        date: '2023-12-31',
+        id: 84,
+        weight_kg: 85.5,
+        fat_free_mass: 75.2,
+        fat_ratio: 12.1,
+        fat_mass_weight: 10.3,
+        muscle_mass: 71.5,
+        hydration: 49.8,
+        bone_mass: 3.7,
+      },
+      {
+        date: '2023-12-30',
+        id: 83,
+        weight_kg: 85.8,
+        fat_free_mass: 75.0,
+        fat_ratio: 12.5,
+        fat_mass_weight: 10.8,
+        muscle_mass: 71.3,
+        hydration: 49.5,
+        bone_mass: 3.7,
+      }
     ]
   },
   {
@@ -100,6 +121,7 @@ export default function WithingsDemo() {
           <li>Hover over cells with long values to see complete information</li>
           <li>Sticky headers for better navigation</li>
           <li>Clean, aligned layout with proper indentation</li>
+          <li>Responsive design with horizontal scrolling on mobile</li>
         </Box>
       </Box>
 

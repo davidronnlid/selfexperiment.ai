@@ -15,11 +15,12 @@ import {
   styled,
   useTheme,
   useMediaQuery,
+  Theme,
 } from '@mui/material';
 import { KeyboardArrowDown, KeyboardArrowRight } from '@mui/icons-material';
 
 // Styled components for better table appearance
-const StyledTableCell = styled(TableCell)(({ theme }) => ({
+const StyledTableCell = styled(TableCell)(({ theme }: { theme: Theme }) => ({
   fontSize: '0.875rem',
   padding: '12px 16px',
   borderBottom: '1px solid rgba(224, 224, 224, 1)',
@@ -67,7 +68,7 @@ const StyledTableCell = styled(TableCell)(({ theme }) => ({
   }
 }));
 
-const StyledTableRow = styled(TableRow)(({ theme }) => ({
+const StyledTableRow = styled(TableRow)(({ theme }: { theme: Theme }) => ({
   '&:hover': {
     backgroundColor: 'rgba(0, 0, 0, 0.04)',
   },
@@ -112,6 +113,11 @@ interface WithingsDataTableProps {
   data: YearData[];
 }
 
+interface CellContentProps {
+  value: any;
+  column: typeof COLUMN_DEFINITIONS[0];
+}
+
 const WithingsDataTable: React.FC<WithingsDataTableProps> = ({ data }) => {
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
   const theme = useTheme();
@@ -137,7 +143,7 @@ const WithingsDataTable: React.FC<WithingsDataTableProps> = ({ data }) => {
     return String(value);
   };
 
-  const CellContent: React.FC<{ value: any; column: typeof COLUMN_DEFINITIONS[0] }> = ({ value, column }) => {
+  const CellContent: React.FC<CellContentProps> = ({ value, column }) => {
     const formattedValue = formatValue(value);
     const isLongValue = formattedValue.length > 12;
     
