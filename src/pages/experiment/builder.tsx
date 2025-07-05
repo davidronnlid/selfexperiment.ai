@@ -370,7 +370,7 @@ export default function ExperimentDesigner() {
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <Typography variant="h3" component="h1" gutterBottom align="center">
-        🧪 Design a Self-Experiment
+        🧪 Build a Self-Experiment
       </Typography>
       <Typography
         variant="h6"
@@ -398,10 +398,18 @@ export default function ExperimentDesigner() {
           {/* Variable Selection with Tabs */}
           <Box sx={{ mb: 4 }}>
             <Typography variant="h6" gutterBottom>
-              Choose Your Variable
+              Choose Your Variables
             </Typography>
             <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-              Select from predefined variables or create your own
+              Select both the cause (independent variable) and effect (dependent variable) for your experiment
+            </Typography>
+            
+            {/* Cause (Independent Variable) */}
+            <Typography variant="h6" gutterBottom sx={{ mt: 4, mb: 2 }}>
+              🔄 Cause (Independent Variable)
+            </Typography>
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+              The variable you want to change or manipulate
             </Typography>
             <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 3 }}>
               <Tabs
@@ -555,6 +563,41 @@ export default function ExperimentDesigner() {
             <Typography variant="caption" color="textSecondary">
               Selected: <strong>{variable}</strong>
             </Typography>
+            
+            {/* Effect (Dependent Variable) */}
+            <Typography variant="h6" gutterBottom sx={{ mt: 4, mb: 2 }}>
+              📊 Effect (Dependent Variable)
+            </Typography>
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+              The outcome you want to measure for changes
+            </Typography>
+            <Box sx={{ mb: 3 }}>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="dependentVar"
+                    value="Average RHR"
+                    checked={dependentVar === "Average RHR"}
+                    onChange={() => setDependentVar("Average RHR")}
+                  />
+                  Average RHR
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="dependentVar"
+                    value="Lowest RHR"
+                    checked={dependentVar === "Lowest RHR"}
+                    onChange={() => setDependentVar("Lowest RHR")}
+                  />
+                  Lowest RHR
+                </label>
+              </div>
+              <Typography variant="caption" color="textSecondary" sx={{ mt: 1 }}>
+                The experiment will assess whether your selected cause has an effect on this outcome.
+              </Typography>
+            </Box>
           </Box>
           <div>
             <Typography variant="subtitle1" className="mb-2">
@@ -629,35 +672,6 @@ export default function ExperimentDesigner() {
               <Typography variant="subtitle1">Advanced Settings</Typography>
             </AccordionSummary>
             <AccordionDetails className="space-y-4">
-              <div>
-                <Typography variant="subtitle2">Dependent Variable</Typography>
-                <div className="flex gap-4 mt-1">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="dependentVar"
-                      value="Average RHR"
-                      checked={dependentVar === "Average RHR"}
-                      onChange={() => setDependentVar("Average RHR")}
-                    />
-                    Average RHR
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="dependentVar"
-                      value="Lowest RHR"
-                      checked={dependentVar === "Lowest RHR"}
-                      onChange={() => setDependentVar("Lowest RHR")}
-                    />
-                    Lowest RHR
-                  </label>
-                </div>
-                <Typography variant="caption" className="text-gray-500 mt-1">
-                  The experiment will assess whether your selected variable has
-                  an effect on this outcome.
-                </Typography>
-              </div>
               {frequency > 1 && (
                 <div>
                   <Typography variant="subtitle2">
