@@ -1,0 +1,1231 @@
+import React, { useState, useEffect } from "react";
+import {
+  Container,
+  Typography,
+  Box,
+  Paper,
+  Tabs,
+  Tab,
+  Alert,
+  Divider,
+  Button,
+  LinearProgress,
+  IconButton,
+  Card,
+  CardContent,
+  Tooltip,
+  Fade,
+} from "@mui/material";
+import { useUser } from "./_app";
+import { supabase } from "@/utils/supaBase";
+import { Line } from "react-chartjs-2";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip as ChartTooltip,
+  Legend,
+} from "chart.js";
+import { useRouter } from "next/router";
+import { differenceInDays, addDays, formatISO, parseISO } from "date-fns";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  ChartTooltip,
+  Legend
+);
+
+interface TabPanelProps {
+  children?: React.ReactNode;
+  index: number;
+  value: number;
+}
+
+function TabPanel(props: TabPanelProps) {
+  const { children, value, index, ...other } = props;
+
+  return (
+    <div
+      role="tabpanel"
+      hidden={value !== index}
+      id={`analytics-tabpanel-${index}`}
+      aria-labelledby={`analytics-tab-${index}`}
+      {...other}
+    >
+      {value === index && <Box sx={{ py: 3 }}>{children}</Box>}
+    </div>
+  );
+}
+
+// Utility to fetch missing Withings data in batches
+interface FetchMissingWithingsDataParams {
+  userId: string;
+  accessToken: string;
+  latestDate?: string;
+  onProgress?: (count: number) => void;
+}
+
+async function fetchMissingWithingsData({
+  userId,
+  accessToken,
+  latestDate,
+  onProgress,
+}: FetchMissingWithingsDataParams): Promise<any[]> {
+  const today = new Date();
+  let startDate = latestDate
+    ? addDays(parseISO(latestDate), 1)
+    : addDays(today, -89);
+  let allRows: any[] = [];
+  let batchStart = new Date(startDate);
+  let batchEnd = new Date(startDate);
+  batchEnd.setDate(batchEnd.getDate() + 29);
+  let totalFetched = 0;
+  const MEAS_TYPES = [1, 5, 6, 8, 76, 77, 88];
+
+  while (batchStart < today) {
+    const startUnix = Math.floor(batchStart.getTime() / 1000);
+    const endUnix = Math.floor(
+      Math.min(batchEnd.getTime(), today.getTime()) / 1000
+    );
+    const url = `/api/withings/fetch?startdate=${startUnix}&enddate=${endUnix}&meastype=${MEAS_TYPES.join(
+      ","
+    )}`;
+    const resp = await fetch(url);
+    const result = await resp.json();
+    if (result.success && result.rows) {
+      allRows = allRows.concat(result.rows);
+      totalFetched += result.rows.length;
+      if (onProgress) onProgress(totalFetched);
+    }
+    batchStart.setDate(batchStart.getDate() + 30);
+    batchEnd.setDate(batchEnd.getDate() + 30);
+  }
+  return allRows;
+}
+
+export default function Analytics() {
+  const { user } = useUser();
+  const router = useRouter();
+  const [tabValue, setTabValue] = useState(0);
+  const [userLogs, setUserLogs] = useState<any[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [ouraData, setOuraData] = useState<any[]>([]);
+  const [ouraLoading, setOuraLoading] = useState(false);
+  const [ouraSyncing, setOuraSyncing] = useState(false);
+  const [withingsConnected, setWithingsConnected] = useState(false);
+  const [withingsWeights, setWithingsWeights] = useState<any[]>([]);
+  const [withingsSyncing, setWithingsSyncing] = useState(false);
+  const [withingsSyncProgress, setWithingsSyncProgress] = useState(0);
+  const [withingsReimportProgress, setWithingsReimportProgress] =
+    useState<null | {
+      upserted: number;
+      totalBatches: number;
+      batchesCompleted: number;
+      rowsFetched: number;
+      message: string;
+      totalAvailable?: number;
+    }>(null);
+  const [withingsReimportEta, setWithingsReimportEta] = useState<number | null>(
+    null
+  );
+  const [withingsReimportStart, setWithingsReimportStart] = useState<
+    number | null
+  >(null);
+  const [withingsReimportWaiting, setWithingsReimportWaiting] = useState<
+    number | null
+  >(null); // seconds
+  // State for selected metrics (multi-select)
+  const [selectedMetrics, setSelectedMetrics] = useState<string[]>([]);
+  // State for collapsible years in table
+  const [expandedYears, setExpandedYears] = useState<{
+    [year: string]: boolean;
+  }>({});
+
+  // Show Oura success message if redirected from callback
+  const showOuraSuccess = router.query.oura === "success";
+  // Show Withings success message if redirected from callback
+  const showWithingsSuccess = router.query.withings === "success";
+
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setTabValue(newValue);
+  };
+
+  // Fetch user logs for trends tab
+  useEffect(() => {
+    if (tabValue === 1 && user) {
+      setLogsLoading(true);
+      console.log("Current user.id:", user.id);
+      supabase
+        .from("daily_logs")
+        .select("date,label,value,user_id")
+        .eq("user_id", user.id)
+        .order("date", { ascending: true })
+        .then(({ data }) => {
+          console.log("Logs returned from Supabase:", data);
+          setUserLogs(data || []);
+          setLogsLoading(false);
+        });
+    }
+  }, [tabValue, user]);
+
+  // Fetch Oura data for the last 2 weeks for the current user
+  useEffect(() => {
+    if (tabValue === 1 && user) {
+      setOuraLoading(true);
+      // Get date 14 days ago
+      const twoWeeksAgo = new Date();
+      twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 13); // include today
+      const isoDate = twoWeeksAgo.toISOString().slice(0, 10);
+      supabase
+        .from("oura_measurements")
+        .select("metric, date, value, user_id")
+        .eq("user_id", user.id)
+        .gte("date", isoDate)
+        .order("date", { ascending: true })
+        .then(({ data }) => {
+          setOuraData(data || []);
+          setOuraLoading(false);
+        });
+    }
+  }, [tabValue, user]);
+
+  // Function to re-import all Withings data from 2009-05-01
+  const reimportAllWithingsData = async () => {
+    if (!user) return;
+    setWithingsSyncing(true);
+    setWithingsSyncProgress(0);
+    setWithingsReimportProgress(null);
+    setWithingsReimportEta(null);
+    setWithingsReimportStart(Date.now());
+    setWithingsReimportWaiting(null);
+
+    try {
+      // Get access token
+      const { data: tokenRow } = await supabase
+        .from("withings_tokens")
+        .select("access_token")
+        .eq("user_id", user.id)
+        .single();
+
+      if (!tokenRow?.access_token) {
+        alert(
+          "No Withings access token found. Please reconnect your Withings account."
+        );
+        setWithingsSyncing(false);
+        return;
+      }
+
+      // Progressive polling loop
+      let done = false;
+      let lastProgress = null;
+      let lastBatchesCompleted = 0;
+      let lastTime = Date.now();
+      let eta = null;
+      while (!done) {
+        const response = await fetch("/api/withings/reimport", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId: user.id,
+            accessToken: tokenRow.access_token,
+          }),
+        });
+        if (!response.ok) throw new Error("Failed to re-import Withings data");
+        const result = await response.json();
+        setWithingsReimportProgress(result);
+        // Calculate progress percent
+        const percent =
+          result.totalBatches > 0
+            ? Math.round((result.batchesCompleted / result.totalBatches) * 100)
+            : 0;
+        setWithingsSyncProgress(percent);
+        // Estimate ETA
+        if (result.batchesCompleted > 0 && result.totalBatches > 0) {
+          const now = Date.now();
+          const elapsed = (now - (withingsReimportStart || now)) / 1000; // seconds
+          const avgPerBatch = elapsed / result.batchesCompleted;
+          const remaining = result.totalBatches - result.batchesCompleted;
+          eta = Math.round(remaining * avgPerBatch);
+          setWithingsReimportEta(eta);
+        }
+        // Show waiting if progress hasn't changed for >10s (rate limit likely)
+        if (lastProgress && result.batchesCompleted === lastBatchesCompleted) {
+          const now = Date.now();
+          if (now - lastTime > 10000) {
+            setWithingsReimportWaiting(eta || 60);
+          }
+        } else {
+          setWithingsReimportWaiting(null);
+          lastBatchesCompleted = result.batchesCompleted;
+          lastTime = Date.now();
+        }
+        // Refetch partial data after each batch
+        const { data } = await supabase
+          .from("withings_weights")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("date", { ascending: false });
+        setWithingsWeights(data || []);
+        // Done?
+        if (result.batchesCompleted >= result.totalBatches) {
+          done = true;
+        } else {
+          // Wait a bit before polling again
+          await new Promise((res) => setTimeout(res, 1500));
+        }
+        lastProgress = result;
+      }
+      alert(
+        `Successfully re-imported ${
+          withingsReimportProgress?.upserted || 0
+        } Withings data points!`
+      );
+    } catch (error) {
+      console.error("Error re-importing Withings data:", error);
+      alert("Failed to re-import Withings data. Please try again.");
+    } finally {
+      setWithingsSyncing(false);
+      setWithingsSyncProgress(0);
+      setWithingsReimportEta(null);
+      setWithingsReimportStart(null);
+      setWithingsReimportWaiting(null);
+    }
+  };
+
+  // Function to sync Oura data for the current user
+  const syncOuraData = async () => {
+    setOuraSyncing(true);
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token;
+    if (!token) {
+      alert("Not authenticated");
+      setOuraSyncing(false);
+      return;
+    }
+    const res = await fetch("/api/oura/fetch", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (res.ok) {
+      // Refetch Oura data after sync
+      setTimeout(() => {
+        setTabValue(1); // Ensure we're on the right tab
+        setOuraLoading(true);
+        // Get date 14 days ago
+        const twoWeeksAgo = new Date();
+        twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 13);
+        const isoDate = twoWeeksAgo.toISOString().slice(0, 10);
+        supabase
+          .from("oura_measurements")
+          .select("metric, date, value, user_id")
+          .eq("user_id", user?.id)
+          .gte("date", isoDate)
+          .order("date", { ascending: true })
+          .then(({ data }) => {
+            setOuraData(data || []);
+            setOuraLoading(false);
+          });
+      }, 2000); // Wait a bit for the backend to finish
+    } else {
+      alert("Failed to sync Oura data");
+    }
+    setOuraSyncing(false);
+  };
+
+  // Oura Connect Button handler
+  const handleOuraConnect = async () => {
+    if (!user) {
+      alert("You must be logged in to connect Oura.");
+      return;
+    }
+    const userId = user!.id;
+    const clientId = process.env.NEXT_PUBLIC_OURA_CLIENT_ID!;
+    const redirectUri = encodeURIComponent(
+      "http://localhost:3000/api/oura/callback"
+    );
+    const scope = "email personal daily heartrate";
+    const authUrl = `https://cloud.ouraring.com/oauth/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}&scope=${scope}&state=${userId}`;
+    window.location.href = authUrl;
+  };
+
+  // Check Withings connection and fetch weights
+  useEffect(() => {
+    if (!user) return;
+    console.log("[Analytics] Checking Withings connection for user:", user.id);
+    supabase
+      .from("withings_tokens")
+      .select("*")
+      .eq("user_id", user.id)
+      .then(({ data, error }) => {
+        console.log("[Analytics] Withings tokens query result:", {
+          data,
+          error,
+        });
+        setWithingsConnected(!!data && data.length > 0);
+        console.log(
+          "[Analytics] Setting withingsConnected to:",
+          !!data && data.length > 0
+        );
+      });
+    supabase
+      .from("withings_weights")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("date", { ascending: false })
+      .then(({ data, error }) => {
+        console.log("[Analytics] Withings weights query result:", {
+          data,
+          error,
+        });
+        setWithingsWeights(data || []);
+      });
+  }, [user]);
+
+  const connectWithings = () => {
+    // Use a real browser redirect to ensure cookies are sent
+    window.location.href = "/api/withings/auth";
+  };
+
+  // On analytics page load, check for missing Withings data and fetch if needed
+  useEffect(() => {
+    if (!user || !withingsConnected) return;
+    const syncIfNeeded = async () => {
+      setWithingsSyncing(true);
+      // Get latest date in Supabase
+      const { data: latestRow } = await supabase
+        .from("withings_weights")
+        .select("date")
+        .eq("user_id", user.id)
+        .order("date", { ascending: false })
+        .limit(1)
+        .single();
+      const latestDate = latestRow?.date;
+      const todayStr = formatISO(new Date(), { representation: "date" });
+      if (latestDate && latestDate >= todayStr) {
+        setWithingsSyncing(false);
+        return; // Already up to date
+      }
+      // Get access token
+      const { data: tokenRow } = await supabase
+        .from("withings_tokens")
+        .select("access_token")
+        .eq("user_id", user.id)
+        .single();
+      if (!tokenRow?.access_token) {
+        setWithingsSyncing(false);
+        return;
+      }
+      // Fetch missing data in batches
+      await fetchMissingWithingsData({
+        userId: user.id,
+        accessToken: tokenRow.access_token,
+        latestDate,
+        onProgress: (count) => setWithingsSyncProgress(count),
+      });
+      // Refetch weights after sync
+      const { data } = await supabase
+        .from("withings_weights")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("date", { ascending: false });
+      setWithingsWeights(data || []);
+      setWithingsSyncing(false);
+      setWithingsSyncProgress(0);
+    };
+    syncIfNeeded();
+  }, [user, withingsConnected]);
+
+  // Helper for toggling metric selection
+  const handleMetricClick = (metric: string) => {
+    setSelectedMetrics((prev) => {
+      if (prev.includes(metric)) {
+        // Deselect if already selected
+        return prev.filter((m) => m !== metric);
+      } else {
+        // Select (allow multi-select with ctrl/cmd, else single)
+        if (window.event && (window.event as MouseEvent).ctrlKey) {
+          return [...prev, metric];
+        } else {
+          return [metric];
+        }
+      }
+    });
+  };
+
+  // Helper for toggling year expansion
+  const handleYearToggle = (year: string) => {
+    setExpandedYears((prev) => ({ ...prev, [year]: !prev[year] }));
+  };
+
+  if (!user) {
+    return (
+      <Container maxWidth="lg" sx={{ py: 4 }}>
+        <Alert severity="info">
+          Please log in to access analytics features.
+        </Alert>
+      </Container>
+    );
+  }
+
+  const allWithingsSorted = withingsWeights.sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
+
+  // Define metricKeys as a flat string[] of metric names
+  const metricKeys = Array.from(
+    new Set(
+      allWithingsSorted.flatMap((row) =>
+        Object.keys(row).filter(
+          (k) =>
+            k !== "id" && k !== "user_id" && k !== "date" && k !== "raw_data"
+        )
+      )
+    )
+  );
+
+  // Define the plugin here so it can access metricKeys and selectedMetrics
+  const goldLegendPlugin = {
+    id: "goldLegendPlugin",
+    afterDraw(chart: any) {
+      if (!chart.legend || !chart.legend.legendItems) return;
+      const ctx = chart.ctx;
+      chart.legend.legendItems.forEach((item: any) => {
+        const color = item.fontColor || "white";
+        ctx.save();
+        ctx.font = "bold 14px sans-serif";
+        ctx.fillStyle = color;
+        const text = item.text;
+        const x = item.left !== undefined ? item.left + 30 : 0;
+        const y = item.top !== undefined ? item.top + 12 : 0;
+        ctx.fillText(text, x, y);
+        ctx.restore();
+      });
+    },
+  };
+
+  return (
+    <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Typography variant="h3" component="h1" gutterBottom align="center">
+        📊 Analytics & Insights
+      </Typography>
+
+      <Typography
+        variant="h6"
+        color="textSecondary"
+        align="center"
+        sx={{ mb: 4 }}
+      >
+        Analyze your data and manage privacy settings
+      </Typography>
+
+      <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 3 }}>
+        <Tabs
+          value={tabValue}
+          onChange={handleTabChange}
+          aria-label="analytics tabs"
+        >
+          <Tab label="Trends & Patterns" />
+          <Tab label="Data Analysis" />
+          <Tab label="Community Insights" />
+        </Tabs>
+      </Box>
+
+      {/* Trends & Patterns Tab */}
+      <TabPanel value={tabValue} index={0}>
+        <Paper elevation={3} sx={{ p: 4 }}>
+          <Typography variant="h5" gutterBottom>
+            📊 Trends & Patterns
+          </Typography>
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+            Discover long-term trends and recurring patterns in your data.
+          </Typography>
+          {/* Oura Connect Button */}
+          {ouraData.length === 0 && !ouraLoading && (
+            <Box sx={{ mb: 3 }}>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                To view your Oura data, connect your Oura account below.
+              </Alert>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleOuraConnect}
+                sx={{ mb: 2 }}
+              >
+                Connect Oura Account
+              </Button>
+            </Box>
+          )}
+          {showOuraSuccess && (
+            <Alert severity="success" sx={{ mb: 3 }}>
+              Oura connection successful! You can now view your Oura data for
+              the last couple of weeks below.
+            </Alert>
+          )}
+          {showWithingsSuccess && (
+            <Alert severity="success" sx={{ mb: 3 }}>
+              Withings connection successful! You can now view and sync your
+              Withings weight data below.
+            </Alert>
+          )}
+          <Box sx={{ mb: 2, display: "flex", gap: 2, alignItems: "center" }}>
+            <Button
+              variant="outlined"
+              color="secondary"
+              onClick={syncOuraData}
+              disabled={ouraSyncing}
+            >
+              {ouraSyncing ? "Syncing Oura Data..." : "Sync Oura Data"}
+            </Button>
+          </Box>
+          {/* Withings Connect/Sync Buttons */}
+          {!withingsConnected ? (
+            <Box sx={{ mb: 3 }}>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                To view your Withings data, connect your Withings account below.
+              </Alert>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={connectWithings}
+                sx={{ mb: 2 }}
+              >
+                Connect Withings Account
+              </Button>
+            </Box>
+          ) : (
+            <Box sx={{ mb: 2, display: "flex", gap: 2, alignItems: "center" }}>
+              <Button
+                variant="outlined"
+                color="secondary"
+                onClick={reimportAllWithingsData}
+                disabled={withingsSyncing}
+              >
+                {withingsSyncing
+                  ? "Re-importing..."
+                  : "Re-import All Withings Data"}
+              </Button>
+            </Box>
+          )}
+          {withingsSyncing && withingsReimportProgress && (
+            <Alert severity="info" sx={{ mb: 2, alignItems: "center" }}>
+              <Box display="flex" alignItems="center" gap={2}>
+                <Box flex={1}>
+                  <b>Withings Data Import Progress:</b>{" "}
+                  {withingsReimportProgress.batchesCompleted} /{" "}
+                  {withingsReimportProgress.totalBatches} batches (
+                  {withingsSyncProgress}%)
+                  <br />
+                  {withingsReimportEta !== null && (
+                    <span>
+                      Estimated time remaining:{" "}
+                      {Math.ceil(withingsReimportEta / 60)} min{" "}
+                      {withingsReimportEta % 60} sec
+                    </span>
+                  )}
+                  {withingsReimportWaiting && (
+                    <span style={{ color: "orange", marginLeft: 8 }}>
+                      Rate limited, waiting {withingsReimportWaiting} seconds
+                      before continuing...
+                    </span>
+                  )}
+                </Box>
+                <Box flex={1}>
+                  <LinearProgress
+                    variant="determinate"
+                    value={withingsSyncProgress}
+                    sx={{ height: 10, borderRadius: 5 }}
+                  />
+                </Box>
+              </Box>
+            </Alert>
+          )}
+          {withingsReimportProgress &&
+            !withingsSyncing &&
+            withingsReimportProgress.totalAvailable !== undefined && (
+              <Alert severity="success" sx={{ mb: 2 }}>
+                Imported {withingsReimportProgress.upserted} out of{" "}
+                {withingsReimportProgress.totalAvailable} available Withings
+                records (
+                {withingsReimportProgress.totalAvailable > 0
+                  ? (
+                      (withingsReimportProgress.upserted /
+                        withingsReimportProgress.totalAvailable) *
+                      100
+                    ).toFixed(1)
+                  : "0.0"}
+                %)
+              </Alert>
+            )}
+          {/* Withings Weight Chart */}
+          <Typography variant="h6" sx={{ mb: 2 }}>
+            Withings Metrics (Normalized, All Available Data)
+          </Typography>
+          {allWithingsSorted.length === 0 ? (
+            <Alert severity="info">No Withings data found.</Alert>
+          ) : (
+            <>
+              {/* Normalized Multi-metric Chart */}
+              {(() => {
+                // Prepare original values for tooltips
+                const originalValues: Record<string, (number | null)[]> = {};
+                metricKeys.forEach((k) => {
+                  originalValues[k] = allWithingsSorted.map((w) =>
+                    w[k] !== undefined && w[k] !== null ? Number(w[k]) : null
+                  );
+                });
+                // Color palette
+                const colors = [
+                  "#3b82f6", // blue
+                  "#10b981", // green
+                  "#f59e42", // orange
+                  "#ef4444", // red
+                  "#a855f7", // purple
+                  "#6366f1", // indigo
+                  "#f43f5e", // pink
+                  "#14b8a6", // teal
+                  "#eab308", // yellow
+                  "#64748b", // slate
+                ];
+                // Prepare normalized datasets
+                const datasets = metricKeys.map((k, i) => {
+                  const values = originalValues[k];
+                  // Filter out nulls for min/max
+                  const validValues = values.filter(
+                    (v) => v !== null && !isNaN(Number(v))
+                  ) as number[];
+                  const min =
+                    validValues.length > 0 ? Math.min(...validValues) : 0;
+                  const max =
+                    validValues.length > 0 ? Math.max(...validValues) : 1;
+                  // Avoid division by zero if all values are the same
+                  const normalized = values.map((v) =>
+                    v === null || isNaN(Number(v))
+                      ? null
+                      : max === min
+                      ? 1
+                      : (Number(v) - min) / (max - min)
+                  );
+                  // Highlight logic
+                  const isSelected =
+                    selectedMetrics.length === 0 || selectedMetrics.includes(k);
+                  return {
+                    label: k.replace(/_/g, " "),
+                    data: normalized,
+                    fill: false,
+                    borderColor: isSelected
+                      ? "#FFD700"
+                      : colors[i % colors.length],
+                    backgroundColor: isSelected
+                      ? "#FFD700"
+                      : colors[i % colors.length],
+                    tension: 0.2,
+                    spanGaps: true,
+                    borderWidth: isSelected ? 4 : 2,
+                    pointRadius: isSelected ? 6 : 3,
+                    pointBackgroundColor: isSelected
+                      ? "#FFD700"
+                      : colors[i % colors.length],
+                    pointBorderColor: isSelected
+                      ? "#FFD700"
+                      : colors[i % colors.length],
+                    pointHoverRadius: 8,
+                    pointHoverBackgroundColor: isSelected
+                      ? "#FFD700"
+                      : colors[i % colors.length],
+                    pointHoverBorderColor: isSelected
+                      ? "#FFD700"
+                      : colors[i % colors.length],
+                    hidden: false,
+                    // Chart.js v3+ does not support opacity on dataset
+                    shadowBlur: isSelected ? 10 : 0, // for plugin highlight
+                    shadowColor: isSelected
+                      ? colors[i % colors.length]
+                      : undefined,
+                  };
+                });
+                return (
+                  <Line
+                    data={{
+                      labels: allWithingsSorted.map((w) =>
+                        new Date(w.date).toLocaleDateString()
+                      ),
+                      datasets,
+                    }}
+                    options={{
+                      responsive: true,
+                      scales: {
+                        y: {
+                          min: 0,
+                          max: 1,
+                          title: {
+                            display: true,
+                            text: "Normalized Value (0–1)",
+                          },
+                        },
+                      },
+                      interaction: { mode: "nearest", intersect: false },
+                      plugins: {
+                        legend: {
+                          display: true,
+                          labels: {
+                            color: "white",
+                            font: { weight: "bold", size: 14 },
+                            generateLabels: (chart: any) => {
+                              const datasets = chart.data.datasets || [];
+                              return datasets.map((ds: any, i: number) => {
+                                const metric = metricKeys[i];
+                                const isSelected =
+                                  selectedMetrics.length === 0 ||
+                                  selectedMetrics.includes(metric);
+                                return {
+                                  text: ds.label || "",
+                                  fillStyle:
+                                    typeof ds.borderColor === "string"
+                                      ? ds.borderColor
+                                      : "#fff",
+                                  strokeStyle:
+                                    typeof ds.borderColor === "string"
+                                      ? ds.borderColor
+                                      : "#fff",
+                                  lineWidth: 2,
+                                  hidden: !chart.isDatasetVisible(i),
+                                  index: i,
+                                  fontColor: isSelected ? "#FFD700" : "white", // gold if selected, else white
+                                };
+                              });
+                            },
+                          },
+                          onClick: (e: any, legendItem: any, legend: any) => {
+                            const idx = legendItem.index;
+                            const metric =
+                              typeof idx === "number" ? metricKeys[idx] : "";
+                            const nativeEvent =
+                              e && "native" in e && e.native
+                                ? e.native
+                                : undefined;
+                            const ctrlKey =
+                              nativeEvent && "ctrlKey" in nativeEvent
+                                ? nativeEvent.ctrlKey
+                                : false;
+                            const metaKey =
+                              nativeEvent && "metaKey" in nativeEvent
+                                ? nativeEvent.metaKey
+                                : false;
+                            if (ctrlKey || metaKey) {
+                              setSelectedMetrics((prev) =>
+                                prev.includes(metric)
+                                  ? prev.filter((m) => m !== metric)
+                                  : [...prev, metric]
+                              );
+                            } else {
+                              setSelectedMetrics((prev) =>
+                                prev.length === 1 && prev[0] === metric
+                                  ? []
+                                  : [metric]
+                              );
+                            }
+                          },
+                        },
+                        tooltip: {
+                          callbacks: {
+                            label: function (context: any) {
+                              const metric =
+                                typeof context.datasetIndex === "number"
+                                  ? metricKeys[context.datasetIndex]
+                                  : "";
+                              const origVal =
+                                originalValues[metric][context.dataIndex];
+                              const label = context.dataset.label || "";
+                              if (
+                                origVal === null ||
+                                origVal === undefined ||
+                                isNaN(Number(origVal))
+                              ) {
+                                return `${label}: No data`;
+                              }
+                              return `${label}: ${origVal}`;
+                            },
+                          },
+                        },
+                      },
+
+                      onClick: (e, elements, chart) => {
+                        if (elements && elements.length > 0) {
+                          const idx = elements[0].datasetIndex;
+                          handleMetricClick(metricKeys[idx]);
+                        }
+                      },
+                    }}
+                    plugins={[goldLegendPlugin]}
+                    height={120}
+                  />
+                );
+              })()}
+              {/* Withings Data Table */}
+              <Box sx={{ mt: 4, mb: 4 }}>
+                <Typography variant="subtitle1" sx={{ mb: 2 }}>
+                  All Withings Data
+                </Typography>
+                <style>{`
+                  .withings-table-dark {
+                    width: 100%;
+                    table-layout: fixed;
+                    border-collapse: collapse;
+                    background: #18191a;
+                    color: #fff;
+                    font-size: 15px;
+                    position: relative;
+                  }
+                  .withings-table-dark th, .withings-table-dark td {
+                    border: 1px solid #333;
+                    padding: 10px 12px;
+                    box-sizing: border-box;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    transition: background 0.2s, color 0.2s;
+                  }
+                  .withings-table-dark th {
+                    background: #23272b;
+                    font-weight: bold;
+                    position: sticky;
+                    top: 0;
+                    z-index: 2;
+                    text-align: left;
+                    border-bottom: 2.5px solid #3a3a3a;
+                    box-shadow: 0 2px 6px 0 #0004;
+                  }
+                  .withings-table-dark th.text-right, .withings-table-dark td.text-right {
+                    text-align: right;
+                  }
+                  .withings-table-dark th.text-center, .withings-table-dark td.text-center {
+                    text-align: center;
+                  }
+                  .withings-table-dark th.text-left, .withings-table-dark td.text-left {
+                    text-align: left;
+                  }
+                  .withings-table-dark tr.year-group {
+                    background: #222;
+                  }
+                  .withings-table-dark tr.data-row {
+                    background: #18191a;
+                    transition: background 0.3s;
+                  }
+                  .withings-table-dark tr.data-row:hover {
+                    background: #23272b;
+                  }
+                  /* Sticky first column */
+                  .withings-table-dark th.sticky-col, .withings-table-dark td.sticky-col {
+                    position: sticky;
+                    left: 0;
+                    z-index: 3;
+                    background: #23272b;
+                    box-shadow: 2px 0 6px 0 #0002;
+                  }
+                  /* Alternating column backgrounds */
+                  .withings-table-dark col.alt-col {
+                    background: #202124;
+                  }
+                  /* Column hover highlight */
+                  .withings-table-dark th.col-hover, .withings-table-dark td.col-hover {
+                    background: #2a3a5a !important;
+                    color: #fff !important;
+                  }
+                  /* Header row separation */
+                  .withings-table-dark thead tr {
+                    box-shadow: 0 2px 8px 0 #0006;
+                  }
+                `}</style>
+                <script dangerouslySetInnerHTML={{__html:`
+                  document.addEventListener('DOMContentLoaded', function() {
+                    const table = document.querySelector('.withings-table-dark');
+                    if (!table) return;
+                    const ths = table.querySelectorAll('th');
+                    const tds = table.querySelectorAll('td');
+                    function clearHover() {
+                      ths.forEach(th => th.classList.remove('col-hover'));
+                      tds.forEach(td => td.classList.remove('col-hover'));
+                    }
+                    table.addEventListener('mouseover', function(e) {
+                      let cell = e.target;
+                      if (!(cell instanceof HTMLTableCellElement)) return;
+                      const colIdx = cell.cellIndex;
+                      if (colIdx === undefined) return;
+                      clearHover();
+                      table.querySelectorAll(`tr > *:nth-child(${colIdx+1})`).forEach(el => el.classList.add('col-hover'));
+                    });
+                    table.addEventListener('mouseleave', clearHover);
+                  });
+                `}} />
+                {(() => {
+                  // Group rows by year
+                  const rowsByYear: { [year: string]: any[] } = {};
+                  allWithingsSorted.forEach((row) => {
+                    const year = new Date(row.date).getFullYear().toString();
+                    if (!rowsByYear[year]) rowsByYear[year] = [];
+                    rowsByYear[year].push(row);
+                  });
+                  const keys = Array.from(
+                    new Set(
+                      allWithingsSorted.flatMap((row) => Object.keys(row))
+                    )
+                  ).filter(
+                    (k) => k !== "user_id" && k !== "date" && k !== "raw_data"
+                  );
+                  // Determine column alignments: right for numbers, left for text, center for id
+                  const getAlign = (k: string) => {
+                    if (k.toLowerCase().includes("id")) return "text-center";
+                    if (/^(weight|height|fat|muscle|bone|water|score|bpm|pulse|temp|value|mass|percent|age|cal|steps|count|score|level|rate|avg|mean|min|max|sum|total|duration|sleep|hrv|vo2|glucose|systolic|diastolic|bp|spo2|fat|lean|bmi|kg|g|mmhg|cm|mm|l|ml|kcal|sec|min|hr|score)$/i.test(k)) return "text-right";
+                    return "text-left";
+                  };
+                  return (
+                    <Card
+                      elevation={2}
+                      sx={{
+                        borderRadius: 3,
+                        mb: 4,
+                        boxShadow: "0 2px 12px rgba(0,0,0,0.04)",
+                      }}
+                    >
+                      <CardContent sx={{ p: 0 }}>
+                        <Box sx={{ overflowX: "auto", borderRadius: 3 }}>
+                          <table className="withings-table-dark">
+                            <colgroup>
+                              <col className="sticky-col" />
+                              <col className="sticky-col" />
+                              {keys.map((k, i) => (
+                                <col key={k} className={i % 2 === 0 ? "alt-col" : undefined} />
+                              ))}
+                            </colgroup>
+                            <thead>
+                              <tr>
+                                <th style={{ minWidth: 80, width: 80 }} className="text-left sticky-col">Year</th>
+                                <th style={{ minWidth: 110, width: 110 }} className="text-left sticky-col">Date</th>
+                                {keys.map((k, i) => (
+                                  <th
+                                    key={k}
+                                    className={getAlign(k)}
+                                    style={{ minWidth: 90, width: 110 }}
+                                  >
+                                    {k.replace(/_/g, " ")}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {Object.entries(rowsByYear).map(([year, rows]) => (
+                                <React.Fragment key={year}>
+                                  <tr className="year-group">
+                                    <td colSpan={keys.length + 2} style={{ padding: 12, borderBottom: "1px solid #444" }}>
+                                      <Tooltip title="Expand/collapse year" arrow>
+                                        <IconButton
+                                          size="small"
+                                          onClick={() => handleYearToggle(year)}
+                                          sx={{ transition: "background 0.2s", "&:hover": { background: "#333" } }}
+                                        >
+                                          {expandedYears[year] ? <ExpandMoreIcon /> : <ChevronRightIcon />}
+                                        </IconButton>
+                                      </Tooltip>
+                                      <b style={{ fontSize: 17 }}>{year}</b>{" "}
+                                      <span style={{ color: "#888", fontWeight: 400 }}>
+                                        ({rows.length} records)
+                                      </span>
+                                    </td>
+                                  </tr>
+                                  {expandedYears[year] && rows.map((row) => (
+                                    <tr key={row.date} className="data-row">
+                                      <td className="text-left sticky-col" style={{ background: "#23272b" }}></td>
+                                      <td className="text-left sticky-col">{new Date(row.date).toLocaleDateString()}</td>
+                                      {keys.map((k, i) => (
+                                        <td key={k} className={getAlign(k)}>
+                                          {row[k] !== undefined && row[k] !== null ? row[k] : "-"}
+                                        </td>
+                                      ))}
+                                    </tr>
+                                  ))}
+                                </React.Fragment>
+                              ))}
+                            </tbody>
+                          </table>
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  );
+                })()}
+              </Box>
+            </>
+          )}
+          {logsLoading ? (
+            <Typography>Loading your trends...</Typography>
+          ) : userLogs.length === 0 ? (
+            <Alert severity="info">No logs found to display trends.</Alert>
+          ) : (
+            Object.entries(
+              userLogs.reduce(
+                (
+                  acc: Record<string, { date: string; value: string }[]>,
+                  log: { label: string; date: string; value: string }
+                ) => {
+                  if (!acc[log.label]) acc[log.label] = [];
+                  acc[log.label].push(log);
+                  return acc;
+                },
+                {} as Record<string, { date: string; value: string }[]>
+              )
+            ).map(([label, logs]) => {
+              const logsArr = logs as { date: string; value: string }[];
+              const data = {
+                labels: logsArr.map((l) =>
+                  new Date(l.date).toLocaleDateString()
+                ),
+                datasets: [
+                  {
+                    label,
+                    data: logsArr.map((l) => Number(l.value)),
+                    fill: false,
+                    borderColor: "#6366f1",
+                    backgroundColor: "#6366f1",
+                    tension: 0.2,
+                  },
+                ],
+              };
+              return (
+                <Box key={label} sx={{ mb: 5 }}>
+                  <Typography variant="subtitle1" sx={{ mb: 2 }}>
+                    {label}
+                  </Typography>
+                  <Line
+                    data={data}
+                    options={{
+                      responsive: true,
+                      plugins: { legend: { display: false } },
+                    }}
+                    height={120}
+                  />
+                </Box>
+              );
+            })
+          )}
+          <Divider sx={{ my: 4 }} />
+          <Typography variant="h6" sx={{ mb: 2 }}>
+            Oura Data (Last 2 Weeks)
+          </Typography>
+          {ouraLoading ? (
+            <Typography>Loading Oura data...</Typography>
+          ) : ouraData.length === 0 ? (
+            <Alert severity="info">
+              No Oura data found for the last 2 weeks.
+            </Alert>
+          ) : (
+            Object.entries(
+              ouraData.reduce(
+                (
+                  acc: Record<string, { date: string; value: number }[]>,
+                  row: any
+                ) => {
+                  if (!acc[row.metric]) acc[row.metric] = [];
+                  acc[row.metric].push({
+                    date: row.date,
+                    value: Number(row.value),
+                  });
+                  return acc;
+                },
+                {} as Record<string, { date: string; value: number }[]>
+              )
+            ).map(([metric, rows]) => {
+              const data = {
+                labels: rows.map((r) => new Date(r.date).toLocaleDateString()),
+                datasets: [
+                  {
+                    label: metric,
+                    data: rows.map((r) => r.value),
+                    fill: false,
+                    borderColor: "#10b981",
+                    backgroundColor: "#10b981",
+                    tension: 0.2,
+                  },
+                ],
+              };
+              return (
+                <Box key={metric} sx={{ mb: 5 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 2 }}>
+                    {metric}
+                  </Typography>
+                  <Line
+                    data={data}
+                    options={{
+                      responsive: true,
+                      plugins: { legend: { display: false } },
+                    }}
+                    height={120}
+                  />
+                </Box>
+              );
+            })
+          )}
+        </Paper>
+      </TabPanel>
+
+      {/* Data Analysis Tab */}
+      <TabPanel value={tabValue} index={1}>
+        <Paper elevation={3} sx={{ p: 4 }}>
+          <Typography variant="h5" gutterBottom>
+            📈 Data Analysis
+          </Typography>
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+            Analyze your logged data to discover patterns and insights.
+          </Typography>
+
+          <Alert severity="info" sx={{ mb: 3 }}>
+            <Typography variant="body2">
+              Data analysis features are coming soon. This will include:
+            </Typography>
+            <Box component="ul" sx={{ mt: 1, pl: 2 }}>
+              <li>Correlation analysis between variables</li>
+              <li>Statistical summaries and trends</li>
+              <li>Custom chart creation</li>
+              <li>Export capabilities</li>
+            </Box>
+          </Alert>
+        </Paper>
+      </TabPanel>
+
+      {/* Community Insights Tab */}
+      <TabPanel value={tabValue} index={2}>
+        <Paper elevation={3} sx={{ p: 4 }}>
+          <Typography variant="h5" gutterBottom>
+            👥 Community Insights
+          </Typography>
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+            Compare your data with the community (anonymized and
+            privacy-respecting).
+          </Typography>
+
+          <Alert severity="info" sx={{ mb: 3 }}>
+            <Typography variant="body2">
+              Community insights features are coming soon. This will include:
+            </Typography>
+            <Box component="ul" sx={{ mt: 1, pl: 2 }}>
+              <li>Anonymous community averages</li>
+              <li>Benchmark comparisons</li>
+              <li>Shared experiment results</li>
+              <li>Community challenges and goals</li>
+            </Box>
+          </Alert>
+        </Paper>
+      </TabPanel>
+    </Container>
+  );
+}

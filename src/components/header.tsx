@@ -13,10 +13,13 @@ import { useState } from "react";
 import { supabase } from "@/utils/supaBase";
 
 export default function Header() {
-  const { user, loading } = useUser();
-  // Try to get OAuth profile picture if available
+  const { user, loading, avatarUrl } = useUser();
+  // Try to get profile table avatar first, then OAuth metadata
   const profilePic =
-    user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null;
+    avatarUrl ||
+    user?.user_metadata?.avatar_url ||
+    user?.user_metadata?.picture ||
+    null;
   const displayName = user?.user_metadata?.name || user?.email || "";
 
   // Helper for nav link underline
@@ -49,22 +52,28 @@ export default function Header() {
           href="/"
           className="text-purple-700 font-extrabold tracking-tight cursor-pointer hover:text-purple-900 transition bg-gradient-to-r from-purple-600 to-pink-500 bg-clip-text text-transparent"
         >
-          <Box>
+          <Box className="flex items-center gap-2">
             <Typography variant="h5" component="span">
               SelfExperiment.AI
             </Typography>
-            <Typography
-              variant="subtitle1"
-              component="div"
-              sx={{
-                fontWeight: 400,
-                color: "text.secondary",
-                fontSize: "1.05rem",
-                lineHeight: 1.2,
+            <span
+              style={{
+                background: "linear-gradient(90deg, #FFD700 0%, #FFEA70 100%)",
+                color: "#111",
+                fontWeight: 700,
+                fontSize: "0.8rem",
+                borderRadius: "999px",
+                padding: "2px 12px",
+                marginLeft: "10px",
+                letterSpacing: "0.08em",
+                display: "inline-flex",
+                alignItems: "center",
+                boxShadow: "0 1px 4px 0 rgba(0,0,0,0.10)",
+                border: "1px solid #ffe066",
               }}
             >
-              Branch out through your soul with AI and friends
-            </Typography>
+              BETA
+            </span>
           </Box>
         </Link>
         <Box className="flex items-center gap-6">

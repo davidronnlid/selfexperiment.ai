@@ -21,31 +21,7 @@ import LinearProgress from "@mui/material/LinearProgress";
 import CelebrationIcon from "@mui/icons-material/Celebration";
 import { Container, Box, Tabs, Tab } from "@mui/material";
 import { useUser } from "../_app";
-
-// Helper: map of variable value to emoji
-const useEmojiMap = (
-  userVars: { label: string; icon?: string }[],
-  pendingVariable: string,
-  pendingEmoji: string
-): Record<string, string> => {
-  const emojiMap: Record<string, string> = {};
-  userVars.forEach((opt) => {
-    if (opt.icon) emojiMap[opt.label] = opt.icon;
-  });
-  if (pendingVariable) emojiMap[pendingVariable] = pendingEmoji;
-  return emojiMap;
-};
-
-const makeOptionLabelComponent =
-  (emojiMap: Record<string, string>) => (props: unknown) => {
-    const { data } = props as { data: { label: string; value: string } };
-    return (
-      <span className="flex items-center gap-2">
-        <span>{emojiMap[data.value] || "🆕"}</span>
-        <Tooltip text={data.label}>{data.label}</Tooltip>
-      </span>
-    );
-  };
+import Autocomplete from "@mui/material/Autocomplete";
 
 export default function ExperimentDesigner() {
   const router = useRouter();
@@ -77,9 +53,6 @@ export default function ExperimentDesigner() {
     { value: "Impute previous", label: "Fill in with your last value" },
     { value: "Impute average", label: "Fill in with your average value" },
   ];
-  const [pendingVariable, setPendingVariable] = useState("");
-  const [pendingEmoji, setPendingEmoji] = useState("🆕");
-  const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
 
   // Group variables by category for better organization
   const groupedVariables = {
@@ -224,38 +197,10 @@ export default function ExperimentDesigner() {
     fetchAndSortVariables();
   }, []);
 
-  useEffect(() => {
-    if (!pendingVariable.trim() || pendingVariable.length > 25) {
-      setPendingEmoji("🆕");
-      return;
-    }
-    if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
-    debounceTimeout.current = setTimeout(async () => {
-      try {
-        const gptRes = await fetch("/api/gpt-emoji", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ variable: pendingVariable }),
-        });
-        if (gptRes.ok) {
-          const gptData = await gptRes.json();
-          if (gptData.emoji) setPendingEmoji(gptData.emoji);
-        } else {
-          setPendingEmoji("🆕");
-        }
-      } catch {
-        setPendingEmoji("🆕");
-      }
-    }, 400);
-    return () => {
-      if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
-    };
-  }, [pendingVariable]);
-
   const userVars = variableOptions.filter(
     (opt: any) => typeof opt === "object" && opt !== null && opt.icon
   );
-  const emojiMap = useEmojiMap(userVars, pendingVariable, pendingEmoji);
+
   const selectOptions: { label: string; value: string }[] = variableOptions.map(
     (opt: any) => {
       if (typeof opt === "string") {
@@ -266,13 +211,11 @@ export default function ExperimentDesigner() {
     }
   );
   if (
-    pendingVariable &&
     !variableOptions.some(
-      (opt: any) =>
-        (typeof opt === "string" ? opt : opt.value) === pendingVariable
+      (opt: any) => (typeof opt === "string" ? opt : opt.value) === variable
     )
   ) {
-    selectOptions.push({ label: pendingVariable, value: pendingVariable });
+    selectOptions.push({ label: variable, value: variable });
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -403,155 +346,49 @@ export default function ExperimentDesigner() {
             <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
               Select from predefined variables or create your own
             </Typography>
-            <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 3 }}>
-              <Tabs
-                value={tabValue}
-                onChange={handleTabChange}
-                aria-label="variable categories"
-              >
-                <Tab label="Quick Select" />
-                <Tab label="Mental & Emotional" />
-                <Tab label="Sleep & Recovery" />
-                <Tab label="Physical Health" />
-                <Tab label="Substances & Diet" />
-                <Tab label="Environment" />
-                <Tab label="Oura Data" />
-                <Tab label="Custom" />
-              </Tabs>
-            </Box>
-            {/* Quick Select Tab */}
-            {tabValue === 0 && (
-              <Box sx={{ mb: 3 }}>
-                <Typography
-                  variant="body2"
-                  color="textSecondary"
+            {/* Search Bar for All Variables */}
+            <Autocomplete
+              freeSolo
+              options={selectOptions.map((opt) => opt.label)}
+              value={variable}
+              onChange={(_event, newValue) => {
+                if (typeof newValue === "string") {
+                  setVariable(newValue);
+                }
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Search variables..."
+                  variant="outlined"
                   sx={{ mb: 2 }}
-                >
-                  Popular variables to get started:
-                </Typography>
-                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
-                  {[
-                    "Stress",
-                    "Sleep Quality",
-                    "Exercise",
-                    "Caffeine (mg)",
-                    "Mood",
-                  ].map((varName) => (
-                    <Chip
-                      key={varName}
-                      label={varName}
-                      onClick={() => setVariable(varName)}
-                      color={variable === varName ? "primary" : "default"}
-                      variant={variable === varName ? "filled" : "outlined"}
-                      clickable
-                    />
-                  ))}
-                </Box>
-              </Box>
-            )}
-            {/* Category Tabs */}
-            {tabValue >= 1 && tabValue <= 6 && (
-              <Box sx={{ mb: 3 }}>
-                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
-                  {Object.entries(groupedVariables)[tabValue - 1]?.[1]?.map(
-                    (varItem) => (
-                      <Chip
-                        key={varItem.label}
-                        label={
-                          <Box
-                            sx={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 1,
-                            }}
-                          >
-                            <span>{varItem.icon}</span>
-                            <span>{varItem.label}</span>
-                          </Box>
-                        }
-                        onClick={() => setVariable(varItem.label)}
-                        color={
-                          variable === varItem.label ? "primary" : "default"
-                        }
-                        variant={
-                          variable === varItem.label ? "filled" : "outlined"
-                        }
-                        clickable
-                      />
-                    )
-                  )}
-                </Box>
-              </Box>
-            )}
-            {/* Custom Tab */}
-            {tabValue === 7 && (
-              <Box sx={{ mb: 3 }}>
-                <Typography
-                  variant="body2"
-                  color="textSecondary"
-                  sx={{ mb: 2 }}
-                >
-                  Create a custom variable:
-                </Typography>
-                <CreatableSelect
-                  isClearable={false}
-                  components={{
-                    ...animatedComponents,
-                    Option: makeOptionLabelComponent(emojiMap),
-                  }}
-                  options={selectOptions}
-                  getOptionLabel={(opt) => opt.label}
-                  getOptionValue={(opt) => opt.value}
-                  formatCreateLabel={(inputValue) => (
-                    <span className="flex items-center gap-2">
-                      <span>{pendingEmoji}</span>
-                      <span>
-                        Create "<b>{inputValue}</b>"
-                      </span>
-                    </span>
-                  )}
-                  value={{ label: variable, value: variable }}
-                  onInputChange={(inputValue: string, actionMeta: any) => {
-                    if (actionMeta.action === "input-change") {
-                      setPendingVariable(inputValue);
-                    }
-                  }}
-                  onChange={(newValue) => {
-                    if (
-                      newValue &&
-                      !Array.isArray(newValue) &&
-                      typeof newValue === "object" &&
-                      "value" in newValue
-                    ) {
-                      setVariable(newValue.value);
-                      setPendingVariable("");
-                    }
-                  }}
-                  onCreateOption={async (inputValue) => {
-                    if (!inputValue.trim()) return;
-                    if (inputValue.length > 25) return;
-                    if (variableOptions.some((opt) => opt.value === inputValue))
-                      return;
-                    const icon = pendingEmoji || "🆕";
-                    const newOption = {
-                      label: inputValue,
-                      value: inputValue,
-                      icon,
-                    };
-                    setVariableOptions((prev) => [...prev, newOption]);
-                    setVariable(inputValue);
-                    setPendingVariable("");
-                    try {
-                      await supabase
-                        .from("user_variables")
-                        .insert([{ label: inputValue, icon }]);
-                    } catch (e) {}
-                  }}
-                  placeholder="Select or create variable..."
-                  className="mb-1"
                 />
+              )}
+            />
+            {/* Quick Select Chips */}
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+                Popular variables to get started:
+              </Typography>
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+                {[
+                  "Stress",
+                  "Sleep Quality",
+                  "Exercise",
+                  "Caffeine (mg)",
+                  "Mood",
+                ].map((varName) => (
+                  <Chip
+                    key={varName}
+                    label={varName}
+                    onClick={() => setVariable(varName)}
+                    color={variable === varName ? "primary" : "default"}
+                    variant={variable === varName ? "filled" : "outlined"}
+                    clickable
+                  />
+                ))}
               </Box>
-            )}
+            </Box>
             <Typography variant="caption" color="textSecondary">
               Selected: <strong>{variable}</strong>
             </Typography>
@@ -767,8 +604,8 @@ export default function ExperimentDesigner() {
             type="submit"
             variant="contained"
             sx={{
-              background: "linear-gradient(45deg, #9333EA 30%, #EC4899 90%)",
-              color: "white",
+              background: "linear-gradient(45deg, #FFD700 30%, #FFEA70 90%)",
+              color: "black",
               width: "100%",
               py: 2,
               fontSize: "1.125rem",
@@ -777,7 +614,7 @@ export default function ExperimentDesigner() {
               boxShadow: 3,
               mt: 3,
               "&:hover": {
-                background: "linear-gradient(45deg, #7C3AED 30%, #DB2777 90%)",
+                background: "linear-gradient(45deg, #FFD700 30%, #FFEA70 90%)",
               },
             }}
           >

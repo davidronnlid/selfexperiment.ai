@@ -1,10 +1,35 @@
 import { NextApiRequest, NextApiResponse } from "next";
-import { supabase } from "@/utils/supaBase";
+import { createServerClient } from "@supabase/ssr";
+
+function getCookiesFromReq(req: NextApiRequest) {
+  const cookieHeader = req.headers.cookie;
+  if (!cookieHeader) return [];
+  return cookieHeader.split(";").map((cookie) => {
+    const [name, ...rest] = cookie.trim().split("=");
+    return { name, value: rest.join("=") };
+  });
+}
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return getCookiesFromReq(req);
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            res.setHeader("Set-Cookie", `${name}=${value}; Path=/; HttpOnly`);
+          });
+        },
+      },
+    }
+  );
   if (
     req.method !== "GET" &&
     req.method !== "POST" &&
@@ -29,13 +54,13 @@ export default async function handler(
 
     switch (req.method) {
       case "GET":
-        return await handleGet(req, res, user.id);
+        return await handleGet(req, res, user.id, supabase);
       case "POST":
-        return await handlePost(req, res, user.id);
+        return await handlePost(req, res, user.id, supabase);
       case "PUT":
-        return await handlePut(req, res, user.id);
+        return await handlePut(req, res, user.id, supabase);
       case "DELETE":
-        return await handleDelete(req, res, user.id);
+        return await handleDelete(req, res, user.id, supabase);
       default:
         return res.status(405).json({ error: "Method not allowed" });
     }
@@ -48,7 +73,8 @@ export default async function handler(
 async function handleGet(
   req: NextApiRequest,
   res: NextApiResponse,
-  userId: string
+  userId: string,
+  supabase: any
 ) {
   const { type } = req.query;
 
@@ -56,12 +82,37 @@ async function handleGet(
     switch (type) {
       case "variable-settings":
         const { data: varSettings, error: varError } = await supabase
-          .from("app_variable_sharing_settings")
-          .select("*")
+          .from("user_variable_preferences")
+          .select(
+            `
+            *,
+            variable:variables!user_variable_preferences_variable_id_fkey (
+              id,
+              name,
+              label,
+              data_type,
+              category,
+              icon
+            )
+          `
+          )
           .eq("user_id", userId);
 
         if (varError) throw varError;
-        return res.status(200).json({ data: varSettings });
+
+        // Transform to match expected format
+        const transformedSettings =
+          varSettings?.map((pref: any) => ({
+            variable_name: pref.variable.name,
+            is_shared: pref.is_shared,
+            variable_type: pref.variable.data_type,
+            category: pref.variable.category,
+            variable_id: pref.variable.id,
+            label: pref.variable.label,
+            icon: pref.variable.icon,
+          })) || [];
+
+        return res.status(200).json({ data: transformedSettings });
 
       case "log-settings":
         const { data: logSettings, error: logError } = await supabase
@@ -95,7 +146,8 @@ async function handleGet(
 async function handlePost(
   req: NextApiRequest,
   res: NextApiResponse,
-  userId: string
+  userId: string,
+  supabase: any
 ) {
   const { type } = req.query;
   const body = req.body;
@@ -103,14 +155,22 @@ async function handlePost(
   try {
     switch (type) {
       case "variable-settings":
+        // First, get the variable ID from the variable name
+        const { data: variable, error: findVarError } = await supabase
+          .from("variables")
+          .select("id")
+          .eq("name", body.variable_name)
+          .single();
+
+        if (findVarError) throw findVarError;
+
         const { data: varData, error: varError } = await supabase
-          .from("app_variable_sharing_settings")
+          .from("user_variable_preferences")
           .upsert({
             user_id: userId,
-            variable_name: body.variable_name,
+            variable_id: variable.id,
             is_shared: body.is_shared,
-            variable_type: body.variable_type,
-            category: body.category,
+            updated_at: new Date().toISOString(),
           })
           .select()
           .single();
@@ -162,7 +222,8 @@ async function handlePost(
 async function handlePut(
   req: NextApiRequest,
   res: NextApiResponse,
-  userId: string
+  userId: string,
+  supabase: any
 ) {
   const { type, id } = req.query;
   const body = req.body;
@@ -171,10 +232,9 @@ async function handlePut(
     switch (type) {
       case "variable-settings":
         const { data: varData, error: varError } = await supabase
-          .from("app_variable_sharing_settings")
+          .from("user_variable_preferences")
           .update({
             is_shared: body.is_shared,
-            category: body.category,
             updated_at: new Date().toISOString(),
           })
           .eq("id", id)
@@ -229,7 +289,8 @@ async function handlePut(
 async function handleDelete(
   req: NextApiRequest,
   res: NextApiResponse,
-  userId: string
+  userId: string,
+  supabase: any
 ) {
   const { type, id } = req.query;
 
@@ -237,7 +298,7 @@ async function handleDelete(
     switch (type) {
       case "variable-settings":
         const { error: varError } = await supabase
-          .from("app_variable_sharing_settings")
+          .from("user_variable_preferences")
           .delete()
           .eq("id", id)
           .eq("user_id", userId);
