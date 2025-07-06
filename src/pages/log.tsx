@@ -609,37 +609,37 @@ export default function LogPage() {
               </Box>
             )}
           />
-        </Box>
 
-        {/* Popular Variables */}
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle2" gutterBottom>
-            Popular Variables
-          </Typography>
-          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-            {["Mood", "Energy", "Sleep Quality", "Stress", "Exercise"].map(
-              (varName) => {
-                const variable = variables.find((v) => v.label === varName);
-                return variable ? (
-                  <Chip
-                    key={varName}
-                    label={`${variable.icon} ${varName}`}
-                    onClick={() => setSelectedVariable(variable)}
-                    color={
-                      selectedVariable?.label === varName
-                        ? "primary"
-                        : "default"
-                    }
-                    variant={
-                      selectedVariable?.label === varName
-                        ? "filled"
-                        : "outlined"
-                    }
-                    clickable
-                  />
-                ) : null;
-              }
-            )}
+          {/* Popular Variables */}
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              Popular Variables
+            </Typography>
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+              {["Mood", "Energy", "Sleep Quality", "Stress", "Exercise"].map(
+                (varName) => {
+                  const variable = variables.find((v) => v.label === varName);
+                  return variable ? (
+                    <Chip
+                      key={varName}
+                      label={`${variable.icon} ${varName}`}
+                      onClick={() => setSelectedVariable(variable)}
+                      color={
+                        selectedVariable?.label === varName
+                          ? "primary"
+                          : "default"
+                      }
+                      variant={
+                        selectedVariable?.label === varName
+                          ? "filled"
+                          : "outlined"
+                      }
+                      clickable
+                    />
+                  ) : null;
+                }
+              )}
+            </Box>
           </Box>
         </Box>
 
