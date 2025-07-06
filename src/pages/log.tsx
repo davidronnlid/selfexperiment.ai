@@ -567,10 +567,6 @@ export default function LogPage() {
 
         {/* Variable Selection */}
         <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle2" gutterBottom>
-            Select Variable
-          </Typography>
-
           {/* Popular Variables */}
           <Box sx={{ mb: 2 }}>
             <Typography variant="subtitle2" gutterBottom>
