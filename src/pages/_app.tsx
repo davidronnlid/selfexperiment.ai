@@ -248,6 +248,34 @@ export default function App({ Component, pageProps }: AppProps) {
     }
   }, [user, loading, router]);
 
+  // Redirect to /auth if user is not authenticated (for protected routes)
+  useEffect(() => {
+    if (!loading && !user) {
+      // Define routes that require authentication
+      const protectedRoutes = [
+        "/log",
+        "/experiment/builder",
+        "/experiment/active-experiments",
+        "/experiment/completed-experiments",
+        "/analytics",
+        "/profile",
+        "/community",
+        "/dashboard",
+      ];
+
+      // Check if current route is protected
+      const isProtectedRoute = protectedRoutes.some((route) =>
+        router.pathname.startsWith(route)
+      );
+
+      // Don't redirect if already on auth page or landing page
+      if (isProtectedRoute && router.pathname !== "/auth") {
+        console.log("Redirecting unauthenticated user to auth page");
+        router.push("/auth");
+      }
+    }
+  }, [user, loading, router]);
+
   return (
     <UserContext.Provider value={{ user, loading, avatarUrl, refreshUser }}>
       <ThemeProvider theme={theme}>

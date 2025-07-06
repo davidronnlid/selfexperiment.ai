@@ -52,8 +52,8 @@ export default function CommunityProfilePage() {
       setProfile(profileData);
       if (profileData) {
         // Fetch only shared variables for this user
-        const { data: sharedVars } = await supabase
-          .from("app_variable_sharing_settings")
+        const { data: sharedVars, error: sharedError } = await supabase
+          .from("variable_sharing_settings")
           .select("variable_name")
           .eq("user_id", profileData.id)
           .eq("is_shared", true);

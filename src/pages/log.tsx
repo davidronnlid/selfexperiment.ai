@@ -27,6 +27,8 @@ import {
 import { Variable } from "@/types/variables";
 import ValidatedInput from "@/components/ValidatedInput";
 import DropdownInput from "@/components/DropdownInput";
+import ConstrainedInput from "@/components/ConstrainedInput";
+import VariableCreationDialog from "@/components/VariableCreationDialog";
 import Link from "next/link";
 import {
   Container,
@@ -45,6 +47,7 @@ import { LinearProgress } from "@mui/material";
 import { LOG_LABELS, validateValue } from "@/utils/logLabels";
 import { useTheme } from "@mui/material/styles";
 import { useMediaQuery } from "@mui/material";
+import { useRouter } from "next/router";
 
 // Dynamic variable options will be loaded from the database
 
@@ -84,6 +87,7 @@ const useEmojiMap = (
 
 export default function LogPage() {
   const { user, loading: userLoading, refreshUser } = useUser();
+  const router = useRouter();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const isTablet = useMediaQuery(theme.breakpoints.down("md"));
@@ -141,6 +145,14 @@ export default function LogPage() {
   const [editingValue, setEditingValue] = useState("");
   const [editingNotes, setEditingNotes] = useState("");
   const [editingDate, setEditingDate] = useState<Date>(new Date());
+
+  // New variable creation state
+  const [showVariableCreationDialog, setShowVariableCreationDialog] =
+    useState(false);
+  const [newVariableName, setNewVariableName] = useState("");
+  const [pendingVariableSelection, setPendingVariableSelection] = useState<
+    string | null
+  >(null);
 
   // Calculate experiment progress
   const calculateExperimentProgress = () => {
@@ -771,7 +783,8 @@ export default function LogPage() {
         .select("*")
         .eq("user_id", user.id)
         .gte("date", startOfDay)
-        .lte("date", endOfDay);
+        .lte("date", endOfDay)
+        .order("created_at", { ascending: false });
 
       if (todaysLogs) {
         setLogs(todaysLogs);
@@ -847,12 +860,55 @@ export default function LogPage() {
 
       // Refresh logs
       await fetchLogs();
-
-      setSuccessMessage("Log deleted successfully!");
-      setShowSuccess(true);
     } catch (error) {
       console.error("Error deleting log:", error);
-      setExpError("Failed to delete log");
+      setExpError("Failed to delete log. Please try again.");
+    }
+  };
+
+  // Helper function to capitalize first letter of each word
+  const capitalizeVariableName = (name: string): string => {
+    return name
+      .split(/\s+/)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(" ");
+  };
+
+  // Handle new variable creation
+  const handleVariableCreated = (newVariable: any) => {
+    // Add to variables list
+    setVariables((prev) => [...prev, newVariable]);
+
+    // Select the new variable
+    setSelectedVariable(newVariable);
+
+    // Clear pending selection
+    setPendingVariableSelection(null);
+    setNewVariableName("");
+
+    // Close dialog
+    setShowVariableCreationDialog(false);
+  };
+
+  // Handle autocomplete change to detect new variables
+  const handleVariableChange = (event: any, value: any) => {
+    if (typeof value === "string") {
+      // User typed a new variable name
+      const capitalizedName = capitalizeVariableName(value);
+      setNewVariableName(capitalizedName);
+      setPendingVariableSelection(capitalizedName);
+      setShowVariableCreationDialog(true);
+      setSelectedVariable(null);
+    } else if (value) {
+      // User selected an existing variable
+      setSelectedVariable(value);
+      setPendingVariableSelection(null);
+      setNewVariableName("");
+    } else {
+      // User cleared the selection
+      setSelectedVariable(null);
+      setPendingVariableSelection(null);
+      setNewVariableName("");
     }
   };
 
@@ -1016,14 +1072,13 @@ export default function LogPage() {
                       alignItems: { xs: "stretch", sm: "flex-start" },
                     }}
                   >
-                    <TextField
-                      size="small"
-                      fullWidth={isMobile}
+                    <ConstrainedInput
+                      label={experiment.variable}
                       value={experimentValues[experiment.variable] || ""}
-                      onChange={(e) =>
+                      onChange={(newValue) =>
                         setExperimentValues((prev) => ({
                           ...prev,
-                          [experiment.variable]: e.target.value,
+                          [experiment.variable]: newValue,
                         }))
                       }
                       placeholder={`Enter ${(() => {
@@ -1049,6 +1104,8 @@ export default function LogPage() {
                         return displayName + (unit ? ` (${unit})` : "");
                       })()} value...`}
                       variant="outlined"
+                      size="small"
+                      fullWidth={isMobile}
                       sx={{
                         flex: { xs: "none", sm: 1 },
                         "& .MuiOutlinedInput-root": {
@@ -1073,13 +1130,6 @@ export default function LogPage() {
                             opacity: 1,
                           },
                         },
-                      }}
-                      InputProps={{
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <FaTag color="#666" size={isMobile ? "12" : "14"} />
-                          </InputAdornment>
-                        ),
                       }}
                     />
 
@@ -1145,19 +1195,20 @@ export default function LogPage() {
                         alignItems: { xs: "stretch", sm: "flex-start" },
                       }}
                     >
-                      <TextField
-                        size="small"
-                        fullWidth={isMobile}
+                      <ConstrainedInput
+                        label={
+                          experiment.effect || experiment.dependent_variable
+                        }
                         value={
                           experimentValues[
                             experiment.effect || experiment.dependent_variable
                           ] || ""
                         }
-                        onChange={(e) =>
+                        onChange={(newValue) =>
                           setExperimentValues((prev) => ({
                             ...prev,
                             [experiment.effect ||
-                            experiment.dependent_variable]: e.target.value,
+                            experiment.dependent_variable]: newValue,
                           }))
                         }
                         placeholder={`Enter ${(() => {
@@ -1185,6 +1236,8 @@ export default function LogPage() {
                           return displayName + (unit ? ` (${unit})` : "");
                         })()} value...`}
                         variant="outlined"
+                        size="small"
+                        fullWidth={isMobile}
                         sx={{
                           flex: { xs: "none", sm: 1 },
                           "& .MuiOutlinedInput-root": {
@@ -1209,16 +1262,6 @@ export default function LogPage() {
                               opacity: 1,
                             },
                           },
-                        }}
-                        InputProps={{
-                          startAdornment: (
-                            <InputAdornment position="start">
-                              <FaTag
-                                color="#666"
-                                size={isMobile ? "12" : "14"}
-                              />
-                            </InputAdornment>
-                          ),
                         }}
                       />
 
@@ -1611,15 +1654,16 @@ export default function LogPage() {
 
           <Autocomplete
             options={variables}
-            getOptionLabel={(option) => option.label}
+            getOptionLabel={(option) =>
+              typeof option === "string" ? option : option.label
+            }
             value={selectedVariable}
-            onChange={(event, newValue) => {
-              setSelectedVariable(newValue);
-            }}
+            onChange={handleVariableChange}
+            freeSolo
             renderInput={(params) => (
               <TextField
                 {...params}
-                placeholder="Or search for other variables..."
+                placeholder="Search variables or type a new one..."
                 size={isMobile ? "small" : "medium"}
                 InputProps={{
                   ...params.InputProps,
@@ -1720,26 +1764,22 @@ export default function LogPage() {
 
         {/* Value Input */}
         <Box sx={{ mb: { xs: 2, sm: 3 } }}>
-          <Typography
-            variant="subtitle2"
-            gutterBottom
-            sx={{ fontSize: { xs: "0.9rem", sm: "0.875rem" } }}
-          >
-            Value
-          </Typography>
-          <TextField
-            fullWidth
-            size={isMobile ? "small" : "medium"}
+          <ConstrainedInput
+            label={selectedVariable?.label || "Value"}
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={setValue}
+            size={isMobile ? "small" : "medium"}
             placeholder="Enter the value..."
             variant="outlined"
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <FaTag size={isMobile ? "14" : "16"} />
-                </InputAdornment>
-              ),
+            fullWidth
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                "& .MuiInputAdornment-root": {
+                  "& .MuiSvgIcon-root": {
+                    fontSize: isMobile ? "14px" : "16px",
+                  },
+                },
+              },
             }}
           />
         </Box>
@@ -1783,7 +1823,7 @@ export default function LogPage() {
           </Typography>
           <DatePicker
             selected={date}
-            onChange={(date) => date && setDate(date)}
+            onChange={(date: Date | null) => date && setDate(date)}
             showTimeSelect
             timeFormat="HH:mm"
             timeIntervals={15}
@@ -1903,7 +1943,9 @@ export default function LogPage() {
                         display: "flex",
                         justifyContent: "space-between",
                         alignItems: "center",
-                        mb: 2,
+                        mb: 3,
+                        pb: 2,
+                        borderBottom: "2px solid #e3f2fd",
                       }}
                     >
                       <Typography
@@ -1911,21 +1953,29 @@ export default function LogPage() {
                         fontWeight="bold"
                         sx={{
                           color: "#1976d2",
-                          fontSize: { xs: "1rem", sm: "1.1rem" },
+                          fontSize: { xs: "1.1rem", sm: "1.2rem" },
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1,
                         }}
                       >
+                        <FaEdit style={{ fontSize: "1rem" }} />
                         Editing: {log.variable}
                       </Typography>
-                      <Box>
+                      <Box sx={{ display: "flex", gap: 1 }}>
                         <IconButton
                           onClick={handleSaveEdit}
                           size="small"
                           sx={{
-                            color: "#4caf50",
-                            mr: 1,
+                            color: "#fff",
+                            backgroundColor: "#4caf50",
+                            borderRadius: "8px",
+                            padding: "8px",
                             "&:hover": {
-                              backgroundColor: "rgba(76, 175, 80, 0.1)",
+                              backgroundColor: "#45a049",
+                              transform: "scale(1.05)",
                             },
+                            transition: "all 0.2s ease",
                           }}
                         >
                           <FaCheck />
@@ -1934,73 +1984,174 @@ export default function LogPage() {
                           onClick={handleCancelEdit}
                           size="small"
                           sx={{
-                            color: "#f44336",
+                            color: "#fff",
+                            backgroundColor: "#f44336",
+                            borderRadius: "8px",
+                            padding: "8px",
                             "&:hover": {
-                              backgroundColor: "rgba(244, 67, 54, 0.1)",
+                              backgroundColor: "#d32f2f",
+                              transform: "scale(1.05)",
                             },
+                            transition: "all 0.2s ease",
                           }}
                         >
                           <FaTimes />
                         </IconButton>
                       </Box>
                     </Box>
-                    <Box sx={{ mb: 2 }}>
-                      <Typography
-                        variant="body2"
+
+                    <Box
+                      sx={{ display: "flex", flexDirection: "column", gap: 3 }}
+                    >
+                      {/* Date Field */}
+                      <Box>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            mb: 1.5,
+                            color: "#333",
+                            fontSize: "0.875rem",
+                            fontWeight: 600,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 1,
+                          }}
+                        >
+                          📅 Date
+                        </Typography>
+                        <Box
+                          sx={{
+                            position: "relative",
+                            "& .datepicker-wrapper": {
+                              width: "100%",
+                            },
+                            "& .custom-datepicker": {
+                              width: "100%",
+                              padding: "12px 16px",
+                              fontSize: "14px",
+                              border: "2px solid #e0e0e0",
+                              borderRadius: "12px",
+                              backgroundColor: "#fff",
+                              fontFamily: "inherit",
+                              transition: "all 0.3s ease",
+                              boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                              "&:focus": {
+                                outline: "none",
+                                borderColor: "#1976d2",
+                                boxShadow: "0 4px 12px rgba(25,118,210,0.2)",
+                              },
+                              "&:hover": {
+                                borderColor: "#1976d2",
+                                boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                              },
+                            },
+                          }}
+                        >
+                          <DatePicker
+                            selected={editingDate}
+                            onChange={(date: Date | null) =>
+                              date && setEditingDate(date)
+                            }
+                            dateFormat="yyyy-MM-dd"
+                            className="custom-datepicker"
+                            wrapperClassName="datepicker-wrapper"
+                          />
+                        </Box>
+                      </Box>
+
+                      {/* Value Field */}
+                      <TextField
+                        fullWidth
+                        label="Value"
+                        value={editingValue}
+                        onChange={(e) => setEditingValue(e.target.value)}
                         sx={{
-                          mb: 1,
-                          color: "#333",
-                          fontSize: "0.875rem",
-                          fontWeight: 500,
+                          "& .MuiInputLabel-root": {
+                            color: "#666",
+                            fontWeight: 500,
+                          },
+                          "& .MuiInputLabel-root.Mui-focused": {
+                            color: "#1976d2",
+                          },
+                          "& .MuiOutlinedInput-root": {
+                            borderRadius: "12px",
+                            backgroundColor: "#fff",
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                            "& fieldset": {
+                              borderColor: "#e0e0e0",
+                              borderWidth: "2px",
+                            },
+                            "&:hover fieldset": {
+                              borderColor: "#1976d2",
+                            },
+                            "&.Mui-focused fieldset": {
+                              borderColor: "#1976d2",
+                              boxShadow: "0 4px 12px rgba(25,118,210,0.2)",
+                            },
+                          },
+                          "& .MuiInputBase-input": {
+                            padding: "12px 16px",
+                            fontSize: "14px",
+                          },
                         }}
-                      >
-                        Date
-                      </Typography>
-                      <DatePicker
-                        selected={editingDate}
-                        onChange={(date: Date) => setEditingDate(date)}
-                        dateFormat="yyyy-MM-dd"
-                        className="custom-datepicker"
-                        wrapperClassName="datepicker-wrapper"
-                        style={{
-                          width: "100%",
-                          padding: "10px",
-                          fontSize: "14px",
-                          border: "1px solid #ccc",
-                          borderRadius: "4px",
-                          backgroundColor: "#fff",
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <span style={{ fontSize: "1.1rem" }}>💯</span>
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+
+                      {/* Notes Field */}
+                      <TextField
+                        fullWidth
+                        label="Notes (Optional)"
+                        value={editingNotes}
+                        onChange={(e) => setEditingNotes(e.target.value)}
+                        multiline
+                        rows={3}
+                        sx={{
+                          "& .MuiInputLabel-root": {
+                            color: "#666",
+                            fontWeight: 500,
+                          },
+                          "& .MuiInputLabel-root.Mui-focused": {
+                            color: "#1976d2",
+                          },
+                          "& .MuiOutlinedInput-root": {
+                            borderRadius: "12px",
+                            backgroundColor: "#fff",
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                            "& fieldset": {
+                              borderColor: "#e0e0e0",
+                              borderWidth: "2px",
+                            },
+                            "&:hover fieldset": {
+                              borderColor: "#1976d2",
+                            },
+                            "&.Mui-focused fieldset": {
+                              borderColor: "#1976d2",
+                              boxShadow: "0 4px 12px rgba(25,118,210,0.2)",
+                            },
+                          },
+                          "& .MuiInputBase-input": {
+                            padding: "12px 16px",
+                            fontSize: "14px",
+                          },
+                        }}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment
+                              position="start"
+                              sx={{ alignSelf: "flex-start", mt: 1 }}
+                            >
+                              <span style={{ fontSize: "1.1rem" }}>💭</span>
+                            </InputAdornment>
+                          ),
                         }}
                       />
                     </Box>
-                    <TextField
-                      fullWidth
-                      label="Value"
-                      value={editingValue}
-                      onChange={(e) => setEditingValue(e.target.value)}
-                      sx={{
-                        mb: 2,
-                        "& .MuiInputLabel-root": { color: "#333" },
-                        "& .MuiInputLabel-root.Mui-focused": {
-                          color: "#1976d2",
-                        },
-                      }}
-                      size="small"
-                    />
-                    <TextField
-                      fullWidth
-                      label="Notes (Optional)"
-                      value={editingNotes}
-                      onChange={(e) => setEditingNotes(e.target.value)}
-                      multiline
-                      rows={2}
-                      sx={{
-                        "& .MuiInputLabel-root": { color: "#333" },
-                        "& .MuiInputLabel-root.Mui-focused": {
-                          color: "#1976d2",
-                        },
-                      }}
-                      size="small"
-                    />
                   </Box>
                 ) : (
                   // Display mode
@@ -2027,7 +2178,17 @@ export default function LogPage() {
                           sx={{
                             color: "#1976d2",
                             fontSize: { xs: "1rem", sm: "1.1rem" },
+                            cursor: "pointer",
+                            textDecoration: "underline",
+                            "&:hover": {
+                              color: "#0d47a1",
+                            },
                           }}
+                          onClick={() =>
+                            router.push(
+                              `/variable/${encodeURIComponent(log.variable)}`
+                            )
+                          }
                         >
                           {log.variable}
                         </Typography>
@@ -2109,6 +2270,19 @@ export default function LogPage() {
           </Box>
         </Paper>
       )}
+
+      {/* Variable Creation Dialog */}
+      <VariableCreationDialog
+        open={showVariableCreationDialog}
+        onClose={() => {
+          setShowVariableCreationDialog(false);
+          setPendingVariableSelection(null);
+          setNewVariableName("");
+        }}
+        onVariableCreated={handleVariableCreated}
+        initialVariableName={newVariableName}
+        user={user}
+      />
     </Container>
   );
 }

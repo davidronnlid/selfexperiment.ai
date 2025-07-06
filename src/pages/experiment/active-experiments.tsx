@@ -40,6 +40,7 @@ import type {
   DroppableProvided,
   DropResult,
 } from "@hello-pangea/dnd";
+import ConstrainedInput from "@/components/ConstrainedInput";
 
 interface LogEntry {
   id: number;
@@ -112,10 +113,12 @@ export default function ActiveExperimentsPage() {
     if (!user) return;
     const fetchExperiments = async () => {
       setLoading(true);
+      const today = new Date().toISOString().split("T")[0];
       const { data, error } = await supabase
         .from("experiments")
         .select("*")
         .eq("user_id", user.id)
+        .gte("end_date", today) // Only show active experiments
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: false });
       if (!error) setExperiments(data || []);
@@ -700,18 +703,19 @@ export default function ActiveExperimentsPage() {
                         mb: 2,
                       }}
                     >
-                      <TextField
-                        size="small"
-                        fullWidth
+                      <ConstrainedInput
+                        label={experiment.variable}
                         value={experimentValues[experiment.variable] || ""}
-                        onChange={(e) =>
+                        onChange={(newValue) =>
                           setExperimentValues((prev) => ({
                             ...prev,
-                            [experiment.variable]: e.target.value,
+                            [experiment.variable]: newValue,
                           }))
                         }
                         placeholder={`Enter ${experiment.variable} value...`}
                         variant="outlined"
+                        size="small"
+                        fullWidth
                         sx={{
                           flex: 1,
                           "& .MuiOutlinedInput-root": {
@@ -728,13 +732,6 @@ export default function ActiveExperimentsPage() {
                               borderWidth: "2px",
                             },
                           },
-                        }}
-                        InputProps={{
-                          startAdornment: (
-                            <InputAdornment position="start">
-                              <FaTag color="#666" size="14" />
-                            </InputAdornment>
-                          ),
                         }}
                       />
 
@@ -816,25 +813,28 @@ export default function ActiveExperimentsPage() {
                           alignItems: { xs: "stretch", sm: "flex-start" },
                         }}
                       >
-                        <TextField
-                          size="small"
-                          fullWidth
+                        <ConstrainedInput
+                          label={
+                            experiment.dependent_variable || experiment.effect
+                          }
                           value={
                             experimentValues[
                               experiment.dependent_variable || experiment.effect
                             ] || ""
                           }
-                          onChange={(e) =>
+                          onChange={(newValue) =>
                             setExperimentValues((prev) => ({
                               ...prev,
                               [experiment.dependent_variable ||
-                              experiment.effect]: e.target.value,
+                              experiment.effect]: newValue,
                             }))
                           }
                           placeholder={`Enter ${
                             experiment.dependent_variable || experiment.effect
                           } value...`}
                           variant="outlined"
+                          size="small"
+                          fullWidth
                           sx={{
                             flex: 1,
                             "& .MuiOutlinedInput-root": {
@@ -851,13 +851,6 @@ export default function ActiveExperimentsPage() {
                                 borderWidth: "2px",
                               },
                             },
-                          }}
-                          InputProps={{
-                            startAdornment: (
-                              <InputAdornment position="start">
-                                <FaTag color="#666" size="14" />
-                              </InputAdornment>
-                            ),
                           }}
                         />
 

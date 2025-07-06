@@ -33,6 +33,7 @@ import {
 } from "@mui/icons-material";
 import { supabase } from "@/utils/supaBase";
 import { format, parseISO, subDays, startOfDay, endOfDay } from "date-fns";
+import { useRouter } from "next/router";
 
 interface ManualLog {
   id: number;
@@ -52,6 +53,7 @@ export default function ManualLogsTable({
   userId,
   maxRows = 50,
 }: ManualLogsTableProps) {
+  const router = useRouter();
   const [logs, setLogs] = useState<ManualLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -453,7 +455,15 @@ export default function ManualLogsTable({
                 backgroundColor: getVariableColor(variable),
                 color: "white",
                 fontSize: "0.75rem",
+                cursor: "pointer",
+                "&:hover": {
+                  opacity: 0.8,
+                  transform: "scale(1.02)",
+                },
               }}
+              onClick={() =>
+                router.push(`/variable/${encodeURIComponent(variable)}`)
+              }
             />
           ))}
         </Box>
@@ -489,7 +499,17 @@ export default function ManualLogsTable({
                         backgroundColor: getVariableColor(log.variable),
                         color: "white",
                         fontSize: "0.75rem",
+                        cursor: "pointer",
+                        "&:hover": {
+                          opacity: 0.8,
+                          transform: "scale(1.02)",
+                        },
                       }}
+                      onClick={() =>
+                        router.push(
+                          `/variable/${encodeURIComponent(log.variable)}`
+                        )
+                      }
                     />
                   </TableCell>
                   <TableCell>

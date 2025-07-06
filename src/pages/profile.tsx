@@ -64,7 +64,7 @@ function SharedVariablesViewer({ username }: { username: string }) {
       }
       // 2. Fetch shared variables
       const { data: vars, error: varError } = await supabase
-        .from("app_variable_sharing_settings")
+        .from("variable_sharing_settings")
         .select("variable_name, category")
         .eq("user_id", userProfile.id)
         .eq("is_shared", true);
@@ -153,24 +153,22 @@ export default function ProfilePage() {
 
   // Load privacy settings
   const loadPrivacySettings = async () => {
-    if (!user) return;
     try {
-      setPrivacyLoading(true);
+      setLoading(true);
+
       const { data: varSettings, error: varError } = await supabase
-        .from("app_variable_sharing_settings")
+        .from("variable_sharing_settings")
         .select("*")
         .eq("user_id", user?.id);
 
       if (varError) throw varError;
+
       setVariableSettings(varSettings || []);
     } catch (error) {
       console.error("Error loading privacy settings:", error);
-      setPrivacyMessage({
-        type: "error",
-        text: "Failed to load privacy settings",
-      });
+      setError("Failed to load shared variables");
     } finally {
-      setPrivacyLoading(false);
+      setLoading(false);
     }
   };
 
@@ -262,7 +260,7 @@ export default function ProfilePage() {
     try {
       setPrivacySaving(true);
       const { error } = await supabase
-        .from("app_variable_sharing_settings")
+        .from("variable_sharing_settings")
         .upsert({
           user_id: user?.id,
           variable_name: variableName,

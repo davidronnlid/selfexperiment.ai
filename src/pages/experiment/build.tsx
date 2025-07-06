@@ -29,7 +29,6 @@ import {
   DialogContent,
   DialogActions,
 } from "@mui/material";
-import React from "react";
 
 // Custom hook for typewriter effect
 const useTypewriter = (text: string, speed: number = 80) => {

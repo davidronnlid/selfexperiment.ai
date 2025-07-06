@@ -177,7 +177,7 @@ export default function AnalyzePrivacySection() {
       setLoading(true);
 
       const { data: varSettings, error: varError } = await supabase
-        .from("app_variable_sharing_settings")
+        .from("variable_sharing_settings")
         .select("*")
         .eq("user_id", user?.id);
 
@@ -200,7 +200,7 @@ export default function AnalyzePrivacySection() {
       setSaving(true);
 
       const { error } = await supabase
-        .from("app_variable_sharing_settings")
+        .from("variable_sharing_settings")
         .upsert({
           user_id: user?.id,
           variable_name: variableName,

@@ -18,9 +18,6 @@ export default function Header() {
   const { user, loading, avatarUrl, refreshUser } = useUser();
   const router = useRouter();
 
-  // Debug logging
-  console.log("Header: user =", user?.id, "loading =", loading);
-
   // OAuth profile picture from user metadata
   const oauthProfilePic =
     user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null;
@@ -98,6 +95,10 @@ export default function Header() {
   };
   const handleActiveClick = () => {
     router.push("/experiment/active-experiments");
+    setExperimentAnchorEl(null);
+  };
+  const handleCompletedClick = () => {
+    router.push("/experiment/completed-experiments");
     setExperimentAnchorEl(null);
   };
   const handleProfile = () => {
@@ -188,6 +189,7 @@ export default function Header() {
           >
             <MenuItem onClick={handleBuildClick}>Build</MenuItem>
             <MenuItem onClick={handleActiveClick}>Active</MenuItem>
+            <MenuItem onClick={handleCompletedClick}>Completed</MenuItem>
           </Menu>
           <Link href="/log" className={navLinkClass}>
             Log Now
