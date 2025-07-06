@@ -64,10 +64,11 @@ const validateValue = (
 
 interface LogEntry {
   id: number;
-  date: string;
+  date: string; // Now contains full timestamp (ISO string)
   variable: string;
   value: string;
   notes?: string;
+  created_at?: string; // Also a full timestamp
 }
 
 // Helper to get icon for a variable
@@ -188,7 +189,9 @@ export default function LogPage() {
     let currentDate = today;
 
     for (const log of recentLogs) {
-      if (log.date === currentDate) {
+      // Extract just the date part from the timestamp
+      const logDate = log.date.split("T")[0];
+      if (logDate === currentDate) {
         streak++;
         const date = new Date(currentDate);
         date.setDate(date.getDate() - 1);
@@ -307,11 +310,15 @@ export default function LogPage() {
       if (!user) return;
 
       const today = new Date().toISOString().split("T")[0];
+      const startOfDay = `${today}T00:00:00.000Z`;
+      const endOfDay = `${today}T23:59:59.999Z`;
+
       const { data: todaysLogs } = await supabase
         .from("daily_logs")
         .select("*")
         .eq("user_id", user.id)
-        .eq("date", today);
+        .gte("date", startOfDay)
+        .lte("date", endOfDay);
 
       if (todaysLogs) {
         setLogs(todaysLogs);
@@ -331,11 +338,15 @@ export default function LogPage() {
     if (!user) return;
 
     const today = new Date().toISOString().split("T")[0];
+    const startOfDay = `${today}T00:00:00.000Z`;
+    const endOfDay = `${today}T23:59:59.999Z`;
+
     const { data } = await supabase
       .from("daily_logs")
       .select("*")
       .eq("user_id", user.id)
-      .eq("date", today)
+      .gte("date", startOfDay)
+      .lte("date", endOfDay)
       .order("created_at", { ascending: false });
 
     setLogs(data || []);
@@ -351,13 +362,16 @@ export default function LogPage() {
     setExpError("");
 
     try {
+      // Use the selected date and time directly
+      const selectedDateTime = new Date(date);
+
       const logData = {
         user_id: user.id,
         variable: selectedVariable.label,
         value: value.trim(),
         notes: notes.trim() || null,
-        date: date.toISOString().split("T")[0],
-        created_at: new Date().toISOString(),
+        date: selectedDateTime.toISOString(), // Store the selected date and time
+        created_at: new Date().toISOString(), // Created at is always current time
       };
 
       const { data, error } = await supabase
@@ -465,7 +479,7 @@ export default function LogPage() {
           </Box>
 
           <Typography variant="subtitle1" gutterBottom>
-            Variable: {experimentsNeedingLogs[0].variable}
+            Var: {experimentsNeedingLogs[0].variable}
           </Typography>
 
           <Typography variant="body2" sx={{ mb: 2 }}>
@@ -498,19 +512,169 @@ export default function LogPage() {
           <Box
             sx={{
               mt: 3,
-              p: 2,
+              p: 3,
               backgroundColor: "rgba(255,255,255,0.1)",
               borderRadius: 2,
             }}
           >
             <Typography variant="body1" sx={{ mb: 2, fontWeight: "bold" }}>
-              📝 Ready to log your {experimentsNeedingLogs[0].variable}?
+              📝 Log your {experimentsNeedingLogs[0].variable} for today
             </Typography>
-            <Typography variant="body2" sx={{ mb: 2, opacity: 0.9 }}>
-              Use the form below to record your{" "}
-              {experimentsNeedingLogs[0].variable} data for today's experiment.
+
+            <Typography variant="body2" sx={{ mb: 3, opacity: 0.9 }}>
+              Track your daily {experimentsNeedingLogs[0].variable} intake to
+              see how it affects your wellbeing. Enter the amount and any
+              relevant notes about timing, context, or how you're feeling.
             </Typography>
-            <Typography variant="caption" sx={{ opacity: 0.8 }}>
+
+            {/* Quick Experiment Logging Form */}
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <TextField
+                fullWidth
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder={`Enter your ${experimentsNeedingLogs[0].variable} value...`}
+                variant="outlined"
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    backgroundColor: "#ffffff",
+                    color: "#333",
+                    "& fieldset": {
+                      borderColor: "rgba(255,255,255,0.5)",
+                    },
+                    "&:hover fieldset": {
+                      borderColor: "rgba(255,255,255,0.7)",
+                    },
+                    "&.Mui-focused fieldset": {
+                      borderColor: "#ffd700",
+                      borderWidth: "2px",
+                    },
+                    "& input": {
+                      color: "#333",
+                    },
+                    "& input::placeholder": {
+                      color: "#999",
+                      opacity: 1,
+                    },
+                  },
+                }}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <FaTag color="#666" />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+
+              <TextField
+                fullWidth
+                multiline
+                rows={2}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Add notes about your experiment (optional)..."
+                variant="outlined"
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    backgroundColor: "#ffffff",
+                    color: "#333",
+                    "& fieldset": {
+                      borderColor: "rgba(255,255,255,0.5)",
+                    },
+                    "&:hover fieldset": {
+                      borderColor: "rgba(255,255,255,0.7)",
+                    },
+                    "&.Mui-focused fieldset": {
+                      borderColor: "#ffd700",
+                      borderWidth: "2px",
+                    },
+                    "& textarea": {
+                      color: "#333",
+                    },
+                    "& textarea::placeholder": {
+                      color: "#999",
+                      opacity: 1,
+                    },
+                  },
+                }}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <FaStickyNote color="#666" />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+
+              <Button
+                onClick={async () => {
+                  if (!value.trim()) {
+                    setExpError("Please enter a value for your experiment");
+                    return;
+                  }
+
+                  setExpError(""); // Clear any previous errors
+
+                  // Set the selected variable to the experiment variable
+                  const experimentVariable = variables.find(
+                    (v) => v.label === experimentsNeedingLogs[0].variable
+                  );
+                  if (experimentVariable) {
+                    setSelectedVariable(experimentVariable);
+                  }
+
+                  // Set date to current time for experiment logging
+                  const now = new Date();
+                  setDate(now);
+
+                  // Submit the log
+                  try {
+                    await submitLog();
+                    // Clear the form after successful submission
+                    setValue("");
+                    setNotes("");
+                    setSuccessMessage(
+                      `Successfully logged ${experimentsNeedingLogs[0].variable} for your experiment!`
+                    );
+                    setShowSuccess(true);
+
+                    // Refresh experiment data
+                    calculateExperimentProgress();
+                    calculateLoggingStreak();
+                  } catch (error) {
+                    setExpError(
+                      "Failed to log your experiment data. Please try again."
+                    );
+                  }
+                }}
+                disabled={submitting || !value.trim()}
+                variant="contained"
+                fullWidth
+                sx={{
+                  py: 1.5,
+                  backgroundColor: "#ffd700",
+                  color: "#333",
+                  fontWeight: "bold",
+                  "&:hover": {
+                    backgroundColor: "#ffed4a",
+                  },
+                  "&:disabled": {
+                    backgroundColor: "rgba(255,215,0,0.5)",
+                    color: "rgba(51,51,51,0.5)",
+                  },
+                }}
+              >
+                {submitting
+                  ? "Saving..."
+                  : `Log ${experimentsNeedingLogs[0].variable}`}
+              </Button>
+            </Box>
+
+            <Typography
+              variant="caption"
+              sx={{ opacity: 0.8, mt: 2, display: "block" }}
+            >
               Target: {experimentsNeedingLogs[0].frequency || 1} log
               {(experimentsNeedingLogs[0].frequency || 1) > 1 ? "s" : ""} per
               day
@@ -562,8 +726,20 @@ export default function LogPage() {
       {/* Research Question Builder */}
       <Paper elevation={3} sx={{ p: 4, mb: 4 }}>
         <Typography variant="h6" gutterBottom>
-          What are you logging today?
+          {experimentsNeedingLogs.length > 0
+            ? "Log Other Variables"
+            : "What are you logging today?"}
         </Typography>
+
+        {experimentsNeedingLogs.length > 0 && (
+          <Alert severity="info" sx={{ mb: 3 }}>
+            <Typography variant="body2">
+              💡 <strong>Tip:</strong> Use the experiment card above to log your
+              active experiment data quickly. This form is for logging
+              additional variables not part of your current experiment.
+            </Typography>
+          </Alert>
+        )}
 
         {/* Variable Selection */}
         <Box sx={{ mb: 3 }}>
@@ -684,15 +860,18 @@ export default function LogPage() {
           />
         </Box>
 
-        {/* Date Picker */}
+        {/* Date and Time Picker */}
         <Box sx={{ mb: 3 }}>
           <Typography variant="subtitle2" gutterBottom>
-            Date
+            Date & Time
           </Typography>
           <DatePicker
             selected={date}
             onChange={(date) => date && setDate(date)}
-            dateFormat="yyyy-MM-dd"
+            showTimeSelect
+            timeFormat="HH:mm"
+            timeIntervals={15}
+            dateFormat="yyyy-MM-dd HH:mm"
             customInput={
               <TextField
                 fullWidth
@@ -772,7 +951,7 @@ export default function LogPage() {
                   </Typography>
                 )}
                 <Typography variant="caption" color="text.secondary">
-                  {new Date(log.date).toLocaleDateString()}
+                  {new Date(log.date).toLocaleString()}
                 </Typography>
               </Box>
             ))}

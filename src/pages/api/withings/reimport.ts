@@ -33,14 +33,34 @@ async function reimportAllWithingsData(
   totalAvailable: number;
 }> {
   // Fetch refresh_token from Supabase
-  const { data: tokenRow } = await supabase
+  const { data: tokenRow, error: tokenError } = await supabase
     .from("withings_tokens")
-    .select("refresh_token")
+    .select("refresh_token, expires_at")
     .eq("user_id", user_id)
     .single();
-  if (!tokenRow?.refresh_token) {
-    throw new Error("No refresh_token found for user");
+
+  if (tokenError) {
+    console.error(
+      `[Withings Reimport] Error fetching tokens for user ${user_id}:`,
+      tokenError
+    );
+    throw new Error(`Failed to fetch Withings tokens: ${tokenError.message}`);
   }
+
+  if (!tokenRow?.refresh_token) {
+    console.error(
+      `[Withings Reimport] No refresh token found for user ${user_id}. Token row:`,
+      tokenRow
+    );
+    throw new Error(
+      "No refresh_token found for user. Please re-authorize Withings integration."
+    );
+  }
+
+  console.log(
+    `[Withings Reimport] Found refresh token for user ${user_id}. Token expires at:`,
+    tokenRow.expires_at
+  );
 
   // Fetch in 360-day batches from 2009-05-01 to today
   const startDate = new Date("2009-05-01");
@@ -106,6 +126,10 @@ async function reimportAllWithingsData(
       data.status === 401 ||
       (data.error && String(data.error).includes("invalid_token"))
     ) {
+      console.log(
+        "[Withings Reimport] Access token invalid, attempting to refresh..."
+      );
+
       // Refresh the access token
       const refreshRes = await fetch("https://wbsapi.withings.net/v2/oauth2", {
         method: "POST",
@@ -118,9 +142,30 @@ async function reimportAllWithingsData(
           refresh_token: currentRefreshToken,
         }),
       });
+
       const refreshData = await refreshRes.json();
+
+      // Log the refresh response for debugging
+      console.log(
+        "[Withings Reimport][DEBUG] Refresh token response:",
+        JSON.stringify(refreshData, null, 2)
+      );
+
       if (!refreshData.body || !refreshData.body.access_token) {
-        throw new Error("Failed to refresh Withings token");
+        // Provide more specific error information
+        const errorMsg = refreshData.error || "Unknown error";
+        const errorDetails = refreshData.body || refreshData;
+
+        console.error(
+          "[Withings Reimport] Token refresh failed:",
+          JSON.stringify({ error: errorMsg, details: errorDetails }, null, 2)
+        );
+
+        throw new Error(
+          `Failed to refresh Withings token. Error: ${errorMsg}. ` +
+            `This usually means the refresh token has expired or been revoked. ` +
+            `Please re-authorize the Withings integration.`
+        );
       }
       // Update tokens in Supabase
       await supabase.from("withings_tokens").upsert({

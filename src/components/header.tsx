@@ -11,9 +11,12 @@ import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import { useState } from "react";
 import { supabase } from "@/utils/supaBase";
+import { useRouter } from "next/router";
 
 export default function Header() {
   const { user, loading, avatarUrl } = useUser();
+  const router = useRouter();
+
   // Try to get profile table avatar first, then OAuth metadata
   const profilePic =
     avatarUrl ||
@@ -33,6 +36,10 @@ export default function Header() {
     setAnchorEl(event.currentTarget);
   };
   const handleMenuClose = () => {
+    setAnchorEl(null);
+  };
+  const handleProfile = () => {
+    router.push("/profile");
     setAnchorEl(null);
   };
   const handleLogout = async () => {
@@ -89,9 +96,6 @@ export default function Header() {
           <Link href="/analytics" className={navLinkClass}>
             Analytics
           </Link>
-          <Link href="/profile" className={navLinkClass}>
-            Profile
-          </Link>
           {!loading && !user && (
             <Link href="/auth">
               <Button
@@ -121,6 +125,7 @@ export default function Header() {
                 anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
                 transformOrigin={{ vertical: "top", horizontal: "right" }}
               >
+                <MenuItem onClick={handleProfile}>Profile</MenuItem>
                 <MenuItem onClick={handleLogout}>Logout</MenuItem>
               </Menu>
             </>

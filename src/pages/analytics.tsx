@@ -35,6 +35,8 @@ import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import chroma from "chroma-js";
 import Select from "react-select";
+import ManualLogsTable from "@/components/ManualLogsTable";
+import ManualLogsChart from "@/components/ManualLogsChart";
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -553,6 +555,21 @@ export default function Analytics() {
           <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
             Discover long-term trends and recurring patterns in your data.
           </Typography>
+
+          {/* Manual Logs Section */}
+          {user && (
+            <Box sx={{ mb: 4 }}>
+              <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
+                <ManualLogsChart userId={user.id} />
+              </Paper>
+              <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
+                <ManualLogsTable userId={user.id} maxRows={20} />
+              </Paper>
+            </Box>
+          )}
+
+          <Divider sx={{ mb: 3 }} />
+
           {/* Oura Connect Button */}
           {ouraData.length === 0 && !ouraLoading && (
             <Box sx={{ mb: 3 }}>
