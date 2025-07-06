@@ -47,6 +47,7 @@ export default function ExperimentDesigner() {
   const [missingDataStrategy, setMissingDataStrategy] = useState(
     "Ignore missing data"
   );
+  const [dependentVar, setDependentVar] = useState("Average RHR");
   const intervalPresets = ["Morning", "Afternoon", "Evening", "Night"];
   const missingDataOptions = [
     { value: "Ignore missing data", label: "Skip missing days (recommended)" },
@@ -183,7 +184,7 @@ export default function ExperimentDesigner() {
         .select("label");
       const allVars = [
         ...LOG_LABELS.map((l) => l.label),
-        ...(userVars?.map((u) => u.label) || []),
+        ...(userVars?.map((u: any) => u.label) || []),
       ];
       const uniqueVars = Array.from(new Set(allVars));
       const varWithCounts = uniqueVars.map((label) => ({
@@ -254,7 +255,7 @@ export default function ExperimentDesigner() {
             start_date: startDate.toISOString(),
             end_date: endDate.toISOString(),
             frequency,
-            effect: effect,
+            effect: dependentVar,
             time_intervals: timeIntervals,
             missing_data_strategy: missingDataStrategy,
           },
@@ -284,7 +285,7 @@ export default function ExperimentDesigner() {
         start_date: startDate.toISOString(),
         end_date: endDate.toISOString(),
         frequency,
-        effect: effect,
+        effect: dependentVar,
         time_intervals: timeIntervals,
         missing_data_strategy: missingDataStrategy,
       });
@@ -313,7 +314,7 @@ export default function ExperimentDesigner() {
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <Typography variant="h3" component="h1" gutterBottom align="center">
-        Build Self-Experiment
+        🧪 Build a Self-Experiment
       </Typography>
       <Typography
         variant="h6"
@@ -341,10 +342,18 @@ export default function ExperimentDesigner() {
           {/* Variable Selection with Tabs */}
           <Box sx={{ mb: 4 }}>
             <Typography variant="h6" gutterBottom>
-              Choose Your Cause
+              Choose Your Variables
             </Typography>
             <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-              Select the variable you want to experiment with (the cause)
+              Select both the cause (independent variable) and effect (dependent variable) for your experiment
+            </Typography>
+            
+            {/* Cause (Independent Variable) */}
+            <Typography variant="h6" gutterBottom sx={{ mt: 4, mb: 2 }}>
+              🔄 Cause (Independent Variable)
+            </Typography>
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+              The variable you want to change or manipulate
             </Typography>
             {/* Search Bar for All Variables */}
             <Autocomplete
@@ -392,6 +401,41 @@ export default function ExperimentDesigner() {
             <Typography variant="caption" color="textSecondary">
               Selected: <strong>{variable}</strong>
             </Typography>
+            
+            {/* Effect (Dependent Variable) */}
+            <Typography variant="h6" gutterBottom sx={{ mt: 4, mb: 2 }}>
+              📊 Effect (Dependent Variable)
+            </Typography>
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+              The outcome you want to measure for changes
+            </Typography>
+            <Box sx={{ mb: 3 }}>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="dependentVar"
+                    value="Average RHR"
+                    checked={dependentVar === "Average RHR"}
+                    onChange={() => setDependentVar("Average RHR")}
+                  />
+                  Average RHR
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="dependentVar"
+                    value="Lowest RHR"
+                    checked={dependentVar === "Lowest RHR"}
+                    onChange={() => setDependentVar("Lowest RHR")}
+                  />
+                  Lowest RHR
+                </label>
+              </div>
+              <Typography variant="caption" color="textSecondary" sx={{ mt: 1 }}>
+                The experiment will assess whether your selected cause has an effect on this outcome.
+              </Typography>
+            </Box>
           </Box>
           <div>
             <Typography variant="subtitle1" className="mb-2">
@@ -466,35 +510,6 @@ export default function ExperimentDesigner() {
               <Typography variant="subtitle1">Advanced Settings</Typography>
             </AccordionSummary>
             <AccordionDetails className="space-y-4">
-              <div>
-                <Typography variant="subtitle2">Effect</Typography>
-                <div className="flex gap-4 mt-1">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="effect"
-                      value="Average RHR"
-                      checked={effect === "Average RHR"}
-                      onChange={() => setEffect("Average RHR")}
-                    />
-                    Average RHR
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="effect"
-                      value="Lowest RHR"
-                      checked={effect === "Lowest RHR"}
-                      onChange={() => setEffect("Lowest RHR")}
-                    />
-                    Lowest RHR
-                  </label>
-                </div>
-                <Typography variant="caption" className="text-gray-500 mt-1">
-                  The experiment will assess whether your selected cause has an
-                  effect on this outcome.
-                </Typography>
-              </div>
               {frequency > 1 && (
                 <div>
                   <Typography variant="subtitle2">
