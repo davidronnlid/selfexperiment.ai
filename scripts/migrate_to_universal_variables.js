@@ -237,33 +237,35 @@ const VARIABLE_MAPPINGS = {
   },
 
   // Substances
-  "Caffeine (mg)": {
+  Caffeine: {
     slug: "caffeine",
+    label: "Caffeine",
     data_type: "continuous",
     canonical_unit: "mg",
-    category: "Substances",
-    subcategory: "Stimulants",
-    source_type: "manual",
     validation_rules: {
       min: 0,
       max: 1000,
       unit: "mg",
       required: true,
     },
+    category: "Substances & Diet",
+    subcategory: "Stimulants",
+    icon: "☕",
   },
-  "Alcohol (units)": {
+  Alcohol: {
     slug: "alcohol",
+    label: "Alcohol",
     data_type: "continuous",
     canonical_unit: "units",
-    category: "Substances",
-    subcategory: "Alcohol",
-    source_type: "manual",
     validation_rules: {
       min: 0,
       max: 20,
       unit: "units",
       required: true,
     },
+    category: "Substances & Diet",
+    subcategory: "Depressants",
+    icon: "🍷",
   },
   Nicotine: {
     slug: "nicotine",

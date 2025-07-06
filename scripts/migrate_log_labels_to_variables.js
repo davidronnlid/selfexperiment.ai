@@ -14,7 +14,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const LOG_LABELS = [
   // Substances Consumed
   {
-    label: "Caffeine (mg)",
+    label: "Caffeine",
     type: "number",
     description: "Total caffeine consumed and timing.",
     icon: "☕",
@@ -26,7 +26,7 @@ const LOG_LABELS = [
     },
   },
   {
-    label: "Alcohol (units)",
+    label: "Alcohol",
     type: "number",
     description: "Alcohol intake and timing.",
     icon: "🍷",
@@ -316,8 +316,8 @@ const LOG_LABELS = [
 
 // Category mapping
 const categoryMapping = {
-  "Caffeine (mg)": "Substances & Diet",
-  "Alcohol (units)": "Substances & Diet",
+  Caffeine: "Substances & Diet",
+  Alcohol: "Substances & Diet",
   Nicotine: "Substances & Diet",
   "Cannabis/THC": "Substances & Diet",
   "Medications/Supplements": "Substances & Diet",

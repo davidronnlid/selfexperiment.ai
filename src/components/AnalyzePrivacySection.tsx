@@ -100,8 +100,8 @@ export default function AnalyzePrivacySection() {
     ),
     "Substances & Diet": LOG_LABELS.filter((v) =>
       [
-        "Caffeine (mg)",
-        "Alcohol (units)",
+        "Caffeine",
+        "Alcohol",
         "Nicotine",
         "Cannabis/THC",
         "Medications/Supplements",

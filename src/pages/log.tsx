@@ -9,7 +9,16 @@ import Alert from "@mui/material/Alert";
 import Snackbar from "@mui/material/Snackbar";
 import Autocomplete from "@mui/material/Autocomplete";
 import InputAdornment from "@mui/material/InputAdornment";
-import { FaTag, FaStickyNote, FaGlobe, FaLock } from "react-icons/fa";
+import {
+  FaTag,
+  FaStickyNote,
+  FaGlobe,
+  FaLock,
+  FaEdit,
+  FaTrash,
+  FaCheck,
+  FaTimes,
+} from "react-icons/fa";
 import {
   searchVariables,
   validateVariableValue,
@@ -27,38 +36,15 @@ import {
   Chip,
   FormControlLabel,
   Checkbox,
+  IconButton,
 } from "@mui/material";
 import { useUser } from "../pages/_app";
 import SearchIcon from "@mui/icons-material/Search";
 import "react-datepicker/dist/react-datepicker.css";
 import { LinearProgress } from "@mui/material";
-import { LOG_LABELS } from "@/utils/logLabels";
-
-// Helper function to validate variable value
-const validateValue = (
-  label: string,
-  value: string
-): { isValid: boolean; error?: string } => {
-  // Basic validation - you can expand this based on your needs
-  if (!value || value.trim() === "") {
-    return { isValid: false, error: "Value cannot be empty" };
-  }
-
-  // Check if it's a number for numeric variables
-  const numericValue = parseFloat(value);
-  if (!isNaN(numericValue)) {
-    if (numericValue < 0 || numericValue > 100) {
-      return { isValid: false, error: "Value must be between 0 and 100" };
-    }
-    return { isValid: true };
-  }
-
-  // For non-numeric values, just check if it's not empty
-  return {
-    isValid: value.trim().length > 0,
-    error: value.trim().length > 0 ? undefined : "Value cannot be empty",
-  };
-};
+import { LOG_LABELS, validateValue } from "@/utils/logLabels";
+import { useTheme } from "@mui/material/styles";
+import { useMediaQuery } from "@mui/material";
 
 // Dynamic variable options will be loaded from the database
 
@@ -97,7 +83,10 @@ const useEmojiMap = (
 };
 
 export default function LogPage() {
-  const { user, loading: userLoading } = useUser();
+  const { user, loading: userLoading, refreshUser } = useUser();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const isTablet = useMediaQuery(theme.breakpoints.down("md"));
   const [tabValue, setTabValue] = useState(0);
   const [variables, setVariables] = useState<Variable[]>([]);
   const [variablesLoading, setVariablesLoading] = useState(true);
@@ -118,6 +107,12 @@ export default function LogPage() {
   const [successMessage, setSuccessMessage] = useState<string>("");
   const [showSuccess, setShowSuccess] = useState<boolean>(false);
   const [expError, setExpError] = useState("");
+  const [experimentValues, setExperimentValues] = useState<
+    Record<string, string>
+  >({});
+  const [experimentNotes, setExperimentNotes] = useState<
+    Record<string, string>
+  >({});
   const [selectedInterval, setSelectedInterval] = useState<string>("");
   const [pendingVariable, setPendingVariable] = useState("");
   const [pendingEmoji, setPendingEmoji] = useState("🆕");
@@ -125,7 +120,7 @@ export default function LogPage() {
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
   const [variableSettings, setVariableSettings] = useState<any[]>([]);
   const [privacyLoading, setPrivacyLoading] = useState(true);
-  const [isLogPrivate, setIsLogPrivate] = useState(false);
+  const [isLogPrivate, setIsLogPrivate] = useState(false); // false = public (default), true = private
   const [editExperimentLog, setEditExperimentLog] = useState<LogEntry | null>(
     null
   );
@@ -142,6 +137,10 @@ export default function LogPage() {
   const [independentVariable, setIndependentVariable] = useState<string>("");
   const [dependentVariable, setDependentVariable] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
+  const [editingLogId, setEditingLogId] = useState<number | null>(null);
+  const [editingValue, setEditingValue] = useState("");
+  const [editingNotes, setEditingNotes] = useState("");
+  const [editingDate, setEditingDate] = useState<Date>(new Date());
 
   // Calculate experiment progress
   const calculateExperimentProgress = () => {
@@ -164,6 +163,22 @@ export default function LogPage() {
     setTotalExperimentDays(totalDays);
     setExperimentProgress(Math.min((daysPassed / totalDays) * 100, 100));
   };
+
+  // Check and refresh user state if needed
+  useEffect(() => {
+    const checkUserState = async () => {
+      if (!userLoading && !user) {
+        console.log("LogPage: User state is undefined, attempting refresh...");
+        try {
+          await refreshUser();
+        } catch (error) {
+          console.error("LogPage: Failed to refresh user state:", error);
+        }
+      }
+    };
+
+    checkUserState();
+  }, [user, userLoading, refreshUser]);
 
   // Calculate logging streak
   const calculateLoggingStreak = async () => {
@@ -204,11 +219,97 @@ export default function LogPage() {
     setLoggingStreak(streak);
   };
 
+  // Check if current time is within any of the experiment's time intervals
+  const isCurrentTimeInIntervals = (timeIntervals: any): boolean => {
+    // If no intervals specified, experiment is always active
+    if (!timeIntervals || timeIntervals.length === 0) {
+      return true;
+    }
+
+    const now = new Date();
+    const currentTime = now.getHours() * 60 + now.getMinutes(); // Convert to minutes from midnight
+
+    // Check if current time falls within any interval
+    return timeIntervals.some((interval: any) => {
+      if (typeof interval === "string") {
+        // Handle legacy string format (e.g., "21:00")
+        return true; // For now, accept legacy format
+      }
+
+      if (interval.start && interval.end) {
+        // Parse time intervals
+        const startParts = interval.start.split(":");
+        const endParts = interval.end.split(":");
+
+        if (startParts.length !== 2 || endParts.length !== 2) {
+          return false; // Invalid time format
+        }
+
+        const startMinutes =
+          parseInt(startParts[0]) * 60 + parseInt(startParts[1]);
+        const endMinutes = parseInt(endParts[0]) * 60 + parseInt(endParts[1]);
+
+        // Handle cases where end time is before start time (crosses midnight)
+        if (endMinutes < startMinutes) {
+          return currentTime >= startMinutes || currentTime <= endMinutes;
+        } else {
+          return currentTime >= startMinutes && currentTime <= endMinutes;
+        }
+      }
+
+      return false; // Invalid interval format
+    });
+  };
+
+  // Filter experiments that still need logs today
+  const filterExperimentsNeedingLogs = (
+    experiments: any[],
+    todaysLogs: LogEntry[]
+  ) => {
+    const today = new Date().toISOString().split("T")[0];
+
+    return experiments.filter((experiment) => {
+      // Count how many logs for the independent variable were made today
+      const independentLogsToday = todaysLogs.filter(
+        (log) =>
+          log.variable === experiment.variable && log.date.startsWith(today)
+      ).length;
+
+      // Count how many logs for the dependent variable were made today
+      const dependentVariable =
+        experiment.effect || experiment.dependent_variable;
+      const dependentLogsToday = dependentVariable
+        ? todaysLogs.filter(
+            (log) =>
+              log.variable === dependentVariable && log.date.startsWith(today)
+          ).length
+        : 0;
+
+      // Check if we haven't reached the required frequency for today for either variable
+      const independentNeedsMoreLogs =
+        independentLogsToday < (experiment.frequency || 1);
+      const dependentNeedsMoreLogs = dependentVariable
+        ? dependentLogsToday < (experiment.frequency || 1)
+        : false;
+
+      // Check if current time is within the experiment's time intervals
+      const inTimeInterval = isCurrentTimeInIntervals(
+        experiment.time_intervals
+      );
+
+      // Only include if we need more logs for either variable and we're in time interval
+      return (
+        (independentNeedsMoreLogs || dependentNeedsMoreLogs) && inTimeInterval
+      );
+    });
+  };
+
   // Load variables and experiments
   useEffect(() => {
     async function fetchAndSortVariables() {
       if (!user) return;
 
+      console.log("Starting to fetch variables...");
       setVariablesLoading(true);
       try {
         // Get all variables from LOG_LABELS
@@ -270,9 +371,14 @@ export default function LogPage() {
 
         setVariables(allVariables);
         setLabelOptions(allVariables);
+        console.log(
+          "Variables loaded successfully, count:",
+          allVariables.length
+        );
       } catch (error) {
         console.error("Error fetching variables:", error);
       } finally {
+        console.log("Setting variablesLoading to false");
         setVariablesLoading(false);
       }
     }
@@ -294,7 +400,26 @@ export default function LogPage() {
 
         if (experiments) {
           setActiveExperiments(experiments);
-          setExperimentsNeedingLogs(experiments);
+
+          // Get today's logs to properly filter experiments
+          const today = new Date().toISOString().split("T")[0];
+          const startOfDay = `${today}T00:00:00.000Z`;
+          const endOfDay = `${today}T23:59:59.999Z`;
+
+          const { data: todaysLogs } = await supabase
+            .from("daily_logs")
+            .select("*")
+            .eq("user_id", user.id)
+            .gte("date", startOfDay)
+            .lte("date", endOfDay)
+            .order("created_at", { ascending: false });
+
+          // Filter experiments based on today's logs
+          const filtered = filterExperimentsNeedingLogs(
+            experiments,
+            todaysLogs || []
+          );
+          setExperimentsNeedingLogs(filtered);
         }
       } catch (error) {
         console.error("Error loading experiments:", error);
@@ -302,7 +427,7 @@ export default function LogPage() {
     }
 
     loadActiveExperiments();
-  }, [user]);
+  }, [user]); // Remove logs dependency to prevent infinite loops
 
   // Load today's logs
   useEffect(() => {
@@ -318,7 +443,8 @@ export default function LogPage() {
         .select("*")
         .eq("user_id", user.id)
         .gte("date", startOfDay)
-        .lte("date", endOfDay);
+        .lte("date", endOfDay)
+        .order("created_at", { ascending: false });
 
       if (todaysLogs) {
         setLogs(todaysLogs);
@@ -350,11 +476,24 @@ export default function LogPage() {
       .order("created_at", { ascending: false });
 
     setLogs(data || []);
+
+    // Also refresh experiments filtering
+    if (data && activeExperiments.length > 0) {
+      const filtered = filterExperimentsNeedingLogs(activeExperiments, data);
+      setExperimentsNeedingLogs(filtered);
+    }
   };
 
   const submitLog = async () => {
     if (!user || !selectedVariable || !value.trim()) {
       setExpError("Please select a variable and enter a value");
+      return;
+    }
+
+    // Validate the value using the proper validation function
+    const validation = validateValue(selectedVariable.label, value);
+    if (!validation.isValid) {
+      setExpError(validation.error || "Invalid value");
       return;
     }
 
@@ -396,9 +535,193 @@ export default function LogPage() {
 
       // Refresh logs
       await fetchLogs();
+
+      // Refresh experiments filtering in case this log affects experiment requirements
+      await refreshExperimentsFiltering();
     } catch (error) {
       console.error("Error saving log:", error);
       setExpError("Failed to save log: " + (error as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submitExperimentLog = async (
+    experimentVariableName: string,
+    logValue: string,
+    logNotes: string
+  ) => {
+    if (!user || !experimentVariableName || !logValue.trim()) {
+      setExpError(`Please enter a value for ${experimentVariableName}`);
+      return;
+    }
+
+    // Validate the value using the proper validation function
+    const validation = validateValue(experimentVariableName, logValue);
+    if (!validation.isValid) {
+      setExpError(validation.error || "Invalid value");
+      return;
+    }
+
+    setSubmitting(true);
+    setExpError("");
+
+    try {
+      const logData = {
+        user_id: user.id,
+        variable: experimentVariableName,
+        value: logValue.trim(),
+        notes: logNotes.trim() || null,
+        date: new Date().toISOString(), // Use current time for experiment logging
+        created_at: new Date().toISOString(),
+      };
+
+      const { data, error } = await supabase
+        .from("daily_logs")
+        .insert([logData])
+        .select();
+
+      if (error) {
+        throw error;
+      }
+
+      // Success - show success message
+      const displayName = (() => {
+        const experimentVariable = LOG_LABELS.find(
+          (label) => label.label === experimentVariableName
+        );
+
+        if (!experimentVariable) {
+          // Try stripping units from variable name (e.g., "Caffeine (mg)" -> "Caffeine")
+          const cleanVariableName = experimentVariableName.replace(
+            /\s*\([^)]*\)\s*$/,
+            ""
+          );
+          const cleanExperimentVariable = LOG_LABELS.find(
+            (label) => label.label === cleanVariableName
+          );
+
+          if (cleanExperimentVariable) {
+            const displayName = cleanExperimentVariable.label;
+            const unit = cleanExperimentVariable.constraints?.unit;
+            return displayName + (unit ? ` (${unit})` : "");
+          }
+        }
+
+        // Display the clean variable name (without units from the stored name)
+        const displayName =
+          experimentVariable?.label ||
+          experimentVariableName.replace(/\s*\([^)]*\)\s*$/, "");
+        const unit = experimentVariable?.constraints?.unit;
+        return displayName + (unit ? ` (${unit})` : "");
+      })();
+
+      setSuccessMessage(
+        `Successfully logged ${displayName} for your experiment!`
+      );
+      setShowSuccess(true);
+
+      // Refresh logs and experiments filtering
+      await fetchLogs();
+      await refreshExperimentsFiltering();
+    } catch (error) {
+      console.error("Error saving experiment log:", error);
+      setExpError("Failed to log your experiment data. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submitExperimentLogs = async (
+    variables: Array<{
+      name: string;
+      value: string;
+      notes: string;
+    }>
+  ) => {
+    if (!user || variables.length === 0) {
+      setExpError("Please enter values for your experiment variables");
+      return;
+    }
+
+    // Validate that all variables have values
+    const missingVariables = variables.filter((v) => !v.value.trim());
+    if (missingVariables.length > 0) {
+      setExpError("Please enter values for all experiment variables");
+      return;
+    }
+
+    // Validate each variable's value using the proper validation function
+    for (const variable of variables) {
+      const validation = validateValue(variable.name, variable.value);
+      if (!validation.isValid) {
+        setExpError(`${variable.name}: ${validation.error || "Invalid value"}`);
+        return;
+      }
+    }
+
+    setSubmitting(true);
+    setExpError("");
+
+    try {
+      const logDataArray = variables.map((variable) => ({
+        user_id: user.id,
+        variable: variable.name,
+        value: variable.value.trim(),
+        notes: variable.notes.trim() || null,
+        date: new Date().toISOString(), // Use current time for experiment logging
+        created_at: new Date().toISOString(),
+      }));
+
+      const { data, error } = await supabase
+        .from("daily_logs")
+        .insert(logDataArray)
+        .select();
+
+      if (error) {
+        throw error;
+      }
+
+      // Success - show success message
+      const variableNames = variables.map((v) => {
+        const experimentVariable = LOG_LABELS.find(
+          (label) => label.label === v.name
+        );
+
+        if (!experimentVariable) {
+          // Try stripping units from variable name (e.g., "Caffeine (mg)" -> "Caffeine")
+          const cleanVariableName = v.name.replace(/\s*\([^)]*\)\s*$/, "");
+          const cleanExperimentVariable = LOG_LABELS.find(
+            (label) => label.label === cleanVariableName
+          );
+
+          if (cleanExperimentVariable) {
+            const displayName = cleanExperimentVariable.label;
+            const unit = cleanExperimentVariable.constraints?.unit;
+            return displayName + (unit ? ` (${unit})` : "");
+          }
+        }
+
+        // Display the clean variable name (without units from the stored name)
+        const displayName =
+          experimentVariable?.label || v.name.replace(/\s*\([^)]*\)\s*$/, "");
+        const unit = experimentVariable?.constraints?.unit;
+        return displayName + (unit ? ` (${unit})` : "");
+      });
+
+      setSuccessMessage(
+        `Successfully logged ${variableNames.join(
+          " and "
+        )} for your experiment!`
+      );
+      setShowSuccess(true);
+
+      // Refresh logs and experiments filtering
+      await fetchLogs();
+      await refreshExperimentsFiltering();
+    } catch (error) {
+      console.error("Error saving experiment logs:", error);
+      setExpError("Failed to log your experiment data. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -433,7 +756,113 @@ export default function LogPage() {
     return setting?.sharing_level || "private";
   };
 
-  if (userLoading) {
+  // Function to refresh experiments filtering
+  const refreshExperimentsFiltering = async () => {
+    if (!user) return;
+
+    try {
+      // Reload today's logs
+      const today = new Date().toISOString().split("T")[0];
+      const startOfDay = `${today}T00:00:00.000Z`;
+      const endOfDay = `${today}T23:59:59.999Z`;
+
+      const { data: todaysLogs } = await supabase
+        .from("daily_logs")
+        .select("*")
+        .eq("user_id", user.id)
+        .gte("date", startOfDay)
+        .lte("date", endOfDay);
+
+      if (todaysLogs) {
+        setLogs(todaysLogs);
+
+        // Refilter experiments based on updated logs
+        const filtered = filterExperimentsNeedingLogs(
+          activeExperiments,
+          todaysLogs
+        );
+        setExperimentsNeedingLogs(filtered);
+      }
+    } catch (error) {
+      console.error("Error refreshing experiments:", error);
+    }
+  };
+
+  // Handle log editing
+  const handleEditLog = (log: LogEntry) => {
+    setEditingLogId(log.id);
+    setEditingValue(log.value);
+    setEditingNotes(log.notes || "");
+    setEditingDate(new Date(log.date));
+  };
+
+  const handleCancelEdit = () => {
+    setEditingLogId(null);
+    setEditingValue("");
+    setEditingNotes("");
+    setEditingDate(new Date());
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingLogId || !editingValue.trim()) return;
+
+    try {
+      const { error } = await supabase
+        .from("daily_logs")
+        .update({
+          value: editingValue.trim(),
+          notes: editingNotes.trim() || null,
+          date: editingDate.toISOString(),
+        })
+        .eq("id", editingLogId);
+
+      if (error) throw error;
+
+      // Refresh logs
+      await fetchLogs();
+      setEditingLogId(null);
+      setEditingValue("");
+      setEditingNotes("");
+      setEditingDate(new Date());
+
+      setSuccessMessage("Log updated successfully!");
+      setShowSuccess(true);
+    } catch (error) {
+      console.error("Error updating log:", error);
+      setExpError("Failed to update log");
+    }
+  };
+
+  // Handle log deletion
+  const handleDeleteLog = async (logId: number) => {
+    if (!confirm("Are you sure you want to delete this log?")) return;
+
+    try {
+      const { error } = await supabase
+        .from("daily_logs")
+        .delete()
+        .eq("id", logId);
+
+      if (error) throw error;
+
+      // Refresh logs
+      await fetchLogs();
+
+      setSuccessMessage("Log deleted successfully!");
+      setShowSuccess(true);
+    } catch (error) {
+      console.error("Error deleting log:", error);
+      setExpError("Failed to delete log");
+    }
+  };
+
+  if (userLoading || variablesLoading) {
+    console.log(
+      "LogPage: userLoading =",
+      userLoading,
+      "variablesLoading =",
+      variablesLoading
+    );
     return (
       <Container maxWidth="md" sx={{ py: 4 }}>
         <Typography>Loading...</Typography>
@@ -452,253 +881,636 @@ export default function LogPage() {
   }
 
   return (
-    <Container maxWidth="md" sx={{ py: 4 }}>
-      <Typography variant="h4" component="h1" gutterBottom align="center">
+    <Container
+      maxWidth="md"
+      sx={{ py: { xs: 2, sm: 4 }, px: { xs: 2, sm: 3 } }}
+    >
+      <Typography
+        variant="h4"
+        component="h1"
+        gutterBottom
+        align="center"
+        sx={{
+          fontSize: { xs: "1.5rem", sm: "2rem", md: "2.5rem" },
+          mb: { xs: 2, sm: 3 },
+        }}
+      >
         📊 Log Your Data
       </Typography>
 
-      {/* Active Experiment Progress */}
+      {/* Active Experiments */}
       {experimentsNeedingLogs.length > 0 && (
-        <Paper
-          elevation={3}
-          sx={{
-            p: 3,
-            mb: 4,
-            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-            color: "white",
-            borderRadius: 3,
-          }}
-        >
-          <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
-            <Typography
-              variant="h6"
-              sx={{ display: "flex", alignItems: "center" }}
-            >
-              🧪 Active Experiment
-            </Typography>
-          </Box>
-
-          <Typography variant="subtitle1" gutterBottom>
-            Var: {experimentsNeedingLogs[0].variable}
-          </Typography>
-
-          <Typography variant="body2" sx={{ mb: 2 }}>
-            {new Date(
-              experimentsNeedingLogs[0].start_date
-            ).toLocaleDateString()}{" "}
-            -{" "}
-            {new Date(experimentsNeedingLogs[0].end_date).toLocaleDateString()}
-          </Typography>
-
-          <Typography variant="body2" sx={{ mb: 2 }}>
-            Progress
-          </Typography>
-          <LinearProgress
-            variant="determinate"
-            value={experimentProgress}
+        <Box sx={{ mb: { xs: 3, sm: 4 } }}>
+          <Typography
+            variant="h5"
             sx={{
-              height: 8,
-              borderRadius: 4,
-              backgroundColor: "rgba(255,255,255,0.3)",
-              "& .MuiLinearProgress-bar": {
-                backgroundColor: "#ffd700",
-              },
-            }}
-          />
-          <Typography variant="body2" sx={{ textAlign: "right", mt: 1 }}>
-            {Math.round(experimentProgress)}%
-          </Typography>
-
-          <Box
-            sx={{
-              mt: 3,
-              p: 3,
-              backgroundColor: "rgba(255,255,255,0.1)",
-              borderRadius: 2,
+              mb: { xs: 2, sm: 3 },
+              display: "flex",
+              alignItems: "center",
+              fontSize: { xs: "1.2rem", sm: "1.5rem" },
             }}
           >
-            <Typography variant="body1" sx={{ mb: 2, fontWeight: "bold" }}>
-              📝 Log your {experimentsNeedingLogs[0].variable} for today
-            </Typography>
+            🧪 Active Experiments
+          </Typography>
 
-            <Typography variant="body2" sx={{ mb: 3, opacity: 0.9 }}>
-              Track your daily {experimentsNeedingLogs[0].variable} intake to
-              see how it affects your wellbeing. Enter the amount and any
-              relevant notes about timing, context, or how you're feeling.
-            </Typography>
-
-            {/* Quick Experiment Logging Form */}
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <TextField
-                fullWidth
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                placeholder={`Enter your ${experimentsNeedingLogs[0].variable} value...`}
-                variant="outlined"
+          {experimentsNeedingLogs.map((experiment, index) => (
+            <Paper
+              key={`${experiment.id}-${index}`}
+              elevation={2}
+              sx={{
+                p: { xs: 2, sm: 2 },
+                mb: 2,
+                background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                color: "white",
+                borderRadius: 2,
+              }}
+            >
+              <Box
                 sx={{
-                  "& .MuiOutlinedInput-root": {
-                    backgroundColor: "#ffffff",
-                    color: "#333",
-                    "& fieldset": {
-                      borderColor: "rgba(255,255,255,0.5)",
-                    },
-                    "&:hover fieldset": {
-                      borderColor: "rgba(255,255,255,0.7)",
-                    },
-                    "&.Mui-focused fieldset": {
-                      borderColor: "#ffd700",
-                      borderWidth: "2px",
-                    },
-                    "& input": {
-                      color: "#333",
-                    },
-                    "& input::placeholder": {
-                      color: "#999",
-                      opacity: 1,
-                    },
-                  },
-                }}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <FaTag color="#666" />
-                    </InputAdornment>
-                  ),
-                }}
-              />
-
-              <TextField
-                fullWidth
-                multiline
-                rows={2}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Add notes about your experiment (optional)..."
-                variant="outlined"
-                sx={{
-                  "& .MuiOutlinedInput-root": {
-                    backgroundColor: "#ffffff",
-                    color: "#333",
-                    "& fieldset": {
-                      borderColor: "rgba(255,255,255,0.5)",
-                    },
-                    "&:hover fieldset": {
-                      borderColor: "rgba(255,255,255,0.7)",
-                    },
-                    "&.Mui-focused fieldset": {
-                      borderColor: "#ffd700",
-                      borderWidth: "2px",
-                    },
-                    "& textarea": {
-                      color: "#333",
-                    },
-                    "& textarea::placeholder": {
-                      color: "#999",
-                      opacity: 1,
-                    },
-                  },
-                }}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <FaStickyNote color="#666" />
-                    </InputAdornment>
-                  ),
-                }}
-              />
-
-              <Button
-                onClick={async () => {
-                  if (!value.trim()) {
-                    setExpError("Please enter a value for your experiment");
-                    return;
-                  }
-
-                  setExpError(""); // Clear any previous errors
-
-                  // Set the selected variable to the experiment variable
-                  const experimentVariable = variables.find(
-                    (v) => v.label === experimentsNeedingLogs[0].variable
-                  );
-                  if (experimentVariable) {
-                    setSelectedVariable(experimentVariable);
-                  }
-
-                  // Set date to current time for experiment logging
-                  const now = new Date();
-                  setDate(now);
-
-                  // Submit the log
-                  try {
-                    await submitLog();
-                    // Clear the form after successful submission
-                    setValue("");
-                    setNotes("");
-                    setSuccessMessage(
-                      `Successfully logged ${experimentsNeedingLogs[0].variable} for your experiment!`
-                    );
-                    setShowSuccess(true);
-
-                    // Refresh experiment data
-                    calculateExperimentProgress();
-                    calculateLoggingStreak();
-                  } catch (error) {
-                    setExpError(
-                      "Failed to log your experiment data. Please try again."
-                    );
-                  }
-                }}
-                disabled={submitting || !value.trim()}
-                variant="contained"
-                fullWidth
-                sx={{
-                  py: 1.5,
-                  backgroundColor: "#ffd700",
-                  color: "#333",
-                  fontWeight: "bold",
-                  "&:hover": {
-                    backgroundColor: "#ffed4a",
-                  },
-                  "&:disabled": {
-                    backgroundColor: "rgba(255,215,0,0.5)",
-                    color: "rgba(51,51,51,0.5)",
-                  },
+                  p: { xs: 1.5, sm: 2 },
+                  backgroundColor: "rgba(255,255,255,0.1)",
+                  borderRadius: 1,
                 }}
               >
-                {submitting
-                  ? "Saving..."
-                  : `Log ${experimentsNeedingLogs[0].variable}`}
-              </Button>
-            </Box>
+                <Typography
+                  variant="subtitle1"
+                  sx={{
+                    mb: 1,
+                    fontWeight: "bold",
+                    fontSize: { xs: "0.9rem", sm: "1rem" },
+                  }}
+                >
+                  📝 Log your experiment variables for today
+                </Typography>
 
-            <Typography
-              variant="caption"
-              sx={{ opacity: 0.8, mt: 2, display: "block" }}
-            >
-              Target: {experimentsNeedingLogs[0].frequency || 1} log
-              {(experimentsNeedingLogs[0].frequency || 1) > 1 ? "s" : ""} per
-              day
-            </Typography>
-          </Box>
+                {(() => {
+                  // First try exact match, then try without units in parentheses
+                  let experimentVariable = LOG_LABELS.find(
+                    (label) => label.label === experiment.variable
+                  );
+
+                  if (!experimentVariable) {
+                    const cleanVariableName = experiment.variable.replace(
+                      /\s*\([^)]*\)\s*$/,
+                      ""
+                    );
+                    experimentVariable = LOG_LABELS.find(
+                      (label) => label.label === cleanVariableName
+                    );
+                  }
+
+                  if (experimentVariable?.constraints) {
+                    const { constraints } = experimentVariable;
+                    let constraintText = "";
+
+                    if (
+                      constraints.min !== undefined &&
+                      constraints.max !== undefined
+                    ) {
+                      constraintText = `${constraints.min}${
+                        constraints.unit ? ` ${constraints.unit}` : ""
+                      } - ${constraints.max}${
+                        constraints.unit ? ` ${constraints.unit}` : ""
+                      }`;
+                    } else if (
+                      constraints.scaleMin !== undefined &&
+                      constraints.scaleMax !== undefined
+                    ) {
+                      constraintText = `${constraints.scaleMin} - ${constraints.scaleMax}`;
+                    }
+
+                    if (constraintText) {
+                      return (
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            mb: 1,
+                            opacity: 0.8,
+                            fontStyle: "italic",
+                            display: "block",
+                            fontSize: { xs: "0.7rem", sm: "0.75rem" },
+                          }}
+                        >
+                          Range: {constraintText}
+                        </Typography>
+                      );
+                    }
+                  }
+                  return null;
+                })()}
+
+                {/* Quick Experiment Logging Form */}
+                <Box
+                  sx={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 2,
+                  }}
+                >
+                  {/* Independent Variable Section */}
+                  <Box
+                    sx={{
+                      display: "flex",
+                      flexDirection: { xs: "column", sm: "row" },
+                      gap: { xs: 1, sm: 1.5 },
+                      alignItems: { xs: "stretch", sm: "flex-start" },
+                    }}
+                  >
+                    <TextField
+                      size="small"
+                      fullWidth={isMobile}
+                      value={experimentValues[experiment.variable] || ""}
+                      onChange={(e) =>
+                        setExperimentValues((prev) => ({
+                          ...prev,
+                          [experiment.variable]: e.target.value,
+                        }))
+                      }
+                      placeholder={`Enter ${(() => {
+                        // First try exact match, then try without units in parentheses
+                        let experimentVariable = LOG_LABELS.find(
+                          (label) => label.label === experiment.variable
+                        );
+
+                        if (!experimentVariable) {
+                          const cleanVariableName = experiment.variable.replace(
+                            /\s*\([^)]*\)\s*$/,
+                            ""
+                          );
+                          experimentVariable = LOG_LABELS.find(
+                            (label) => label.label === cleanVariableName
+                          );
+                        }
+
+                        const displayName =
+                          experimentVariable?.label ||
+                          experiment.variable.replace(/\s*\([^)]*\)\s*$/, "");
+                        const unit = experimentVariable?.constraints?.unit;
+                        return displayName + (unit ? ` (${unit})` : "");
+                      })()} value...`}
+                      variant="outlined"
+                      sx={{
+                        flex: { xs: "none", sm: 1 },
+                        "& .MuiOutlinedInput-root": {
+                          backgroundColor: "#ffffff",
+                          color: "#333",
+                          fontSize: { xs: "0.9rem", sm: "1rem" },
+                          "& fieldset": {
+                            borderColor: "rgba(255,255,255,0.5)",
+                          },
+                          "&:hover fieldset": {
+                            borderColor: "rgba(255,255,255,0.7)",
+                          },
+                          "&.Mui-focused fieldset": {
+                            borderColor: "#ffd700",
+                            borderWidth: "2px",
+                          },
+                          "& input": {
+                            color: "#333",
+                          },
+                          "& input::placeholder": {
+                            color: "#999",
+                            opacity: 1,
+                          },
+                        },
+                      }}
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <FaTag color="#666" size={isMobile ? "12" : "14"} />
+                          </InputAdornment>
+                        ),
+                      }}
+                    />
+
+                    <TextField
+                      size="small"
+                      multiline
+                      rows={1}
+                      fullWidth={isMobile}
+                      value={experimentNotes[experiment.variable] || ""}
+                      onChange={(e) =>
+                        setExperimentNotes((prev) => ({
+                          ...prev,
+                          [experiment.variable]: e.target.value,
+                        }))
+                      }
+                      placeholder="Notes (optional)"
+                      variant="outlined"
+                      sx={{
+                        flex: { xs: "none", sm: 1 },
+                        "& .MuiOutlinedInput-root": {
+                          backgroundColor: "#ffffff",
+                          color: "#333",
+                          fontSize: { xs: "0.9rem", sm: "1rem" },
+                          "& fieldset": {
+                            borderColor: "rgba(255,255,255,0.5)",
+                          },
+                          "&:hover fieldset": {
+                            borderColor: "rgba(255,255,255,0.7)",
+                          },
+                          "&.Mui-focused fieldset": {
+                            borderColor: "#ffd700",
+                            borderWidth: "2px",
+                          },
+                          "& textarea": {
+                            color: "#333",
+                          },
+                          "& textarea::placeholder": {
+                            color: "#999",
+                            opacity: 1,
+                          },
+                        },
+                      }}
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <FaStickyNote
+                              color="#666"
+                              size={isMobile ? "12" : "14"}
+                            />
+                          </InputAdornment>
+                        ),
+                      }}
+                    />
+                  </Box>
+
+                  {/* Dependent Variable Section */}
+                  {(experiment.effect || experiment.dependent_variable) && (
+                    <Box
+                      sx={{
+                        display: "flex",
+                        flexDirection: { xs: "column", sm: "row" },
+                        gap: { xs: 1, sm: 1.5 },
+                        alignItems: { xs: "stretch", sm: "flex-start" },
+                      }}
+                    >
+                      <TextField
+                        size="small"
+                        fullWidth={isMobile}
+                        value={
+                          experimentValues[
+                            experiment.effect || experiment.dependent_variable
+                          ] || ""
+                        }
+                        onChange={(e) =>
+                          setExperimentValues((prev) => ({
+                            ...prev,
+                            [experiment.effect ||
+                            experiment.dependent_variable]: e.target.value,
+                          }))
+                        }
+                        placeholder={`Enter ${(() => {
+                          const depVar =
+                            experiment.effect || experiment.dependent_variable;
+                          // First try exact match, then try without units in parentheses
+                          let experimentVariable = LOG_LABELS.find(
+                            (label) => label.label === depVar
+                          );
+
+                          if (!experimentVariable) {
+                            const cleanVariableName = depVar.replace(
+                              /\s*\([^)]*\)\s*$/,
+                              ""
+                            );
+                            experimentVariable = LOG_LABELS.find(
+                              (label) => label.label === cleanVariableName
+                            );
+                          }
+
+                          const displayName =
+                            experimentVariable?.label ||
+                            depVar.replace(/\s*\([^)]*\)\s*$/, "");
+                          const unit = experimentVariable?.constraints?.unit;
+                          return displayName + (unit ? ` (${unit})` : "");
+                        })()} value...`}
+                        variant="outlined"
+                        sx={{
+                          flex: { xs: "none", sm: 1 },
+                          "& .MuiOutlinedInput-root": {
+                            backgroundColor: "#ffffff",
+                            color: "#333",
+                            fontSize: { xs: "0.9rem", sm: "1rem" },
+                            "& fieldset": {
+                              borderColor: "rgba(255,255,255,0.5)",
+                            },
+                            "&:hover fieldset": {
+                              borderColor: "rgba(255,255,255,0.7)",
+                            },
+                            "&.Mui-focused fieldset": {
+                              borderColor: "#ffd700",
+                              borderWidth: "2px",
+                            },
+                            "& input": {
+                              color: "#333",
+                            },
+                            "& input::placeholder": {
+                              color: "#999",
+                              opacity: 1,
+                            },
+                          },
+                        }}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <FaTag
+                                color="#666"
+                                size={isMobile ? "12" : "14"}
+                              />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+
+                      <TextField
+                        size="small"
+                        multiline
+                        rows={1}
+                        fullWidth={isMobile}
+                        value={
+                          experimentNotes[
+                            experiment.effect || experiment.dependent_variable
+                          ] || ""
+                        }
+                        onChange={(e) =>
+                          setExperimentNotes((prev) => ({
+                            ...prev,
+                            [experiment.effect ||
+                            experiment.dependent_variable]: e.target.value,
+                          }))
+                        }
+                        placeholder="Notes (optional)"
+                        variant="outlined"
+                        sx={{
+                          flex: { xs: "none", sm: 1 },
+                          "& .MuiOutlinedInput-root": {
+                            backgroundColor: "#ffffff",
+                            color: "#333",
+                            fontSize: { xs: "0.9rem", sm: "1rem" },
+                            "& fieldset": {
+                              borderColor: "rgba(255,255,255,0.5)",
+                            },
+                            "&:hover fieldset": {
+                              borderColor: "rgba(255,255,255,0.7)",
+                            },
+                            "&.Mui-focused fieldset": {
+                              borderColor: "#ffd700",
+                              borderWidth: "2px",
+                            },
+                            "& textarea": {
+                              color: "#333",
+                            },
+                            "& textarea::placeholder": {
+                              color: "#999",
+                              opacity: 1,
+                            },
+                          },
+                        }}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <FaStickyNote
+                                color="#666"
+                                size={isMobile ? "12" : "14"}
+                              />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    </Box>
+                  )}
+
+                  {/* Log Button */}
+                  <Button
+                    onClick={async () => {
+                      const independentValue =
+                        experimentValues[experiment.variable] || "";
+                      const independentNotes =
+                        experimentNotes[experiment.variable] || "";
+                      const dependentVariable =
+                        experiment.effect || experiment.dependent_variable;
+                      const dependentValue =
+                        experimentValues[dependentVariable] || "";
+                      const dependentNotes =
+                        experimentNotes[dependentVariable] || "";
+
+                      // Prepare variables array for submission
+                      const variablesToLog = [
+                        {
+                          name: experiment.variable,
+                          value: independentValue,
+                          notes: independentNotes,
+                        },
+                      ];
+
+                      if (dependentVariable) {
+                        variablesToLog.push({
+                          name: dependentVariable,
+                          value: dependentValue,
+                          notes: dependentNotes,
+                        });
+                      }
+
+                      await submitExperimentLogs(variablesToLog);
+
+                      if (!expError) {
+                        setExperimentValues((prev) => ({
+                          ...prev,
+                          [experiment.variable]: "",
+                          [dependentVariable]: "",
+                        }));
+                        setExperimentNotes((prev) => ({
+                          ...prev,
+                          [experiment.variable]: "",
+                          [dependentVariable]: "",
+                        }));
+
+                        calculateExperimentProgress();
+                        calculateLoggingStreak();
+                      }
+                    }}
+                    disabled={
+                      submitting ||
+                      !experimentValues[experiment.variable]?.trim() ||
+                      ((experiment.effect || experiment.dependent_variable) &&
+                        !experimentValues[
+                          experiment.effect || experiment.dependent_variable
+                        ]?.trim())
+                    }
+                    variant="contained"
+                    size="small"
+                    fullWidth={isMobile}
+                    sx={{
+                      minWidth: { xs: "auto", sm: "auto" },
+                      px: { xs: 2, sm: 2 },
+                      py: { xs: 1, sm: 0.5 },
+                      backgroundColor: "#ffd700",
+                      color: "#333",
+                      fontWeight: "bold",
+                      fontSize: { xs: "0.9rem", sm: "0.875rem" },
+                      "&:hover": {
+                        backgroundColor: "#ffed4a",
+                      },
+                      "&:disabled": {
+                        backgroundColor: "rgba(255,215,0,0.5)",
+                        color: "rgba(51,51,51,0.5)",
+                      },
+                    }}
+                  >
+                    {submitting ? "..." : "Log Both Variables"}
+                  </Button>
+                </Box>
+
+                <Typography
+                  variant="caption"
+                  sx={{
+                    opacity: 0.8,
+                    mt: 1,
+                    display: "block",
+                    fontSize: { xs: "0.7rem", sm: "0.75rem" },
+                  }}
+                >
+                  Target: {experiment.frequency || 1} log
+                  {(experiment.frequency || 1) > 1 ? "s" : ""} per day (
+                  {new Date(experiment.start_date).toLocaleDateString()} -{" "}
+                  {new Date(experiment.end_date).toLocaleDateString()})
+                </Typography>
+              </Box>
+            </Paper>
+          ))}
 
           <Button
             component={Link}
-            href="/active-experiments"
+            href="/experiment/active-experiments"
             variant="outlined"
+            fullWidth={isMobile}
             sx={{
-              mt: 2,
-              color: "white",
-              borderColor: "white",
+              color: "primary.main",
+              borderColor: "primary.main",
+              py: { xs: 1.5, sm: 1 },
               "&:hover": {
-                backgroundColor: "rgba(255,255,255,0.1)",
-                borderColor: "white",
+                backgroundColor: "rgba(102, 126, 234, 0.1)",
+                borderColor: "primary.main",
               },
             }}
           >
             View All Active Experiments
           </Button>
-        </Paper>
+        </Box>
       )}
+
+      {/* Show experiments button even when all daily logs are complete */}
+      {experimentsNeedingLogs.length === 0 && activeExperiments.length > 0 && (
+        <Alert
+          severity="success"
+          sx={{
+            mb: 3,
+            borderRadius: 2,
+            "& .MuiAlert-message": {
+              display: "flex",
+              flexDirection: { xs: "column", sm: "row" },
+              alignItems: { xs: "stretch", sm: "center" },
+              justifyContent: { xs: "center", sm: "space-between" },
+              width: "100%",
+              gap: { xs: 1, sm: 0 },
+            },
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              Great job! All experiment logs complete for today.
+            </Typography>
+          </Box>
+          <Button
+            component={Link}
+            href="/experiment/active-experiments"
+            size="small"
+            variant="outlined"
+            fullWidth={isMobile}
+            sx={{
+              ml: { xs: 0, sm: 2 },
+              color: "success.main",
+              borderColor: "success.main",
+              "&:hover": {
+                backgroundColor: "success.main",
+                color: "white",
+              },
+            }}
+          >
+            View Experiments
+          </Button>
+        </Alert>
+      )}
+
+      {/* Show info about experiments outside time intervals */}
+      {(() => {
+        const experimentsOutsideTimeIntervals = activeExperiments.filter(
+          (experiment) => {
+            const today = new Date().toISOString().split("T")[0];
+            const logsToday = logs.filter(
+              (log) =>
+                log.variable === experiment.variable &&
+                log.date.startsWith(today)
+            ).length;
+            const needsMoreLogs = logsToday < (experiment.frequency || 1);
+            const inTimeInterval = isCurrentTimeInIntervals(
+              experiment.time_intervals
+            );
+
+            return needsMoreLogs && !inTimeInterval;
+          }
+        );
+
+        if (experimentsOutsideTimeIntervals.length > 0) {
+          return (
+            <Alert
+              severity="info"
+              sx={{
+                mb: 3,
+                borderRadius: 2,
+              }}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 500, mb: 1 }}>
+                🕐 {experimentsOutsideTimeIntervals.length} experiment
+                {experimentsOutsideTimeIntervals.length > 1 ? "s" : ""} not
+                showing due to time intervals
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {experimentsOutsideTimeIntervals
+                  .map((exp) => {
+                    const intervals = exp.time_intervals || [];
+                    if (intervals.length === 0)
+                      return `${exp.variable} (no intervals set)`;
+
+                    const intervalStrings = intervals
+                      .map((interval: any) => {
+                        if (typeof interval === "string") return interval;
+                        if (interval.start && interval.end) {
+                          const formatTime = (time: string) => {
+                            const [hours, minutes] = time.split(":");
+                            const hour = parseInt(hours);
+                            const ampm = hour >= 12 ? "PM" : "AM";
+                            const displayHour =
+                              hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+                            return `${displayHour}:${minutes} ${ampm}`;
+                          };
+                          return `${formatTime(interval.start)} - ${formatTime(
+                            interval.end
+                          )}`;
+                        }
+                        return "unknown";
+                      })
+                      .join(", ");
+
+                    return `${exp.variable} (${intervalStrings})`;
+                  })
+                  .join(", ")}
+              </Typography>
+            </Alert>
+          );
+        }
+        return null;
+      })()}
 
       {/* Success Message */}
       <Snackbar
@@ -724,16 +1536,23 @@ export default function LogPage() {
       )}
 
       {/* Research Question Builder */}
-      <Paper elevation={3} sx={{ p: 4, mb: 4 }}>
-        <Typography variant="h6" gutterBottom>
+      <Paper elevation={3} sx={{ p: { xs: 2, sm: 4 }, mb: { xs: 3, sm: 4 } }}>
+        <Typography
+          variant="h6"
+          gutterBottom
+          sx={{ fontSize: { xs: "1.1rem", sm: "1.25rem" } }}
+        >
           {experimentsNeedingLogs.length > 0
-            ? "Log Other Variables"
+            ? "Log Any Other Variables"
             : "What are you logging today?"}
         </Typography>
 
         {experimentsNeedingLogs.length > 0 && (
-          <Alert severity="info" sx={{ mb: 3 }}>
-            <Typography variant="body2">
+          <Alert severity="info" sx={{ mb: { xs: 2, sm: 3 } }}>
+            <Typography
+              variant="body2"
+              sx={{ fontSize: { xs: "0.85rem", sm: "0.875rem" } }}
+            >
               💡 <strong>Tip:</strong> Use the experiment card above to log your
               active experiment data quickly. This form is for logging
               additional variables not part of your current experiment.
@@ -742,13 +1561,23 @@ export default function LogPage() {
         )}
 
         {/* Variable Selection */}
-        <Box sx={{ mb: 3 }}>
+        <Box sx={{ mb: { xs: 2, sm: 3 } }}>
           {/* Popular Variables */}
           <Box sx={{ mb: 2 }}>
-            <Typography variant="subtitle2" gutterBottom>
+            <Typography
+              variant="subtitle2"
+              gutterBottom
+              sx={{ fontSize: { xs: "0.9rem", sm: "0.875rem" } }}
+            >
               Popular Variables
             </Typography>
-            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+            <Box
+              sx={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: { xs: 0.5, sm: 1 },
+              }}
+            >
               {["Mood", "Energy", "Sleep Quality", "Stress", "Exercise"].map(
                 (varName) => {
                   const variable = variables.find((v) => v.label === varName);
@@ -768,6 +1597,11 @@ export default function LogPage() {
                           : "outlined"
                       }
                       clickable
+                      size={isMobile ? "small" : "medium"}
+                      sx={{
+                        fontSize: { xs: "0.7rem", sm: "0.8125rem" },
+                        height: { xs: "auto", sm: "auto" },
+                      }}
                     />
                   ) : null;
                 }
@@ -786,11 +1620,12 @@ export default function LogPage() {
               <TextField
                 {...params}
                 placeholder="Or search for other variables..."
+                size={isMobile ? "small" : "medium"}
                 InputProps={{
                   ...params.InputProps,
                   startAdornment: (
                     <InputAdornment position="start">
-                      <SearchIcon />
+                      <SearchIcon fontSize={isMobile ? "small" : "medium"} />
                     </InputAdornment>
                   ),
                 }}
@@ -800,13 +1635,27 @@ export default function LogPage() {
               <Box
                 component="li"
                 {...props}
-                sx={{ display: "flex", alignItems: "center", gap: 2 }}
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: { xs: 1, sm: 2 },
+                  py: { xs: 1, sm: 1.5 },
+                }}
               >
                 <span>{option.icon}</span>
                 <Box>
-                  <Typography variant="body1">{option.label}</Typography>
+                  <Typography
+                    variant="body1"
+                    sx={{ fontSize: { xs: "0.9rem", sm: "1rem" } }}
+                  >
+                    {option.label}
+                  </Typography>
                   {option.description && (
-                    <Typography variant="caption" color="text.secondary">
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ fontSize: { xs: "0.7rem", sm: "0.75rem" } }}
+                    >
                       {option.description}
                     </Typography>
                   )}
@@ -816,13 +1665,71 @@ export default function LogPage() {
           />
         </Box>
 
+        {/* Selected Variable Constraints */}
+        {selectedVariable &&
+          (() => {
+            // Find the LOG_LABELS entry for constraint info
+            const logLabel = LOG_LABELS.find(
+              (label) => label.label === selectedVariable.label
+            );
+            const constraints = logLabel?.constraints;
+
+            if (constraints) {
+              let constraintText = "";
+
+              if (
+                constraints.min !== undefined &&
+                constraints.max !== undefined
+              ) {
+                constraintText = `Range: ${constraints.min}${
+                  constraints.unit ? ` ${constraints.unit}` : ""
+                } - ${constraints.max}${
+                  constraints.unit ? ` ${constraints.unit}` : ""
+                }`;
+              } else if (
+                constraints.scaleMin !== undefined &&
+                constraints.scaleMax !== undefined
+              ) {
+                constraintText = `Scale: ${constraints.scaleMin} - ${constraints.scaleMax}`;
+              }
+
+              if (constraintText) {
+                return (
+                  <Box sx={{ mb: { xs: 1.5, sm: 2 } }}>
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        color: "#FFD700",
+                        fontWeight: 500,
+                        fontSize: { xs: "0.75rem", sm: "0.8rem" },
+                        display: "block",
+                        backgroundColor: "rgba(255, 215, 0, 0.1)",
+                        padding: "4px 8px",
+                        borderRadius: 1,
+                        border: "1px solid rgba(255, 215, 0, 0.3)",
+                      }}
+                    >
+                      💡 {constraintText}
+                    </Typography>
+                  </Box>
+                );
+              }
+            }
+            return null;
+          })()}
+
         {/* Value Input */}
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle2" gutterBottom>
+        <Box sx={{ mb: { xs: 2, sm: 3 } }}>
+          <Typography
+            variant="subtitle2"
+            gutterBottom
+            sx={{ fontSize: { xs: "0.9rem", sm: "0.875rem" } }}
+          >
             Value
           </Typography>
           <TextField
             fullWidth
+            size={isMobile ? "small" : "medium"}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder="Enter the value..."
@@ -830,7 +1737,7 @@ export default function LogPage() {
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
-                  <FaTag />
+                  <FaTag size={isMobile ? "14" : "16"} />
                 </InputAdornment>
               ),
             }}
@@ -838,14 +1745,19 @@ export default function LogPage() {
         </Box>
 
         {/* Notes */}
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle2" gutterBottom>
+        <Box sx={{ mb: { xs: 2, sm: 3 } }}>
+          <Typography
+            variant="subtitle2"
+            gutterBottom
+            sx={{ fontSize: { xs: "0.9rem", sm: "0.875rem" } }}
+          >
             Notes (Optional)
           </Typography>
           <TextField
             fullWidth
             multiline
-            rows={3}
+            rows={isMobile ? 2 : 3}
+            size={isMobile ? "small" : "medium"}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Add any additional context or notes..."
@@ -853,7 +1765,7 @@ export default function LogPage() {
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
-                  <FaStickyNote />
+                  <FaStickyNote size={isMobile ? "14" : "16"} />
                 </InputAdornment>
               ),
             }}
@@ -861,8 +1773,12 @@ export default function LogPage() {
         </Box>
 
         {/* Date and Time Picker */}
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle2" gutterBottom>
+        <Box sx={{ mb: { xs: 2, sm: 3 } }}>
+          <Typography
+            variant="subtitle2"
+            gutterBottom
+            sx={{ fontSize: { xs: "0.9rem", sm: "0.875rem" } }}
+          >
             Date & Time
           </Typography>
           <DatePicker
@@ -876,6 +1792,7 @@ export default function LogPage() {
               <TextField
                 fullWidth
                 variant="outlined"
+                size={isMobile ? "small" : "medium"}
                 InputProps={{
                   readOnly: true,
                 }}
@@ -885,20 +1802,24 @@ export default function LogPage() {
         </Box>
 
         {/* Privacy Setting */}
-        <Box sx={{ mb: 3 }}>
+        <Box sx={{ mb: { xs: 2, sm: 3 } }}>
           <FormControlLabel
             control={
               <Checkbox
-                checked={isLogPrivate}
-                onChange={(e) => setIsLogPrivate(e.target.checked)}
+                checked={!isLogPrivate} // Inverted: checked = public, unchecked = private
+                onChange={(e) => setIsLogPrivate(!e.target.checked)}
                 color="primary"
+                size={isMobile ? "small" : "medium"}
               />
             }
             label={
               <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                {isLogPrivate ? <FaLock /> : <FaGlobe />}
-                <Typography variant="body2">
-                  {isLogPrivate ? "Private log" : "Public log"}
+                <FaGlobe size={isMobile ? "14" : "16"} />
+                <Typography
+                  variant="body2"
+                  sx={{ fontSize: { xs: "0.85rem", sm: "0.875rem" } }}
+                >
+                  Public log
                 </Typography>
               </Box>
             }
@@ -912,8 +1833,8 @@ export default function LogPage() {
           variant="contained"
           fullWidth
           sx={{
-            py: 2,
-            fontSize: "1.1rem",
+            py: { xs: 1.5, sm: 2 },
+            fontSize: { xs: "1rem", sm: "1.1rem" },
             fontWeight: "bold",
             backgroundColor: "#2196f3",
             "&:hover": {
@@ -927,32 +1848,262 @@ export default function LogPage() {
 
       {/* Today's Logs */}
       {logs.length > 0 && (
-        <Paper elevation={3} sx={{ p: 4 }}>
-          <Typography variant="h6" gutterBottom>
-            Today's Logs
+        <Paper
+          elevation={6}
+          sx={{
+            p: { xs: 3, sm: 4 },
+            background: "linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)",
+            borderRadius: 3,
+            border: "2px solid #FFD700",
+          }}
+        >
+          <Typography
+            variant="h5"
+            gutterBottom
+            sx={{
+              fontSize: { xs: "1.3rem", sm: "1.5rem" },
+              fontWeight: "bold",
+              color: "#FFD700",
+              textAlign: "center",
+              mb: 3,
+              textShadow: "0 2px 4px rgba(0,0,0,0.3)",
+            }}
+          >
+            📊 Today's Logs
           </Typography>
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              gap: { xs: 2, sm: 2.5 },
+            }}
+          >
             {logs.map((log) => (
               <Box
                 key={log.id}
                 sx={{
-                  p: 2,
-                  border: "1px solid #e0e0e0",
-                  borderRadius: 2,
-                  backgroundColor: "#f9f9f9",
+                  p: { xs: 2.5, sm: 3 },
+                  border: "2px solid #FFD700",
+                  borderRadius: 3,
+                  backgroundColor: "#ffffff",
+                  boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
+                  transition: "all 0.3s ease",
+                  "&:hover": {
+                    boxShadow: "0 8px 25px rgba(255,215,0,0.3)",
+                    transform: "translateY(-2px)",
+                    borderColor: "#FFEA70",
+                  },
                 }}
               >
-                <Typography variant="subtitle1" fontWeight="bold">
-                  {log.variable}: {log.value}
-                </Typography>
-                {log.notes && (
-                  <Typography variant="body2" color="text.secondary">
-                    {log.notes}
-                  </Typography>
+                {editingLogId === log.id ? (
+                  // Edit mode
+                  <Box>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        mb: 2,
+                      }}
+                    >
+                      <Typography
+                        variant="subtitle1"
+                        fontWeight="bold"
+                        sx={{
+                          color: "#1976d2",
+                          fontSize: { xs: "1rem", sm: "1.1rem" },
+                        }}
+                      >
+                        Editing: {log.variable}
+                      </Typography>
+                      <Box>
+                        <IconButton
+                          onClick={handleSaveEdit}
+                          size="small"
+                          sx={{
+                            color: "#4caf50",
+                            mr: 1,
+                            "&:hover": {
+                              backgroundColor: "rgba(76, 175, 80, 0.1)",
+                            },
+                          }}
+                        >
+                          <FaCheck />
+                        </IconButton>
+                        <IconButton
+                          onClick={handleCancelEdit}
+                          size="small"
+                          sx={{
+                            color: "#f44336",
+                            "&:hover": {
+                              backgroundColor: "rgba(244, 67, 54, 0.1)",
+                            },
+                          }}
+                        >
+                          <FaTimes />
+                        </IconButton>
+                      </Box>
+                    </Box>
+                    <Box sx={{ mb: 2 }}>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          mb: 1,
+                          color: "#333",
+                          fontSize: "0.875rem",
+                          fontWeight: 500,
+                        }}
+                      >
+                        Date
+                      </Typography>
+                      <DatePicker
+                        selected={editingDate}
+                        onChange={(date: Date) => setEditingDate(date)}
+                        dateFormat="yyyy-MM-dd"
+                        className="custom-datepicker"
+                        wrapperClassName="datepicker-wrapper"
+                        style={{
+                          width: "100%",
+                          padding: "10px",
+                          fontSize: "14px",
+                          border: "1px solid #ccc",
+                          borderRadius: "4px",
+                          backgroundColor: "#fff",
+                        }}
+                      />
+                    </Box>
+                    <TextField
+                      fullWidth
+                      label="Value"
+                      value={editingValue}
+                      onChange={(e) => setEditingValue(e.target.value)}
+                      sx={{
+                        mb: 2,
+                        "& .MuiInputLabel-root": { color: "#333" },
+                        "& .MuiInputLabel-root.Mui-focused": {
+                          color: "#1976d2",
+                        },
+                      }}
+                      size="small"
+                    />
+                    <TextField
+                      fullWidth
+                      label="Notes (Optional)"
+                      value={editingNotes}
+                      onChange={(e) => setEditingNotes(e.target.value)}
+                      multiline
+                      rows={2}
+                      sx={{
+                        "& .MuiInputLabel-root": { color: "#333" },
+                        "& .MuiInputLabel-root.Mui-focused": {
+                          color: "#1976d2",
+                        },
+                      }}
+                      size="small"
+                    />
+                  </Box>
+                ) : (
+                  // Display mode
+                  <Box>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        mb: 1.5,
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 2,
+                          flex: 1,
+                        }}
+                      >
+                        <Typography
+                          variant="subtitle1"
+                          fontWeight="bold"
+                          sx={{
+                            color: "#1976d2",
+                            fontSize: { xs: "1rem", sm: "1.1rem" },
+                          }}
+                        >
+                          {log.variable}
+                        </Typography>
+                        <Typography
+                          variant="h5"
+                          sx={{
+                            color: "#2e7d32",
+                            fontWeight: "bold",
+                            fontSize: { xs: "1.3rem", sm: "1.5rem" },
+                            textShadow: "0 1px 2px rgba(0,0,0,0.1)",
+                          }}
+                        >
+                          {log.value}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <IconButton
+                          onClick={() => handleEditLog(log)}
+                          size="small"
+                          sx={{
+                            color: "#1976d2",
+                            mr: 1,
+                            "&:hover": {
+                              backgroundColor: "rgba(25, 118, 210, 0.1)",
+                              transform: "scale(1.1)",
+                            },
+                          }}
+                        >
+                          <FaEdit />
+                        </IconButton>
+                        <IconButton
+                          onClick={() => handleDeleteLog(log.id)}
+                          size="small"
+                          sx={{
+                            color: "#d32f2f",
+                            "&:hover": {
+                              backgroundColor: "rgba(211, 47, 47, 0.1)",
+                              transform: "scale(1.1)",
+                            },
+                          }}
+                        >
+                          <FaTrash />
+                        </IconButton>
+                      </Box>
+                    </Box>
+                    {log.notes && (
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          mb: 1,
+                          fontSize: { xs: "0.9rem", sm: "0.95rem" },
+                          color: "#666",
+                          backgroundColor: "#f5f5f5",
+                          padding: "8px 12px",
+                          borderRadius: 2,
+                          borderLeft: "4px solid #FFD700",
+                        }}
+                      >
+                        💬 {log.notes}
+                      </Typography>
+                    )}
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        fontStyle: "italic",
+                        fontSize: { xs: "0.75rem", sm: "0.8rem" },
+                        color: "#888",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 0.5,
+                      }}
+                    >
+                      🕐 {new Date(log.date).toLocaleString()}
+                    </Typography>
+                  </Box>
                 )}
-                <Typography variant="caption" color="text.secondary">
-                  {new Date(log.date).toLocaleString()}
-                </Typography>
               </Box>
             ))}
           </Box>

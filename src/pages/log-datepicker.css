@@ -7,6 +7,32 @@
   background: white;
 }
 
+/* Custom styling for editing interface date picker */
+.custom-datepicker {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.23);
+  border-radius: 4px;
+  background-color: #fff;
+  font-family: inherit;
+  transition: border-color 0.3s ease;
+}
+
+.custom-datepicker:focus {
+  outline: none;
+  border-color: #1976d2;
+  border-width: 2px;
+}
+
+.custom-datepicker:hover {
+  border-color: rgba(0, 0, 0, 0.87);
+}
+
+.datepicker-wrapper {
+  width: 100%;
+}
+
 .react-datepicker__header {
   background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%);
   border-bottom: none;

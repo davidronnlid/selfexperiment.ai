@@ -19,7 +19,7 @@ export default function ConstraintsDemo() {
   };
 
   const demoVariables = [
-    LOG_LABELS.find((v) => v.label === "Caffeine (mg)")!,
+    LOG_LABELS.find((v) => v.label === "Caffeine")!,
     LOG_LABELS.find((v) => v.label === "Stress")!,
     LOG_LABELS.find((v) => v.label === "Cognitive Control")!,
     LOG_LABELS.find((v) => v.label === "Sleep Time")!,

@@ -35,8 +35,10 @@ import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import chroma from "chroma-js";
 import Select from "react-select";
+import EnhancedAnalytics from "@/components/EnhancedAnalytics";
+import CorrelationAnalysis from "@/components/CorrelationAnalysis";
 import ManualLogsTable from "@/components/ManualLogsTable";
-import ManualLogsChart from "@/components/ManualLogsChart";
+
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -169,7 +171,7 @@ export default function Analytics() {
       console.log("Current user.id:", user.id);
       supabase
         .from("daily_logs")
-        .select("date,label,value,user_id")
+        .select("date,variable,value,user_id")
         .eq("user_id", user.id)
         .order("date", { ascending: true })
         .then(({ data }) => {
@@ -542,7 +544,6 @@ export default function Analytics() {
         >
           <Tab label="Trends & Patterns" />
           <Tab label="Data Analysis" />
-          <Tab label="Community Insights" />
         </Tabs>
       </Box>
 
@@ -556,14 +557,20 @@ export default function Analytics() {
             Discover long-term trends and recurring patterns in your data.
           </Typography>
 
-          {/* Manual Logs Section */}
+          {/* Enhanced Analytics Section */}
           {user && (
             <Box sx={{ mb: 4 }}>
               <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
-                <ManualLogsChart userId={user.id} />
+                <EnhancedAnalytics userId={user.id} />
               </Paper>
+            </Box>
+          )}
+
+          {/* Manual Logs Table Section */}
+          {user && (
+            <Box sx={{ mb: 4 }}>
               <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
-                <ManualLogsTable userId={user.id} maxRows={20} />
+                <ManualLogsTable userId={user.id} />
               </Paper>
             </Box>
           )}
@@ -1042,10 +1049,10 @@ export default function Analytics() {
               userLogs.reduce(
                 (
                   acc: Record<string, { date: string; value: string }[]>,
-                  log: { label: string; date: string; value: string }
+                  log: { variable: string; date: string; value: string }
                 ) => {
-                  if (!acc[log.label]) acc[log.label] = [];
-                  acc[log.label].push(log);
+                  if (!acc[log.variable]) acc[log.variable] = [];
+                  acc[log.variable].push(log);
                   return acc;
                 },
                 {} as Record<string, { date: string; value: string }[]>
@@ -1154,40 +1161,23 @@ export default function Analytics() {
             Analyze your logged data to discover patterns and insights.
           </Typography>
 
+          {user && (
+            <Box sx={{ mb: 4 }}>
+              <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
+                <CorrelationAnalysis userId={user.id} />
+              </Paper>
+            </Box>
+          )}
+
           <Alert severity="info" sx={{ mb: 3 }}>
             <Typography variant="body2">
-              Data analysis features are coming soon. This will include:
+              Additional data analysis features coming soon:
             </Typography>
             <Box component="ul" sx={{ mt: 1, pl: 2 }}>
-              <li>Correlation analysis between variables</li>
               <li>Statistical summaries and trends</li>
               <li>Custom chart creation</li>
               <li>Export capabilities</li>
-            </Box>
-          </Alert>
-        </Paper>
-      </TabPanel>
-
-      {/* Community Insights Tab */}
-      <TabPanel value={tabValue} index={2}>
-        <Paper elevation={3} sx={{ p: 4 }}>
-          <Typography variant="h5" gutterBottom>
-            👥 Community Insights
-          </Typography>
-          <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-            Compare your data with the community (anonymized and
-            privacy-respecting).
-          </Typography>
-
-          <Alert severity="info" sx={{ mb: 3 }}>
-            <Typography variant="body2">
-              Community insights features are coming soon. This will include:
-            </Typography>
-            <Box component="ul" sx={{ mt: 1, pl: 2 }}>
-              <li>Anonymous community averages</li>
-              <li>Benchmark comparisons</li>
-              <li>Shared experiment results</li>
-              <li>Community challenges and goals</li>
+              <li>Predictive analysis</li>
             </Box>
           </Alert>
         </Paper>

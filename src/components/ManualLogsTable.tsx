@@ -15,10 +15,24 @@ import {
   IconButton,
   Collapse,
   Tooltip,
+  TextField,
+  Button,
 } from "@mui/material";
-import { ExpandMore, ExpandLess, AccessTime, Notes } from "@mui/icons-material";
+import { Grid } from "@mui/material";
+import {
+  ExpandMore,
+  ExpandLess,
+  AccessTime,
+  Notes,
+  FilterList,
+  Clear,
+  DateRange,
+  Today,
+  History,
+  Refresh,
+} from "@mui/icons-material";
 import { supabase } from "@/utils/supaBase";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, subDays, startOfDay, endOfDay } from "date-fns";
 
 interface ManualLog {
   id: number;
@@ -43,19 +57,36 @@ export default function ManualLogsTable({
   const [error, setError] = useState<string | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
 
+  // Date range state
+  const [startDate, setStartDate] = useState<string>(() => {
+    // Default to 30 days ago
+    const thirtyDaysAgo = subDays(new Date(), 30);
+    return format(thirtyDaysAgo, "yyyy-MM-dd");
+  });
+  const [endDate, setEndDate] = useState<string>(() => {
+    // Default to today
+    return format(new Date(), "yyyy-MM-dd");
+  });
+
   useEffect(() => {
     fetchManualLogs();
-  }, [userId]);
+  }, [userId, startDate, endDate]);
 
   const fetchManualLogs = async () => {
     try {
       setLoading(true);
       setError(null);
 
+      // Convert dates to ISO format for database query
+      const startDateTime = startOfDay(parseISO(startDate)).toISOString();
+      const endDateTime = endOfDay(parseISO(endDate)).toISOString();
+
       const { data, error } = await supabase
         .from("daily_logs")
         .select("id, date, variable, value, notes, created_at")
         .eq("user_id", userId)
+        .gte("date", startDateTime)
+        .lte("date", endDateTime)
         .order("date", { ascending: false })
         .limit(maxRows);
 
@@ -68,6 +99,18 @@ export default function ManualLogsTable({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDateRangeReset = () => {
+    const thirtyDaysAgo = subDays(new Date(), 30);
+    setStartDate(format(thirtyDaysAgo, "yyyy-MM-dd"));
+    setEndDate(format(new Date(), "yyyy-MM-dd"));
+  };
+
+  const handleQuickDateRange = (days: number) => {
+    const startDate = subDays(new Date(), days);
+    setStartDate(format(startDate, "yyyy-MM-dd"));
+    setEndDate(format(new Date(), "yyyy-MM-dd"));
   };
 
   const handleRowToggle = (logId: number) => {
@@ -158,12 +201,243 @@ export default function ManualLogsTable({
         }}
       >
         <Typography variant="h6" component="h3">
-          📝 Recent Manual Logs
+          📝 Manual Logs
         </Typography>
         <Typography variant="body2" color="textSecondary">
           {logs.length} {logs.length === 1 ? "entry" : "entries"}
         </Typography>
       </Box>
+
+      {/* Date Range Filter */}
+      <Paper
+        elevation={2}
+        sx={{
+          p: 3,
+          mb: 3,
+          bgcolor: "background.paper",
+          borderRadius: 2,
+          border: "1px solid",
+          borderColor: "divider",
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 3 }}>
+          <DateRange sx={{ color: "primary.main" }} />
+          <Typography variant="h6" fontWeight="600" color="text.primary">
+            Date Range Filter
+          </Typography>
+        </Box>
+
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: { xs: "column", lg: "row" },
+            gap: 3,
+            alignItems: { xs: "stretch", lg: "flex-start" },
+          }}
+        >
+          {/* Date Inputs Section */}
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: { xs: "column", sm: "row" },
+              gap: 2,
+              flex: 1,
+              minWidth: 0,
+            }}
+          >
+            <Box sx={{ flex: 1, minWidth: 180 }}>
+              <TextField
+                label="Start Date"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                InputLabelProps={{
+                  shrink: true,
+                }}
+                size="small"
+                fullWidth
+                InputProps={{
+                  startAdornment: (
+                    <Box sx={{ mr: 1, display: "flex", alignItems: "center" }}>
+                      <Today fontSize="small" color="action" />
+                    </Box>
+                  ),
+                }}
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    backgroundColor: "background.default",
+                    transition: "all 0.2s ease-in-out",
+                    "&:hover": {
+                      backgroundColor: "background.paper",
+                      "& fieldset": {
+                        borderColor: "primary.main",
+                      },
+                    },
+                    "&.Mui-focused": {
+                      backgroundColor: "background.paper",
+                      "& fieldset": {
+                        borderColor: "primary.main",
+                        borderWidth: 2,
+                      },
+                    },
+                  },
+                }}
+              />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 180 }}>
+              <TextField
+                label="End Date"
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                InputLabelProps={{
+                  shrink: true,
+                }}
+                size="small"
+                fullWidth
+                InputProps={{
+                  startAdornment: (
+                    <Box sx={{ mr: 1, display: "flex", alignItems: "center" }}>
+                      <Today fontSize="small" color="action" />
+                    </Box>
+                  ),
+                }}
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    backgroundColor: "background.default",
+                    transition: "all 0.2s ease-in-out",
+                    "&:hover": {
+                      backgroundColor: "background.paper",
+                      "& fieldset": {
+                        borderColor: "primary.main",
+                      },
+                    },
+                    "&.Mui-focused": {
+                      backgroundColor: "background.paper",
+                      "& fieldset": {
+                        borderColor: "primary.main",
+                        borderWidth: 2,
+                      },
+                    },
+                  },
+                }}
+              />
+            </Box>
+          </Box>
+
+          {/* Quick Actions Section */}
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: { xs: "column", sm: "row" },
+              gap: 1,
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: { xs: "center", lg: "flex-start" },
+              mt: { xs: 1, lg: 0 },
+            }}
+          >
+            <Tooltip title="View last 7 days" arrow>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<History />}
+                onClick={() => handleQuickDateRange(7)}
+                sx={{
+                  minWidth: 110,
+                  borderRadius: 1.5,
+                  textTransform: "none",
+                  fontWeight: 500,
+                  transition: "all 0.2s ease-in-out",
+                  "&:hover": {
+                    backgroundColor: "primary.main",
+                    color: "primary.contrastText",
+                    borderColor: "primary.main",
+                    transform: "translateY(-1px)",
+                    boxShadow: 2,
+                  },
+                }}
+              >
+                7 days
+              </Button>
+            </Tooltip>
+            <Tooltip title="View last 30 days" arrow>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<History />}
+                onClick={() => handleQuickDateRange(30)}
+                sx={{
+                  minWidth: 110,
+                  borderRadius: 1.5,
+                  textTransform: "none",
+                  fontWeight: 500,
+                  transition: "all 0.2s ease-in-out",
+                  "&:hover": {
+                    backgroundColor: "primary.main",
+                    color: "primary.contrastText",
+                    borderColor: "primary.main",
+                    transform: "translateY(-1px)",
+                    boxShadow: 2,
+                  },
+                }}
+              >
+                30 days
+              </Button>
+            </Tooltip>
+            <Tooltip title="View last 90 days" arrow>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<History />}
+                onClick={() => handleQuickDateRange(90)}
+                sx={{
+                  minWidth: 110,
+                  borderRadius: 1.5,
+                  textTransform: "none",
+                  fontWeight: 500,
+                  transition: "all 0.2s ease-in-out",
+                  "&:hover": {
+                    backgroundColor: "primary.main",
+                    color: "primary.contrastText",
+                    borderColor: "primary.main",
+                    transform: "translateY(-1px)",
+                    boxShadow: 2,
+                  },
+                }}
+              >
+                90 days
+              </Button>
+            </Tooltip>
+            <Tooltip title="Reset to default range" arrow>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<Refresh />}
+                onClick={handleDateRangeReset}
+                sx={{
+                  minWidth: 90,
+                  borderRadius: 1.5,
+                  textTransform: "none",
+                  fontWeight: 500,
+                  borderColor: "grey.400",
+                  color: "text.secondary",
+                  transition: "all 0.2s ease-in-out",
+                  "&:hover": {
+                    backgroundColor: "grey.100",
+                    borderColor: "grey.600",
+                    color: "text.primary",
+                    transform: "translateY(-1px)",
+                    boxShadow: 1,
+                  },
+                }}
+              >
+                Reset
+              </Button>
+            </Tooltip>
+          </Box>
+        </Box>
+      </Paper>
 
       <Box sx={{ mb: 2 }}>
         <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>

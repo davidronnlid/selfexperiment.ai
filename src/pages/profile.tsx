@@ -327,8 +327,8 @@ export default function ProfilePage() {
     ),
     "Substances & Diet": LOG_LABELS.filter((v) =>
       [
-        "Caffeine (mg)",
-        "Alcohol (units)",
+        "Caffeine",
+        "Alcohol",
         "Nicotine",
         "Cannabis/THC",
         "Medications/Supplements",

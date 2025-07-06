@@ -4,7 +4,6 @@ import {
   Typography,
   Alert,
   CircularProgress,
-  Paper,
   Card,
   CardContent,
   FormControl,
@@ -13,17 +12,22 @@ import {
   MenuItem,
   SelectChangeEvent,
   Chip,
+  Paper,
+  ToggleButton,
+  ToggleButtonGroup,
   Divider,
+  Stack,
   Tooltip,
 } from "@mui/material";
 
-import { Line } from "react-chartjs-2";
+import { Line, Bar } from "react-chartjs-2";
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip as ChartTooltip,
   Legend,
@@ -37,18 +41,23 @@ import {
   startOfWeek,
   endOfWeek,
 } from "date-fns";
+import { LOG_LABELS } from "@/utils/logLabels";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TrendingDownIcon from "@mui/icons-material/TrendingDown";
 import TrendingFlatIcon from "@mui/icons-material/TrendingFlat";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment";
+import ShowChartIcon from "@mui/icons-material/ShowChart";
+import AssessmentIcon from "@mui/icons-material/Assessment";
+import InsightsIcon from "@mui/icons-material/Insights";
 
 ChartJS.register(
   CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   ChartTooltip,
   Legend,
@@ -64,21 +73,8 @@ interface ManualLog {
   created_at: string;
 }
 
-interface ManualLogsChartProps {
+interface EnhancedAnalyticsProps {
   userId: string;
-  maxDays?: number;
-}
-
-interface ChartData {
-  labels: string[];
-  datasets: {
-    label: string;
-    data: number[];
-    borderColor: string;
-    backgroundColor: string;
-    fill: boolean;
-    tension: number;
-  }[];
 }
 
 interface VariableStats {
@@ -90,24 +86,24 @@ interface VariableStats {
   changePercentage: number;
   streak: number;
   totalLogs: number;
-  weeklyPattern: { day: string; average: number }[];
+  weeklyPattern: { day: string; average: number | null; hasLogs: boolean }[];
+  insights: string[];
 }
 
-export default function ManualLogsChart({
-  userId,
-  maxDays = 30,
-}: ManualLogsChartProps) {
+type ChartType = "line" | "bar";
+
+export default function EnhancedAnalytics({ userId }: EnhancedAnalyticsProps) {
   const [logs, setLogs] = useState<ManualLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<string>("30");
   const [selectedVariable, setSelectedVariable] = useState<string>("");
+  const [chartType, setChartType] = useState<ChartType>("line");
 
   useEffect(() => {
     fetchManualLogs();
   }, [userId, timeRange]);
 
-  // Auto-select first variable when logs are loaded
   useEffect(() => {
     if (logs.length > 0 && !selectedVariable) {
       const numericVariables = getUniqueVariables().filter((variable) =>
@@ -136,7 +132,6 @@ export default function ManualLogsChart({
         .order("date", { ascending: true });
 
       if (error) throw error;
-
       setLogs(data || []);
     } catch (err) {
       console.error("Error fetching manual logs:", err);
@@ -152,6 +147,15 @@ export default function ManualLogsChart({
 
   const handleVariableChange = (event: SelectChangeEvent) => {
     setSelectedVariable(event.target.value);
+  };
+
+  const handleChartTypeChange = (
+    event: React.MouseEvent<HTMLElement>,
+    newChartType: ChartType
+  ) => {
+    if (newChartType !== null) {
+      setChartType(newChartType);
+    }
   };
 
   const getUniqueVariables = () => {
@@ -188,12 +192,73 @@ export default function ManualLogsChart({
     }
   };
 
-  // Calculate variable statistics
+  const generateInsights = (stats: VariableStats): string[] => {
+    const insights: string[] = [];
+
+    if (stats.trend === "up" && stats.changePercentage > 10) {
+      insights.push(
+        `📈 Strong upward trend: ${stats.changePercentage.toFixed(1)}% increase`
+      );
+    } else if (stats.trend === "down" && stats.changePercentage < -10) {
+      insights.push(
+        `📉 Strong downward trend: ${Math.abs(stats.changePercentage).toFixed(
+          1
+        )}% decrease`
+      );
+    } else if (stats.trend === "stable") {
+      insights.push(`📊 Values have been stable over this period`);
+    }
+
+    if (stats.streak > 7) {
+      insights.push(
+        `🔥 Great consistency! ${stats.streak} days logged in a row`
+      );
+    } else if (stats.streak > 0) {
+      insights.push(`💪 Currently on a ${stats.streak} day logging streak`);
+    }
+
+    if (stats.latest > stats.average * 1.2) {
+      insights.push(`⚡ Latest value (${stats.latest}) is 20% above average`);
+    } else if (stats.latest < stats.average * 0.8) {
+      insights.push(`⬇️ Latest value (${stats.latest}) is 20% below average`);
+    }
+
+    const daysWithLogs = stats.weeklyPattern.filter((day) => day.hasLogs);
+
+    if (daysWithLogs.length > 1) {
+      const highestDay = daysWithLogs.reduce(
+        (max, day) => (day.average! > max.average! ? day : max),
+        daysWithLogs[0]
+      );
+      const lowestDay = daysWithLogs.reduce(
+        (min, day) => (day.average! < min.average! ? day : min),
+        daysWithLogs[0]
+      );
+
+      if (highestDay.average! > lowestDay.average! * 1.3) {
+        insights.push(
+          `📅 ${highestDay.day}s tend to be highest, ${lowestDay.day}s lowest`
+        );
+      }
+    }
+
+    return insights;
+  };
+
   const calculateStats = (variableLogs: ManualLog[]): VariableStats => {
     const numericLogs = variableLogs.filter((log) => isNumeric(log.value));
     const values = numericLogs.map((log) => parseFloat(log.value));
 
     if (values.length === 0) {
+      const daysOfWeek = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+      ];
       return {
         average: 0,
         min: 0,
@@ -203,7 +268,12 @@ export default function ManualLogsChart({
         changePercentage: 0,
         streak: 0,
         totalLogs: 0,
-        weeklyPattern: [],
+        weeklyPattern: daysOfWeek.map((day) => ({
+          day,
+          average: null,
+          hasLogs: false,
+        })),
+        insights: [],
       };
     }
 
@@ -212,7 +282,6 @@ export default function ManualLogsChart({
     const max = Math.max(...values);
     const latest = values[values.length - 1];
 
-    // Calculate trend (compare first half vs second half)
     const midpoint = Math.floor(values.length / 2);
     const firstHalf = values.slice(0, midpoint);
     const secondHalf = values.slice(midpoint);
@@ -231,7 +300,6 @@ export default function ManualLogsChart({
       trend = changePercentage > 0 ? "up" : "down";
     }
 
-    // Calculate current streak (consecutive days with data)
     const sortedLogs = [...numericLogs].sort(
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
     );
@@ -250,7 +318,6 @@ export default function ManualLogsChart({
       }
     }
 
-    // Calculate weekly pattern
     const weeklyData: { [key: string]: number[] } = {};
     numericLogs.forEach((log) => {
       const day = format(parseISO(log.date), "EEEE");
@@ -258,12 +325,28 @@ export default function ManualLogsChart({
       weeklyData[day].push(parseFloat(log.value));
     });
 
-    const weeklyPattern = Object.entries(weeklyData).map(([day, values]) => ({
-      day,
-      average: values.reduce((sum, val) => sum + val, 0) / values.length,
-    }));
+    // Create weekly pattern for all days Monday-Sunday
+    const daysOfWeek = [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+      "Sunday",
+    ];
+    const weeklyPattern = daysOfWeek.map((day) => {
+      const dayValues = weeklyData[day];
+      return {
+        day,
+        average: dayValues
+          ? dayValues.reduce((sum, val) => sum + val, 0) / dayValues.length
+          : null,
+        hasLogs: !!dayValues,
+      };
+    });
 
-    return {
+    const baseStats: VariableStats = {
       average: Math.round(average * 100) / 100,
       min: Math.round(min * 100) / 100,
       max: Math.round(max * 100) / 100,
@@ -273,55 +356,46 @@ export default function ManualLogsChart({
       streak,
       totalLogs: numericLogs.length,
       weeklyPattern,
+      insights: [],
     };
+
+    baseStats.insights = generateInsights(baseStats);
+    return baseStats;
   };
 
-  const prepareChartData = (): { [variable: string]: ChartData } => {
-    const chartData: { [variable: string]: ChartData } = {};
+  const prepareChartData = () => {
+    if (!selectedVariable) return null;
 
-    // Group logs by variable
-    const logsByVariable = logs.reduce((acc, log) => {
-      if (!acc[log.variable]) {
-        acc[log.variable] = [];
-      }
-      acc[log.variable].push(log);
-      return acc;
-    }, {} as { [variable: string]: ManualLog[] });
+    const variableLogs = logs.filter(
+      (log) => log.variable === selectedVariable
+    );
+    const numericLogs = variableLogs.filter((log) => isNumeric(log.value));
 
-    // Create chart data for each variable
-    Object.entries(logsByVariable).forEach(([variable, variableLogs]) => {
-      // Only include numeric variables for line charts
-      const numericLogs = variableLogs.filter((log) => isNumeric(log.value));
+    if (numericLogs.length === 0) return null;
 
-      if (numericLogs.length > 0) {
-        const color = getVariableColor(variable);
+    const color = getVariableColor(selectedVariable);
+    const data = numericLogs.map((log) => parseFloat(log.value));
 
-        chartData[variable] = {
-          labels: numericLogs.map((log) => formatDate(log.date)),
-          datasets: [
-            {
-              label: variable,
-              data: numericLogs.map((log) => parseFloat(log.value)),
-              borderColor: color,
-              backgroundColor: color + "20",
-              fill: false,
-              tension: 0.3,
-            },
-          ],
-        };
-      }
-    });
-
-    return chartData;
+    return {
+      labels: numericLogs.map((log) => formatDate(log.date)),
+      datasets: [
+        {
+          label: selectedVariable,
+          data,
+          borderColor: color,
+          backgroundColor: chartType === "bar" ? color + "80" : color + "20",
+          fill: chartType === "line" ? false : true,
+          tension: 0.3,
+        },
+      ],
+    };
   };
 
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: {
-        display: false,
-      },
+      legend: { display: false },
       tooltip: {
         mode: "index" as const,
         intersect: false,
@@ -335,17 +409,11 @@ export default function ManualLogsChart({
     scales: {
       x: {
         display: true,
-        title: {
-          display: true,
-          text: "Date",
-        },
+        title: { display: true, text: "Date" },
       },
       y: {
         display: true,
-        title: {
-          display: true,
-          text: "Value",
-        },
+        title: { display: true, text: "Value" },
       },
     },
     interaction: {
@@ -388,29 +456,82 @@ export default function ManualLogsChart({
     return (
       <Alert severity="info" sx={{ mt: 2 }}>
         No manual logs found for the selected time range. Start logging data to
-        see your trends here!
+        see your insights!
       </Alert>
     );
   }
 
-  const chartData = prepareChartData();
   const variables = getUniqueVariables();
   const numericVariables = variables.filter((variable) =>
     logs.some((log) => log.variable === variable && isNumeric(log.value))
   );
 
-  // Show only the selected variable's chart
-  const displayedChartData =
-    selectedVariable && chartData[selectedVariable]
-      ? { [selectedVariable]: chartData[selectedVariable] }
-      : {};
+  const chartData = prepareChartData();
 
   return (
     <Box>
-      <Box sx={{ mb: 3 }}>
+      <Box
+        sx={{
+          mb: 3,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 2,
+        }}
+      >
         <Typography variant="h6" component="h3">
-          📈 Manual Log Trends
+          🔍 Enhanced Analytics
         </Typography>
+        <Box
+          sx={{
+            display: "flex",
+            gap: 2,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <FormControl size="small" sx={{ minWidth: 150 }}>
+            <InputLabel>Variable</InputLabel>
+            <Select
+              value={selectedVariable}
+              label="Variable"
+              onChange={handleVariableChange}
+            >
+              {numericVariables.map((variable) => (
+                <MenuItem key={variable} value={variable}>
+                  {variable}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <InputLabel>Time Range</InputLabel>
+            <Select
+              value={timeRange}
+              label="Time Range"
+              onChange={handleTimeRangeChange}
+            >
+              <MenuItem value="7">Last 7 days</MenuItem>
+              <MenuItem value="30">Last 30 days</MenuItem>
+              <MenuItem value="90">Last 90 days</MenuItem>
+              <MenuItem value="365">Last year</MenuItem>
+            </Select>
+          </FormControl>
+          <ToggleButtonGroup
+            value={chartType}
+            exclusive
+            onChange={handleChartTypeChange}
+            size="small"
+          >
+            <ToggleButton value="line" aria-label="line chart">
+              <ShowChartIcon />
+            </ToggleButton>
+            <ToggleButton value="bar" aria-label="bar chart">
+              <AssessmentIcon />
+            </ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
       </Box>
 
       {numericVariables.length === 0 ? (
@@ -418,14 +539,48 @@ export default function ManualLogsChart({
           No numeric variables found for charting. Charts can only display
           numeric values.
         </Alert>
-      ) : selectedVariable &&
-        displayedChartData[selectedVariable] &&
-        variableStats ? (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      ) : selectedVariable && chartData && variableStats ? (
+        <Stack spacing={3}>
           {/* Statistics Cards */}
-          <Box>
-            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
-              <Card sx={{ flex: "1 1 200px", minWidth: 200 }}>
+          <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+            {/* Day Streak - First */}
+            <Box
+              sx={{
+                flex: {
+                  xs: "1 1 100%",
+                  sm: "1 1 calc(50% - 8px)",
+                  md: "1 1 calc(25% - 12px)",
+                },
+              }}
+            >
+              <Card>
+                <CardContent>
+                  <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+                    <LocalFireDepartmentIcon
+                      sx={{ mr: 1, color: "warning.main" }}
+                    />
+                    <Typography variant="h6" component="div">
+                      {variableStats.streak}
+                    </Typography>
+                  </Box>
+                  <Typography variant="body2" color="text.secondary">
+                    Day Streak
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Box>
+
+            {/* Average - Third */}
+            <Box
+              sx={{
+                flex: {
+                  xs: "1 1 100%",
+                  sm: "1 1 calc(50% - 8px)",
+                  md: "1 1 calc(25% - 12px)",
+                },
+              }}
+            >
+              <Card>
                 <CardContent>
                   <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
                     <BarChartIcon sx={{ mr: 1, color: "primary.main" }} />
@@ -438,6 +593,17 @@ export default function ManualLogsChart({
                   </Typography>
                 </CardContent>
               </Card>
+            </Box>
+            {/* Trend - Fourth */}
+            <Box
+              sx={{
+                flex: {
+                  xs: "1 1 100%",
+                  sm: "1 1 calc(50% - 8px)",
+                  md: "1 1 calc(25% - 12px)",
+                },
+              }}
+            >
               <Tooltip
                 title={
                   <Box>
@@ -472,7 +638,7 @@ export default function ManualLogsChart({
                 placement="top"
                 arrow
               >
-                <Card sx={{ flex: "1 1 200px", minWidth: 200, cursor: "help" }}>
+                <Card sx={{ cursor: "help" }}>
                   <CardContent>
                     <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
                       {variableStats.trend === "up" && (
@@ -495,83 +661,24 @@ export default function ManualLogsChart({
                   </CardContent>
                 </Card>
               </Tooltip>
-              <Card sx={{ flex: "1 1 200px", minWidth: 200 }}>
-                <CardContent>
-                  <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
-                    <TimelineIcon sx={{ mr: 1, color: "secondary.main" }} />
-                    <Typography variant="h6" component="div">
-                      {variableStats.min} - {variableStats.max}
-                    </Typography>
-                  </Box>
-                  <Typography variant="body2" color="text.secondary">
-                    Range
-                  </Typography>
-                </CardContent>
-              </Card>
-              <Card sx={{ flex: "1 1 200px", minWidth: 200 }}>
-                <CardContent>
-                  <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
-                    <LocalFireDepartmentIcon
-                      sx={{ mr: 1, color: "warning.main" }}
-                    />
-                    <Typography variant="h6" component="div">
-                      {variableStats.streak}
-                    </Typography>
-                  </Box>
-                  <Typography variant="body2" color="text.secondary">
-                    Day Streak
-                  </Typography>
-                </CardContent>
-              </Card>
             </Box>
           </Box>
 
-          {/* Filter Controls */}
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "center",
-              gap: 2,
-              mb: 2,
-            }}
-          >
-            <FormControl size="small" sx={{ minWidth: 120 }}>
-              <InputLabel>Time Range</InputLabel>
-              <Select
-                value={timeRange}
-                label="Time Range"
-                onChange={handleTimeRangeChange}
-              >
-                <MenuItem value="7">Last 7 days</MenuItem>
-                <MenuItem value="30">Last 30 days</MenuItem>
-                <MenuItem value="90">Last 90 days</MenuItem>
-                <MenuItem value="365">Last year</MenuItem>
-              </Select>
-            </FormControl>
-            <FormControl size="small" sx={{ minWidth: 150 }}>
-              <InputLabel>Variable</InputLabel>
-              <Select
-                value={selectedVariable}
-                label="Variable"
-                onChange={handleVariableChange}
-              >
-                {numericVariables.map((variable) => (
-                  <MenuItem key={variable} value={variable}>
-                    {variable}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
-
           {/* Chart */}
-          <Box>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" component="h4" gutterBottom>
+          <Card>
+            <CardContent>
+              <Box
+                sx={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  mb: 2,
+                }}
+              >
+                <Typography variant="h6" component="h4">
                   {selectedVariable}
                 </Typography>
-                <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
+                <Box sx={{ display: "flex", gap: 1 }}>
                   <Chip
                     label={`${variableStats.totalLogs} data points`}
                     size="small"
@@ -583,63 +690,45 @@ export default function ManualLogsChart({
                     color="secondary"
                   />
                 </Box>
-                <Box sx={{ height: 400 }}>
-                  <Line
-                    data={displayedChartData[selectedVariable]}
-                    options={chartOptions}
-                  />
-                </Box>
-              </CardContent>
-            </Card>
-          </Box>
+              </Box>
+              <Box sx={{ height: 400 }}>
+                {chartType === "line" ? (
+                  <Line data={chartData} options={chartOptions} />
+                ) : (
+                  <Bar data={chartData} options={chartOptions} />
+                )}
+              </Box>
+            </CardContent>
+          </Card>
 
           {/* Weekly Pattern */}
-          {variableStats.weeklyPattern.length > 0 && (
-            <Box>
-              <Card>
-                <CardContent>
-                  <Typography variant="h6" component="h4" gutterBottom>
-                    Weekly Pattern
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ mb: 2 }}
-                  >
-                    Average values by day of week
-                  </Typography>
-                  <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-                    {variableStats.weeklyPattern.map((day) => (
-                      <Chip
-                        key={day.day}
-                        label={`${day.day.substring(
-                          0,
-                          3
-                        )}: ${day.average.toFixed(1)}`}
-                        size="small"
-                        variant="outlined"
-                      />
-                    ))}
-                  </Box>
-                </CardContent>
-              </Card>
-            </Box>
-          )}
-        </Box>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" component="h4" gutterBottom>
+                Weekly Pattern
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Average values by day of week
+              </Typography>
+              <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                {variableStats.weeklyPattern.map((day) => (
+                  <Chip
+                    key={day.day}
+                    label={`${day.day.substring(0, 3)}: ${
+                      day.hasLogs ? day.average!.toFixed(1) : "No logs"
+                    }`}
+                    size="small"
+                    variant={day.hasLogs ? "outlined" : "filled"}
+                    color={day.hasLogs ? "default" : "secondary"}
+                  />
+                ))}
+              </Box>
+            </CardContent>
+          </Card>
+        </Stack>
       ) : (
         <Alert severity="info" sx={{ mt: 2 }}>
-          Select a variable to view its trend chart and insights.
-        </Alert>
-      )}
-
-      {variables.length > numericVariables.length && (
-        <Alert severity="info" sx={{ mt: 2 }}>
-          <Typography variant="body2">
-            <strong>Note:</strong> Some variables (
-            {variables.length - numericVariables.length}) contain non-numeric
-            data and cannot be displayed in charts. These include:{" "}
-            {variables.filter((v) => !numericVariables.includes(v)).join(", ")}
-          </Typography>
+          Select a variable to view its analytics and insights.
         </Alert>
       )}
     </Box>

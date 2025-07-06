@@ -21,7 +21,7 @@ export interface LogLabel {
 export const LOG_LABELS: LogLabel[] = [
   // Substances Consumed
   {
-    label: "Caffeine (mg)",
+    label: "Caffeine",
     type: "number",
     description: "Total caffeine consumed and timing.",
     icon: "☕",
@@ -33,7 +33,7 @@ export const LOG_LABELS: LogLabel[] = [
     },
   },
   {
-    label: "Alcohol (units)",
+    label: "Alcohol",
     type: "number",
     description: "Alcohol intake and timing.",
     icon: "🍷",
