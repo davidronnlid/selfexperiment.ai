@@ -211,10 +211,15 @@ export default function LogPage() {
         // Get all variables from LOG_LABELS
         const allVariables = LOG_LABELS.map((label) => ({
           id: label.label,
+          slug: label.label.toLowerCase().replace(/\s+/g, "-"),
           label: label.label,
-          type: label.type || "text",
+          data_type: "continuous" as const,
+          source_type: "manual" as const,
           icon: label.icon || "📝",
           description: label.description || "",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          is_active: true,
         }));
 
         // Get user's custom variables
@@ -228,10 +233,15 @@ export default function LogPage() {
             if (!allVariables.find((v) => v.label === userVar.label)) {
               allVariables.push({
                 id: userVar.id,
+                slug: userVar.label.toLowerCase().replace(/\s+/g, "-"),
                 label: userVar.label,
-                type: userVar.type || "text",
+                data_type: "continuous" as const,
+                source_type: "manual" as const,
                 icon: userVar.icon || "🆕",
                 description: userVar.description || "",
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                is_active: true,
               });
             }
           });
@@ -485,38 +495,26 @@ export default function LogPage() {
             {Math.round(experimentProgress)}%
           </Typography>
 
-          <Box sx={{ display: "flex", justifyContent: "space-between", mt: 3 }}>
-            <Box sx={{ textAlign: "center" }}>
-              <Typography
-                variant="h4"
-                sx={{ color: "#ffd700", fontWeight: "bold" }}
-              >
-                {loggingStreak}
-              </Typography>
-              <Typography variant="body2">Day Streak</Typography>
-            </Box>
-            <Box sx={{ textAlign: "center" }}>
-              <Typography
-                variant="h4"
-                sx={{ color: "#ffd700", fontWeight: "bold" }}
-              >
-                {
-                  logs.filter(
-                    (log) => log.variable === experimentsNeedingLogs[0].variable
-                  ).length
-                }
-              </Typography>
-              <Typography variant="body2">Today's Logs</Typography>
-            </Box>
-            <Box sx={{ textAlign: "center" }}>
-              <Typography
-                variant="h4"
-                sx={{ color: "#ffd700", fontWeight: "bold" }}
-              >
-                {experimentsNeedingLogs[0].frequency || 1}
-              </Typography>
-              <Typography variant="body2">Target/Day</Typography>
-            </Box>
+          <Box
+            sx={{
+              mt: 3,
+              p: 2,
+              backgroundColor: "rgba(255,255,255,0.1)",
+              borderRadius: 2,
+            }}
+          >
+            <Typography variant="body1" sx={{ mb: 2, fontWeight: "bold" }}>
+              📝 Ready to log your {experimentsNeedingLogs[0].variable}?
+            </Typography>
+            <Typography variant="body2" sx={{ mb: 2, opacity: 0.9 }}>
+              Use the form below to record your{" "}
+              {experimentsNeedingLogs[0].variable} data for today's experiment.
+            </Typography>
+            <Typography variant="caption" sx={{ opacity: 0.8 }}>
+              Target: {experimentsNeedingLogs[0].frequency || 1} log
+              {(experimentsNeedingLogs[0].frequency || 1) > 1 ? "s" : ""} per
+              day
+            </Typography>
           </Box>
 
           <Button
