@@ -9,18 +9,56 @@ import Avatar from "@mui/material/Avatar";
 import { useUser } from "@/pages/_app";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/utils/supaBase";
 
 export default function Header() {
   const { user, loading, avatarUrl } = useUser();
-  // Try to get profile table avatar first, then OAuth metadata
-  const profilePic =
-    avatarUrl ||
-    user?.user_metadata?.avatar_url ||
-    user?.user_metadata?.picture ||
-    null;
+  // Try to get OAuth profile picture if available
+  const oauthProfilePic =
+    user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null;
   const displayName = user?.user_metadata?.name || user?.email || "";
+  
+  // State for custom avatar from profiles table
+  const [customAvatarUrl, setCustomAvatarUrl] = useState<string | null>(null);
+  const [avatarLoading, setAvatarLoading] = useState(false);
+
+  // Fetch custom avatar from profiles table
+  useEffect(() => {
+    const fetchAvatar = async () => {
+      if (!user) {
+        setCustomAvatarUrl(null);
+        return;
+      }
+      
+      setAvatarLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("avatar_url")
+          .eq("id", user.id)
+          .single();
+        
+        if (data?.avatar_url && !error) {
+          // Get public URL for the avatar
+          const { data: publicUrlData } = supabase.storage
+            .from("avatars")
+            .getPublicUrl(data.avatar_url);
+          
+          setCustomAvatarUrl(publicUrlData.publicUrl);
+        }
+      } catch (error) {
+        console.error("Error fetching avatar:", error);
+      } finally {
+        setAvatarLoading(false);
+      }
+    };
+
+    fetchAvatar();
+  }, [user]);
+
+  // Use custom avatar if available, otherwise fall back to OAuth picture or avatarUrl from useUser
+  const profilePic = customAvatarUrl || avatarUrl || oauthProfilePic;
 
   // Helper for nav link underline
   const navLinkClass =
