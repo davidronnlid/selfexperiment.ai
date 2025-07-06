@@ -88,7 +88,7 @@ export default function ManualLogsChart({
 
       const { data, error } = await supabase
         .from("daily_logs")
-        .select("id, date, label, value, notes, created_at")
+        .select("id, date, variable, value, notes, created_at")
         .eq("user_id", userId)
         .gte("date", cutoffDate.toISOString())
         .order("date", { ascending: true });
@@ -113,7 +113,7 @@ export default function ManualLogsChart({
   };
 
   const getUniqueVariables = () => {
-    const variables = new Set(logs.map((log) => log.label));
+    const variables = new Set(logs.map((log) => log.variable));
     return Array.from(variables).sort();
   };
 
