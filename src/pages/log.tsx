@@ -570,48 +570,9 @@ export default function LogPage() {
           <Typography variant="subtitle2" gutterBottom>
             Select Variable
           </Typography>
-          <Autocomplete
-            options={variables}
-            getOptionLabel={(option) => option.label}
-            value={selectedVariable}
-            onChange={(event, newValue) => {
-              setSelectedVariable(newValue);
-            }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                placeholder="Search for a variable..."
-                InputProps={{
-                  ...params.InputProps,
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon />
-                    </InputAdornment>
-                  ),
-                }}
-              />
-            )}
-            renderOption={(props, option) => (
-              <Box
-                component="li"
-                {...props}
-                sx={{ display: "flex", alignItems: "center", gap: 2 }}
-              >
-                <span>{option.icon}</span>
-                <Box>
-                  <Typography variant="body1">{option.label}</Typography>
-                  {option.description && (
-                    <Typography variant="caption" color="text.secondary">
-                      {option.description}
-                    </Typography>
-                  )}
-                </Box>
-              </Box>
-            )}
-          />
 
           {/* Popular Variables */}
-          <Box sx={{ mt: 2 }}>
+          <Box sx={{ mb: 2 }}>
             <Typography variant="subtitle2" gutterBottom>
               Popular Variables
             </Typography>
@@ -641,6 +602,46 @@ export default function LogPage() {
               )}
             </Box>
           </Box>
+
+          <Autocomplete
+            options={variables}
+            getOptionLabel={(option) => option.label}
+            value={selectedVariable}
+            onChange={(event, newValue) => {
+              setSelectedVariable(newValue);
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder="Or search for other variables..."
+                InputProps={{
+                  ...params.InputProps,
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+            )}
+            renderOption={(props, option) => (
+              <Box
+                component="li"
+                {...props}
+                sx={{ display: "flex", alignItems: "center", gap: 2 }}
+              >
+                <span>{option.icon}</span>
+                <Box>
+                  <Typography variant="body1">{option.label}</Typography>
+                  {option.description && (
+                    <Typography variant="caption" color="text.secondary">
+                      {option.description}
+                    </Typography>
+                  )}
+                </Box>
+              </Box>
+            )}
+          />
         </Box>
 
         {/* Value Input */}
