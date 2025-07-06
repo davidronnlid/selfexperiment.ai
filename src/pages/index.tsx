@@ -3,28 +3,27 @@ import { Card, CardContent, Typography, Button } from "@mui/material";
 
 export default function Home() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-purple-50 to-white">
-      <Card className="w-full max-w-lg shadow-xl rounded-2xl border border-purple-100 bg-white">
+    <main className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-gray-900 to-black">
+      <Card className="w-full max-w-lg shadow-xl rounded-2xl border border-gray-700 bg-gray-800/90 backdrop-blur-sm">
         <CardContent className="flex flex-col items-center p-8">
           <Typography
             variant="h3"
-            className="font-bold text-purple-700 mb-2 tracking-tight text-center"
+            className="font-bold text-white mb-2 tracking-tight text-center"
             component="h1"
           >
             SelfExperiment.AI
           </Typography>
           <Typography
             variant="subtitle1"
-            className="mb-6 text-gray-700 text-center"
+            className="mb-6 text-gray-200 text-center"
           >
-            Branch out through your soul with friends and AI
+            Understand yourself better with AI
           </Typography>
           <div className="flex flex-col gap-4 w-full">
             <Link href="/experiment/builder" passHref legacyBehavior>
               <Button
                 variant="contained"
-                color="secondary"
-                className="w-full !bg-purple-600 hover:!bg-purple-700 text-white text-lg py-3 rounded-lg shadow-md transition"
+                className="w-full !bg-blue-600 hover:!bg-blue-700 text-white text-lg py-3 rounded-lg shadow-md transition"
                 size="large"
                 fullWidth
               >
@@ -35,7 +34,7 @@ export default function Home() {
               <Button
                 variant="outlined"
                 color="secondary"
-                className="w-full border-purple-400 text-purple-700 hover:!bg-purple-50 text-lg py-3 rounded-lg transition"
+                className="w-full border-gray-400 text-gray-200 hover:!bg-gray-700 text-lg py-3 rounded-lg transition"
                 size="large"
                 fullWidth
               >
@@ -46,7 +45,7 @@ export default function Home() {
               <Button
                 variant="outlined"
                 color="secondary"
-                className="w-full border-purple-400 text-purple-700 hover:!bg-purple-50 text-lg py-3 rounded-lg transition"
+                className="w-full border-gray-400 text-gray-200 hover:!bg-gray-700 text-lg py-3 rounded-lg transition"
                 size="large"
                 fullWidth
               >

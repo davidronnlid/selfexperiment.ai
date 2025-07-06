@@ -41,7 +41,7 @@ export default function ExperimentDesigner() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const redirectTimeout = useRef<NodeJS.Timeout | null>(null);
-  const [dependentVar, setDependentVar] = useState("Average RHR");
+  const [effect, setEffect] = useState("Average RHR");
   const [timeIntervals, setTimeIntervals] = useState<string[]>(["21:00"]);
   const [customInterval, setCustomInterval] = useState("");
   const [missingDataStrategy, setMissingDataStrategy] = useState(
@@ -254,7 +254,7 @@ export default function ExperimentDesigner() {
             start_date: startDate.toISOString(),
             end_date: endDate.toISOString(),
             frequency,
-            dependent_variable: dependentVar,
+            effect: effect,
             time_intervals: timeIntervals,
             missing_data_strategy: missingDataStrategy,
           },
@@ -284,7 +284,7 @@ export default function ExperimentDesigner() {
         start_date: startDate.toISOString(),
         end_date: endDate.toISOString(),
         frequency,
-        dependent_variable: dependentVar,
+        effect: effect,
         time_intervals: timeIntervals,
         missing_data_strategy: missingDataStrategy,
       });
@@ -313,7 +313,7 @@ export default function ExperimentDesigner() {
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <Typography variant="h3" component="h1" gutterBottom align="center">
-        🧪 Design a Self-Experiment
+        Build Self-Experiment
       </Typography>
       <Typography
         variant="h6"
@@ -321,7 +321,7 @@ export default function ExperimentDesigner() {
         align="center"
         sx={{ mb: 4 }}
       >
-        Choose variables to experiment with and track their effects
+        Choose a cause to experiment with and track its effect
       </Typography>
       {error && (
         <Alert severity="error" sx={{ mb: 4 }}>
@@ -341,10 +341,10 @@ export default function ExperimentDesigner() {
           {/* Variable Selection with Tabs */}
           <Box sx={{ mb: 4 }}>
             <Typography variant="h6" gutterBottom>
-              Choose Your Variable
+              Choose Your Cause
             </Typography>
             <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-              Select from predefined variables or create your own
+              Select the variable you want to experiment with (the cause)
             </Typography>
             {/* Search Bar for All Variables */}
             <Autocomplete
@@ -359,7 +359,7 @@ export default function ExperimentDesigner() {
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="Search variables..."
+                  label="Search causes..."
                   variant="outlined"
                   sx={{ mb: 2 }}
                 />
@@ -368,7 +368,7 @@ export default function ExperimentDesigner() {
             {/* Quick Select Chips */}
             <Box sx={{ mb: 3 }}>
               <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                Popular variables to get started:
+                Popular causes to get started:
               </Typography>
               <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
                 {[
@@ -467,32 +467,32 @@ export default function ExperimentDesigner() {
             </AccordionSummary>
             <AccordionDetails className="space-y-4">
               <div>
-                <Typography variant="subtitle2">Dependent Variable</Typography>
+                <Typography variant="subtitle2">Effect</Typography>
                 <div className="flex gap-4 mt-1">
                   <label className="flex items-center gap-2">
                     <input
                       type="radio"
-                      name="dependentVar"
+                      name="effect"
                       value="Average RHR"
-                      checked={dependentVar === "Average RHR"}
-                      onChange={() => setDependentVar("Average RHR")}
+                      checked={effect === "Average RHR"}
+                      onChange={() => setEffect("Average RHR")}
                     />
                     Average RHR
                   </label>
                   <label className="flex items-center gap-2">
                     <input
                       type="radio"
-                      name="dependentVar"
+                      name="effect"
                       value="Lowest RHR"
-                      checked={dependentVar === "Lowest RHR"}
-                      onChange={() => setDependentVar("Lowest RHR")}
+                      checked={effect === "Lowest RHR"}
+                      onChange={() => setEffect("Lowest RHR")}
                     />
                     Lowest RHR
                   </label>
                 </div>
                 <Typography variant="caption" className="text-gray-500 mt-1">
-                  The experiment will assess whether your selected variable has
-                  an effect on this outcome.
+                  The experiment will assess whether your selected cause has an
+                  effect on this outcome.
                 </Typography>
               </div>
               {frequency > 1 && (

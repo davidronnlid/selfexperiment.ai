@@ -65,7 +65,7 @@ const validateValue = (
 interface LogEntry {
   id: number;
   date: string;
-  label: string;
+  variable: string;
   value: string;
   notes?: string;
 }
@@ -138,7 +138,9 @@ export default function LogPage() {
   const [loggingStreak, setLoggingStreak] = useState(0);
   const [totalExperimentDays, setTotalExperimentDays] = useState(0);
   const [labelOptions, setLabelOptions] = useState<any[]>([]);
-  const [label, setLabel] = useState<string>("");
+  const [independentVariable, setIndependentVariable] = useState<string>("");
+  const [dependentVariable, setDependentVariable] = useState<string>("");
+  const [submitting, setSubmitting] = useState(false);
 
   // Calculate experiment progress
   const calculateExperimentProgress = () => {
@@ -171,7 +173,7 @@ export default function LogPage() {
       .from("daily_logs")
       .select("date")
       .eq("user_id", user.id)
-      .eq("label", experiment.variable)
+      .eq("variable", experiment.variable)
       .gte("date", experiment.start_date)
       .order("date", { ascending: false })
       .limit(30);
@@ -237,7 +239,7 @@ export default function LogPage() {
     activeExperiments.forEach((exp) => {
       const logsToday = logs.filter(
         (log) =>
-          log.label === exp.variable &&
+          log.variable === exp.variable &&
           new Date(log.date).toDateString() === today.toDateString()
       );
       logsByExp[exp.variable] = logsToday;
@@ -253,11 +255,14 @@ export default function LogPage() {
   useEffect(() => {
     async function fetchAndSortVariables() {
       // 1. Fetch all logs
-      const { data: logs } = await supabase.from("daily_logs").select("label");
+      const { data: logs } = await supabase
+        .from("daily_logs")
+        .select("variable");
       // Count occurrences of each label
       const logCounts: Record<string, number> = {};
       (logs || []).forEach((row: any) => {
-        if (row.label) logCounts[row.label] = (logCounts[row.label] || 0) + 1;
+        if (row.variable)
+          logCounts[row.variable] = (logCounts[row.variable] || 0) + 1;
       });
 
       // 2. Fetch user variables (with icon)
@@ -404,26 +409,48 @@ export default function LogPage() {
   };
 
   const submitLog = async () => {
+    if (submitting) return; // Prevent double submission
+
     if (!user) {
       setExpError("You must be logged in to log data.");
       return;
     }
-    if (!label || label.length > 25) {
-      alert("Label must be under 25 characters.");
+
+    setSubmitting(true);
+    setExpError(""); // Clear any previous errors
+
+    // Determine the variable name to use
+    const variableToLog =
+      experimentsNeedingLogs.length > 0
+        ? experimentsNeedingLogs[0].variable
+        : dependentVariable; // The variable we're tracking/measuring
+
+    if (!variableToLog || variableToLog.length > 25) {
+      setExpError(
+        "Please select a variable to log. Variable name must be under 25 characters."
+      );
+      setSubmitting(false);
+      return;
+    }
+
+    if (!value || value.trim() === "") {
+      setExpError("Please enter a value to log.");
+      setSubmitting(false);
       return;
     }
 
     // Validate the value using our constraint system
-    const validation = validateValue(label, value);
+    const validation = validateValue(variableToLog, value);
     if (!validation.isValid) {
       setExpError(validation.error || "Invalid value");
+      setSubmitting(false);
       return;
     }
 
     // Only enforce frequency limit for the experiment variable
     if (
       experimentsNeedingLogs.length > 0 &&
-      label === experimentsNeedingLogs[0].variable &&
+      variableToLog === experimentsNeedingLogs[0].variable &&
       experimentsLogsToday[experimentsNeedingLogs[0].variable].length >=
         experimentsNeedingLogs[0].frequency
     ) {
@@ -433,6 +460,7 @@ export default function LogPage() {
         "You have reached the maximum number of logs for today for this experiment variable. Once your active experiment is complete, you will be able to log this variable as often as you like."
       );
       setMaxLogsWarning(true);
+      setSubmitting(false);
       return;
     }
 
@@ -443,6 +471,7 @@ export default function LogPage() {
     ) {
       if (!selectedInterval) {
         setExpError("Please select a time interval to log for.");
+        setSubmitting(false);
         return;
       }
     }
@@ -455,13 +484,13 @@ export default function LogPage() {
           {
             user_id: user.id,
             date: date.toISOString(),
-            label:
-              experimentsNeedingLogs.length > 0
-                ? experimentsNeedingLogs[0].variable
-                : label,
+            variable: variableToLog,
             value,
             notes:
               (notes ? notes + "\n" : "") +
+              (independentVariable
+                ? `Independent Variable: ${independentVariable}\n`
+                : "") +
               (selectedInterval ? `Interval: ${selectedInterval}` : ""),
           },
         ])
@@ -493,6 +522,8 @@ export default function LogPage() {
         "Unexpected error: " +
           (err instanceof Error ? err.message : String(err))
       );
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -506,7 +537,7 @@ export default function LogPage() {
       if (!user) return;
       setPrivacyLoading(true);
       const { data: varSettings, error: varError } = await supabase
-        .from("app_variable_sharing_settings")
+        .from("variable_sharing_settings")
         .select("*")
         .eq("user_id", user.id);
       if (!varError) setVariableSettings(varSettings || []);
@@ -529,10 +560,10 @@ export default function LogPage() {
       experimentsNeedingLogs[0].frequency
   );
 
-  // If mustLogExperimentFirst, force label to experiment variable
+  // If mustLogExperimentFirst, force dependent variable to experiment variable
   useEffect(() => {
     if (mustLogExperimentFirst && experimentsNeedingLogs.length > 0) {
-      setLabel(experimentsNeedingLogs[0].variable);
+      setDependentVariable(experimentsNeedingLogs[0].variable);
     }
   }, [mustLogExperimentFirst, experimentsNeedingLogs]);
 
@@ -566,7 +597,7 @@ export default function LogPage() {
       setExpError("Value cannot be empty.");
       return;
     }
-    const validation = validateValue(editExperimentLog.label, editValue);
+    const validation = validateValue(editExperimentLog.variable, editValue);
     if (!validation.isValid) {
       setExpError(validation.error || "Invalid value");
       return;
@@ -868,11 +899,11 @@ export default function LogPage() {
               can edit it below:
             </Alert>
             <Typography variant="subtitle1" sx={{ mb: 1 }}>
-              Edit Log for {editExperimentLog.label} (
+              Edit Log for {editExperimentLog.variable} (
               {new Date(editExperimentLog.date).toLocaleDateString()})
             </Typography>
             <ValidatedInput
-              label={editExperimentLog.label}
+              label={editExperimentLog.variable}
               value={editValue}
               onChange={setEditValue}
               onValidationChange={setIsValueValid}
@@ -918,7 +949,7 @@ export default function LogPage() {
                 mb: 2,
               }}
             >
-              📊 Choose Variable to Log
+              🔬 Hypothesis Builder
             </Typography>
 
             <Typography
@@ -930,46 +961,318 @@ export default function LogPage() {
                 lineHeight: 1.6,
               }}
             >
-              Select from predefined variables or search for custom ones
+              Construct your research question by selecting variables
             </Typography>
 
-            {/* Enhanced Variable Selection UI here - keeping existing tab structure but with better styling */}
-            {/* ... existing variable selection code with enhanced styling ... */}
-
+            {/* Hypothesis Sentence Builder */}
             <Box
               sx={{
-                mt: 3,
-                p: 2,
+                p: 3,
                 backgroundColor: "grey.50",
                 borderRadius: 2,
                 border: "2px solid",
-                borderColor: label ? "primary.main" : "grey.300",
+                borderColor: "primary.main",
+                mb: 3,
               }}
             >
               <Typography
-                variant="body1"
+                variant="h6"
                 sx={{
-                  fontWeight: "medium",
-                  color: label ? "primary.main" : "text.secondary",
+                  fontWeight: "bold",
+                  color: "primary.main",
+                  mb: 2,
+                  textAlign: "center",
                 }}
               >
-                Selected: <strong>{label || "None"}</strong>
+                Research Question
               </Typography>
+
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
+                  flexWrap: "wrap",
+                  justifyContent: "center",
+                }}
+              >
+                <Typography variant="h6" sx={{ fontWeight: "medium" }}>
+                  Does
+                </Typography>
+                <Box
+                  sx={{
+                    minWidth: 150,
+                    p: 1,
+                    backgroundColor: independentVariable
+                      ? "primary.light"
+                      : "white",
+                    border: "2px solid",
+                    borderColor: independentVariable
+                      ? "primary.main"
+                      : "grey.300",
+                    borderRadius: 1,
+                    textAlign: "center",
+                  }}
+                >
+                  <Typography
+                    variant="body1"
+                    sx={{
+                      fontWeight: "bold",
+                      color: independentVariable
+                        ? "primary.main"
+                        : "text.secondary",
+                    }}
+                  >
+                    {independentVariable || "VARIABLE"}
+                  </Typography>
+                </Box>
+                <Typography variant="h6" sx={{ fontWeight: "medium" }}>
+                  impact
+                </Typography>
+                <Box
+                  sx={{
+                    minWidth: 150,
+                    p: 1,
+                    backgroundColor: dependentVariable
+                      ? "secondary.light"
+                      : "white",
+                    border: "2px solid",
+                    borderColor: dependentVariable
+                      ? "secondary.main"
+                      : "grey.300",
+                    borderRadius: 1,
+                    textAlign: "center",
+                  }}
+                >
+                  <Typography
+                    variant="body1"
+                    sx={{
+                      fontWeight: "bold",
+                      color: dependentVariable
+                        ? "secondary.main"
+                        : "text.secondary",
+                    }}
+                  >
+                    {dependentVariable || "VARIABLE"}
+                  </Typography>
+                </Box>
+                <Typography variant="h6" sx={{ fontWeight: "medium" }}>
+                  ?
+                </Typography>
+              </Box>
             </Box>
+
+            {/* Variable Selection */}
+            <Box sx={{ display: "flex", gap: 2, mb: 3 }}>
+              {/* Independent Variable Selection */}
+              <Box sx={{ flex: 1 }}>
+                <Typography
+                  variant="subtitle1"
+                  sx={{ mb: 1, fontWeight: "medium", color: "primary.main" }}
+                >
+                  📈 Independent Variable (What might cause change?)
+                </Typography>
+                <Autocomplete
+                  freeSolo
+                  options={labelOptions}
+                  getOptionLabel={(option) =>
+                    typeof option === "string" ? option : option.label || ""
+                  }
+                  value={independentVariable}
+                  onChange={(event, newValue) => {
+                    if (typeof newValue === "string") {
+                      setIndependentVariable(newValue);
+                    } else if (newValue && newValue.label) {
+                      setIndependentVariable(newValue.label);
+                    } else {
+                      setIndependentVariable("");
+                    }
+                  }}
+                  onInputChange={(event, newInputValue) => {
+                    setIndependentVariable(newInputValue);
+                  }}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Select independent variable"
+                      variant="outlined"
+                      fullWidth
+                      placeholder="e.g., Sleep, Exercise, Caffeine..."
+                      sx={{
+                        "& .MuiOutlinedInput-root": {
+                          borderRadius: 2,
+                        },
+                      }}
+                    />
+                  )}
+                  renderOption={(props, option) => (
+                    <Box
+                      component="li"
+                      {...props}
+                      sx={{ display: "flex", alignItems: "center", gap: 1 }}
+                    >
+                      <span>{option.icon || "📝"}</span>
+                      <span>{option.label}</span>
+                      {option.count && (
+                        <Chip
+                          label={`${option.count} logs`}
+                          size="small"
+                          variant="outlined"
+                          sx={{ ml: "auto" }}
+                        />
+                      )}
+                    </Box>
+                  )}
+                />
+              </Box>
+
+              {/* Dependent Variable Selection */}
+              <Box sx={{ flex: 1 }}>
+                <Typography
+                  variant="subtitle1"
+                  sx={{ mb: 1, fontWeight: "medium", color: "secondary.main" }}
+                >
+                  📊 Dependent Variable (What are you measuring?)
+                </Typography>
+                <Autocomplete
+                  freeSolo
+                  options={labelOptions}
+                  getOptionLabel={(option) =>
+                    typeof option === "string" ? option : option.label || ""
+                  }
+                  value={dependentVariable}
+                  onChange={(event, newValue) => {
+                    if (typeof newValue === "string") {
+                      setDependentVariable(newValue);
+                    } else if (newValue && newValue.label) {
+                      setDependentVariable(newValue.label);
+                    } else {
+                      setDependentVariable("");
+                    }
+                  }}
+                  onInputChange={(event, newInputValue) => {
+                    setDependentVariable(newInputValue);
+                  }}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Select dependent variable"
+                      variant="outlined"
+                      fullWidth
+                      placeholder="e.g., Mood, Energy, Focus..."
+                      sx={{
+                        "& .MuiOutlinedInput-root": {
+                          borderRadius: 2,
+                        },
+                      }}
+                    />
+                  )}
+                  renderOption={(props, option) => (
+                    <Box
+                      component="li"
+                      {...props}
+                      sx={{ display: "flex", alignItems: "center", gap: 1 }}
+                    >
+                      <span>{option.icon || "📝"}</span>
+                      <span>{option.label}</span>
+                      {option.count && (
+                        <Chip
+                          label={`${option.count} logs`}
+                          size="small"
+                          variant="outlined"
+                          sx={{ ml: "auto" }}
+                        />
+                      )}
+                    </Box>
+                  )}
+                />
+              </Box>
+            </Box>
+
+            {/* Quick Select Popular Variables */}
+            {labelOptions.length > 0 && (
+              <Box sx={{ mb: 2 }}>
+                <Typography
+                  variant="subtitle2"
+                  sx={{ mb: 1, fontWeight: "medium" }}
+                >
+                  🔥 Popular Variables
+                </Typography>
+                <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                  {labelOptions.slice(0, 8).map((option) => (
+                    <Chip
+                      key={option.label}
+                      label={`${option.icon || "📝"} ${option.label}`}
+                      onClick={() => {
+                        // Smart assignment: if no dependent variable, set it; otherwise set independent
+                        if (!dependentVariable) {
+                          setDependentVariable(option.label);
+                        } else if (!independentVariable) {
+                          setIndependentVariable(option.label);
+                        } else {
+                          // Both are set, replace dependent variable
+                          setDependentVariable(option.label);
+                        }
+                      }}
+                      variant="outlined"
+                      color="default"
+                      sx={{
+                        cursor: "pointer",
+                        "&:hover": {
+                          backgroundColor: "primary.light",
+                          color: "white",
+                        },
+                      }}
+                    />
+                  ))}
+                </Box>
+              </Box>
+            )}
           </Box>
 
           {/* Enhanced Form Fields with Better Spacing */}
           <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            {/* Context Display */}
+            {(independentVariable || dependentVariable) && (
+              <Box
+                sx={{
+                  p: 2,
+                  backgroundColor: "info.light",
+                  borderRadius: 2,
+                  border: "1px solid",
+                  borderColor: "info.main",
+                }}
+              >
+                <Typography variant="body1" sx={{ fontWeight: "medium" }}>
+                  📝 You're logging:{" "}
+                  <strong>
+                    {dependentVariable || "Select dependent variable"}
+                  </strong>
+                  {independentVariable && (
+                    <>
+                      <br />
+                      🔍 To test if: <strong>{independentVariable}</strong> has
+                      an impact
+                    </>
+                  )}
+                </Typography>
+              </Box>
+            )}
+
             {/* Value Input */}
             <Box>
               {(() => {
-                const variable = LOG_LABELS.find((v) => v.label === label);
+                const variable = LOG_LABELS.find(
+                  (v) => v.label === dependentVariable
+                );
                 const isDropdown = variable?.type === "dropdown";
 
                 if (isDropdown && variable?.options) {
                   return (
                     <DropdownInput
-                      label={label}
+                      label={
+                        dependentVariable || "Select dependent variable first"
+                      }
                       value={value}
                       onChange={setValue}
                       onValidationChange={setIsValueValid}
@@ -979,7 +1282,9 @@ export default function LogPage() {
                 } else {
                   return (
                     <ValidatedInput
-                      label={label}
+                      label={
+                        dependentVariable || "Select dependent variable first"
+                      }
                       value={value}
                       onChange={setValue}
                       onValidationChange={setIsValueValid}
@@ -1000,7 +1305,13 @@ export default function LogPage() {
                 minRows={3}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Add any context or observations..."
+                placeholder={`Add context about ${
+                  dependentVariable || "your measurement"
+                }${
+                  independentVariable
+                    ? ` and how ${independentVariable} might have influenced it`
+                    : ""
+                }...`}
                 sx={{
                   "& .MuiOutlinedInput-root": {
                     borderRadius: 2,
@@ -1146,9 +1457,15 @@ export default function LogPage() {
 
             {/* Enhanced Submit Button */}
             <Button
-              type="submit"
               variant="contained"
-              disabled={!isValueValid}
+              disabled={
+                !isValueValid ||
+                (!dependentVariable && experimentsNeedingLogs.length === 0) ||
+                !independentVariable ||
+                !value.trim() ||
+                submitting
+              }
+              onClick={submitLog}
               sx={{
                 background: "linear-gradient(45deg, #FFD700 30%, #FFEA70 90%)",
                 color: "black",
@@ -1172,7 +1489,7 @@ export default function LogPage() {
                 },
               }}
             >
-              📝 Submit Log
+              {submitting ? "⏳ Submitting..." : "🔬 Log Data Point"}
             </Button>
           </Box>
         </Paper>

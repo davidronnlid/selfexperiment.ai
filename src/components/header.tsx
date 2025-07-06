@@ -86,6 +86,12 @@ export default function Header() {
           <Link href="/community" className={navLinkClass}>
             Community
           </Link>
+          <Link href="/analytics" className={navLinkClass}>
+            Analytics
+          </Link>
+          <Link href="/profile" className={navLinkClass}>
+            Profile
+          </Link>
           {!loading && !user && (
             <Link href="/auth">
               <Button
@@ -99,9 +105,6 @@ export default function Header() {
           )}
           {!loading && user && (
             <>
-              <Link href="/analytics" className={navLinkClass}>
-                Analytics
-              </Link>
               <Avatar
                 alt={displayName}
                 src={profilePic || undefined}
@@ -118,13 +121,6 @@ export default function Header() {
                 anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
                 transformOrigin={{ vertical: "top", horizontal: "right" }}
               >
-                <MenuItem
-                  component={Link}
-                  href="/profile"
-                  onClick={handleMenuClose}
-                >
-                  Profile
-                </MenuItem>
                 <MenuItem onClick={handleLogout}>Logout</MenuItem>
               </Menu>
             </>
