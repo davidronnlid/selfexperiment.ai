@@ -36,10 +36,12 @@ interface VariableCreationDialogProps {
 
 // Predefined unit options with default min/max values
 const UNIT_OPTIONS = [
+  // Continuous/Numeric Units
   {
     value: "kg",
     label: "Kilograms (kg)",
     category: "Weight",
+    dataTypes: ["continuous"],
     defaultMin: 0,
     defaultMax: 300,
   },
@@ -47,6 +49,7 @@ const UNIT_OPTIONS = [
     value: "lbs",
     label: "Pounds (lbs)",
     category: "Weight",
+    dataTypes: ["continuous"],
     defaultMin: 0,
     defaultMax: 660,
   },
@@ -54,6 +57,7 @@ const UNIT_OPTIONS = [
     value: "mg",
     label: "Milligrams (mg)",
     category: "Medication/Supplement",
+    dataTypes: ["continuous"],
     defaultMin: 0,
     defaultMax: 1000,
   },
@@ -61,6 +65,7 @@ const UNIT_OPTIONS = [
     value: "ml",
     label: "Milliliters (ml)",
     category: "Volume",
+    dataTypes: ["continuous"],
     defaultMin: 0,
     defaultMax: 5000,
   },
@@ -68,6 +73,7 @@ const UNIT_OPTIONS = [
     value: "L",
     label: "Liters (L)",
     category: "Volume",
+    dataTypes: ["continuous"],
     defaultMin: 0,
     defaultMax: 10,
   },
@@ -75,6 +81,7 @@ const UNIT_OPTIONS = [
     value: "hours",
     label: "Hours",
     category: "Time",
+    dataTypes: ["continuous"],
     defaultMin: 0,
     defaultMax: 24,
   },
@@ -82,6 +89,7 @@ const UNIT_OPTIONS = [
     value: "minutes",
     label: "Minutes",
     category: "Time",
+    dataTypes: ["continuous"],
     defaultMin: 0,
     defaultMax: 1440,
   },
@@ -89,6 +97,7 @@ const UNIT_OPTIONS = [
     value: "bpm",
     label: "Beats per minute (bpm)",
     category: "Health",
+    dataTypes: ["continuous"],
     defaultMin: 30,
     defaultMax: 220,
   },
@@ -96,6 +105,7 @@ const UNIT_OPTIONS = [
     value: "°C",
     label: "Degrees Celsius (°C)",
     category: "Temperature",
+    dataTypes: ["continuous"],
     defaultMin: 35,
     defaultMax: 42,
   },
@@ -103,6 +113,7 @@ const UNIT_OPTIONS = [
     value: "°F",
     label: "Degrees Fahrenheit (°F)",
     category: "Temperature",
+    dataTypes: ["continuous"],
     defaultMin: 95,
     defaultMax: 108,
   },
@@ -110,6 +121,7 @@ const UNIT_OPTIONS = [
     value: "steps",
     label: "Steps",
     category: "Activity",
+    dataTypes: ["continuous"],
     defaultMin: 0,
     defaultMax: 50000,
   },
@@ -117,6 +129,7 @@ const UNIT_OPTIONS = [
     value: "calories",
     label: "Calories",
     category: "Food/Exercise",
+    dataTypes: ["continuous"],
     defaultMin: 0,
     defaultMax: 5000,
   },
@@ -124,6 +137,7 @@ const UNIT_OPTIONS = [
     value: "mmHg",
     label: "mmHg (Blood Pressure)",
     category: "Health",
+    dataTypes: ["continuous"],
     defaultMin: 60,
     defaultMax: 200,
   },
@@ -131,6 +145,7 @@ const UNIT_OPTIONS = [
     value: "rating",
     label: "Rating/Score",
     category: "Subjective",
+    dataTypes: ["continuous"],
     defaultMin: 1,
     defaultMax: 10,
   },
@@ -138,6 +153,7 @@ const UNIT_OPTIONS = [
     value: "percentage",
     label: "Percentage (%)",
     category: "General",
+    dataTypes: ["continuous"],
     defaultMin: 0,
     defaultMax: 100,
   },
@@ -145,10 +161,77 @@ const UNIT_OPTIONS = [
     value: "units",
     label: "Units (generic)",
     category: "General",
+    dataTypes: ["continuous"],
     defaultMin: 0,
     defaultMax: 100,
   },
+  // Categorical Units
+  {
+    value: "option",
+    label: "Option",
+    category: "Categorical",
+    dataTypes: ["categorical"],
+    defaultMin: 0,
+    defaultMax: 0,
+  },
+  {
+    value: "choice",
+    label: "Choice",
+    category: "Categorical",
+    dataTypes: ["categorical"],
+    defaultMin: 0,
+    defaultMax: 0,
+  },
+  {
+    value: "level",
+    label: "Level",
+    category: "Categorical",
+    dataTypes: ["categorical"],
+    defaultMin: 0,
+    defaultMax: 0,
+  },
+  {
+    value: "type",
+    label: "Type",
+    category: "Categorical",
+    dataTypes: ["categorical"],
+    defaultMin: 0,
+    defaultMax: 0,
+  },
+  {
+    value: "category",
+    label: "Category",
+    category: "Categorical",
+    dataTypes: ["categorical"],
+    defaultMin: 0,
+    defaultMax: 0,
+  },
+  // Text Units
+  {
+    value: "characters",
+    label: "Characters",
+    category: "Text",
+    dataTypes: ["text"],
+    defaultMin: 1,
+    defaultMax: 500,
+  },
+  {
+    value: "words",
+    label: "Words",
+    category: "Text",
+    dataTypes: ["text"],
+    defaultMin: 1,
+    defaultMax: 100,
+  },
 ];
+
+// Function to filter unit options based on data type
+const getAvailableUnits = (dataType: string) => {
+  return UNIT_OPTIONS.filter(
+    (unit) =>
+      unit.dataTypes.includes(dataType) || unit.dataTypes.includes("all")
+  );
+};
 
 // Common emojis for variable icons
 const EMOJI_OPTIONS = [
@@ -248,12 +331,29 @@ export default function VariableCreationDialog({
     }
   }, [open, initialVariableName]);
 
+  // Clear unit when data type changes to prevent invalid unit-datatype combinations
+  useEffect(() => {
+    if (unit) {
+      const availableUnits = getAvailableUnits(constraints.type);
+      const isUnitValid = availableUnits.some((u) => u.value === unit);
+      if (!isUnitValid) {
+        setUnit("");
+        setConstraints((prev) => ({
+          ...prev,
+          min: "",
+          max: "",
+        }));
+      }
+    }
+  }, [constraints.type, unit]);
+
   const handleUnitChange = (selectedUnit: string | null) => {
     const unitValue = selectedUnit || "";
     setUnit(unitValue);
 
     // Find the unit option and set default min/max values
-    const unitOption = UNIT_OPTIONS.find((opt) => opt.value === unitValue);
+    const availableUnits = getAvailableUnits(constraints.type);
+    const unitOption = availableUnits.find((opt) => opt.value === unitValue);
     if (unitOption) {
       // Predefined unit - use numeric defaults
       setConstraints((prev) => ({
@@ -519,15 +619,17 @@ export default function VariableCreationDialog({
                 freeSolo
                 value={unit}
                 onChange={(event, newValue) => handleUnitChange(newValue)}
-                options={UNIT_OPTIONS.map((option) => option.value)}
+                options={getAvailableUnits(constraints.type).map(
+                  (option) => option.value
+                )}
                 groupBy={(option) => {
-                  const unitOption = UNIT_OPTIONS.find(
+                  const unitOption = getAvailableUnits(constraints.type).find(
                     (u) => u.value === option
                   );
                   return unitOption ? unitOption.category : "Other";
                 }}
                 getOptionLabel={(option) => {
-                  const unitOption = UNIT_OPTIONS.find(
+                  const unitOption = getAvailableUnits(constraints.type).find(
                     (u) => u.value === option
                   );
                   return unitOption ? unitOption.label : option;
@@ -554,7 +656,10 @@ export default function VariableCreationDialog({
                   <TextField
                     fullWidth
                     label={
-                      unit && !UNIT_OPTIONS.find((u) => u.value === unit)
+                      unit &&
+                      !getAvailableUnits(constraints.type).find(
+                        (u) => u.value === unit
+                      )
                         ? "Minimum Characters"
                         : "Minimum Value"
                     }
@@ -567,7 +672,10 @@ export default function VariableCreationDialog({
                       }))
                     }
                     helperText={
-                      unit && !UNIT_OPTIONS.find((u) => u.value === unit)
+                      unit &&
+                      !getAvailableUnits(constraints.type).find(
+                        (u) => u.value === unit
+                      )
                         ? "Minimum number of characters"
                         : "Minimum allowed value"
                     }
@@ -576,7 +684,10 @@ export default function VariableCreationDialog({
                   <TextField
                     fullWidth
                     label={
-                      unit && !UNIT_OPTIONS.find((u) => u.value === unit)
+                      unit &&
+                      !getAvailableUnits(constraints.type).find(
+                        (u) => u.value === unit
+                      )
                         ? "Maximum Characters"
                         : "Maximum Value"
                     }
@@ -589,7 +700,10 @@ export default function VariableCreationDialog({
                       }))
                     }
                     helperText={
-                      unit && !UNIT_OPTIONS.find((u) => u.value === unit)
+                      unit &&
+                      !getAvailableUnits(constraints.type).find(
+                        (u) => u.value === unit
+                      )
                         ? "Maximum number of characters"
                         : "Maximum allowed value"
                     }
