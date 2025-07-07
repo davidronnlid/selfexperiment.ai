@@ -939,7 +939,7 @@ export default function LogPage() {
   return (
     <Container
       maxWidth="md"
-      sx={{ py: { xs: 2, sm: 4 }, px: { xs: 2, sm: 3 } }}
+      sx={{ py: { xs: 3, sm: 5 }, px: { xs: 2, sm: 3 } }}
     >
       <Typography
         variant="h4"
@@ -948,7 +948,7 @@ export default function LogPage() {
         align="center"
         sx={{
           fontSize: { xs: "1.5rem", sm: "2rem", md: "2.5rem" },
-          mb: { xs: 2, sm: 3 },
+          mb: { xs: 3, sm: 4, md: 5 },
         }}
       >
         📊 Log Your Data
@@ -956,11 +956,11 @@ export default function LogPage() {
 
       {/* Active Experiments */}
       {experimentsNeedingLogs.length > 0 && (
-        <Box sx={{ mb: { xs: 3, sm: 4 } }}>
+        <Box sx={{ mb: { xs: 4, sm: 5, md: 6 } }}>
           <Typography
             variant="h5"
             sx={{
-              mb: { xs: 2, sm: 3 },
+              mb: { xs: 3, sm: 4 },
               display: "flex",
               alignItems: "center",
               fontSize: { xs: "1.2rem", sm: "1.5rem" },
@@ -972,28 +972,28 @@ export default function LogPage() {
           {experimentsNeedingLogs.map((experiment, index) => (
             <Paper
               key={`${experiment.id}-${index}`}
-              elevation={2}
+              elevation={3}
               sx={{
-                p: { xs: 2, sm: 2 },
-                mb: 2,
+                p: { xs: 2.5, sm: 3 },
+                mb: { xs: 3, sm: 4 },
                 background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
                 color: "white",
-                borderRadius: 2,
+                borderRadius: 3,
               }}
             >
               <Box
                 sx={{
-                  p: { xs: 1.5, sm: 2 },
+                  p: { xs: 2.5, sm: 3 },
                   backgroundColor: "rgba(255,255,255,0.1)",
-                  borderRadius: 1,
+                  borderRadius: 2,
                 }}
               >
                 <Typography
                   variant="subtitle1"
                   sx={{
-                    mb: 1,
+                    mb: { xs: 2, sm: 2.5 },
                     fontWeight: "bold",
-                    fontSize: { xs: "0.9rem", sm: "1rem" },
+                    fontSize: { xs: "1rem", sm: "1.1rem" },
                   }}
                 >
                   📝 Log your experiment variables for today
@@ -1040,11 +1040,11 @@ export default function LogPage() {
                         <Typography
                           variant="caption"
                           sx={{
-                            mb: 1,
+                            mb: { xs: 2, sm: 2.5 },
                             opacity: 0.8,
                             fontStyle: "italic",
                             display: "block",
-                            fontSize: { xs: "0.7rem", sm: "0.75rem" },
+                            fontSize: { xs: "0.75rem", sm: "0.8rem" },
                           }}
                         >
                           Range: {constraintText}
@@ -1060,7 +1060,7 @@ export default function LogPage() {
                   sx={{
                     display: "flex",
                     flexDirection: "column",
-                    gap: 2,
+                    gap: { xs: 2.5, sm: 3 },
                   }}
                 >
                   {/* Independent Variable Section */}
@@ -1068,7 +1068,7 @@ export default function LogPage() {
                     sx={{
                       display: "flex",
                       flexDirection: { xs: "column", sm: "row" },
-                      gap: { xs: 1, sm: 1.5 },
+                      gap: { xs: 2, sm: 2.5 },
                       alignItems: { xs: "stretch", sm: "flex-start" },
                     }}
                   >
@@ -1112,6 +1112,7 @@ export default function LogPage() {
                           backgroundColor: "#ffffff",
                           color: "#333",
                           fontSize: { xs: "0.9rem", sm: "1rem" },
+                          padding: { xs: "2px", sm: "4px" },
                           "& fieldset": {
                             borderColor: "rgba(255,255,255,0.5)",
                           },
@@ -1120,10 +1121,10 @@ export default function LogPage() {
                           },
                           "&.Mui-focused fieldset": {
                             borderColor: "#ffd700",
-                            borderWidth: "2px",
                           },
                           "& input": {
                             color: "#333",
+                            padding: { xs: "10px 12px", sm: "12px 14px" },
                           },
                           "& input::placeholder": {
                             color: "#999",
@@ -1165,6 +1166,7 @@ export default function LogPage() {
                           },
                           "& textarea": {
                             color: "#333",
+                            padding: { xs: "10px 12px", sm: "12px 14px" },
                           },
                           "& textarea::placeholder": {
                             color: "#999",
@@ -1191,7 +1193,7 @@ export default function LogPage() {
                       sx={{
                         display: "flex",
                         flexDirection: { xs: "column", sm: "row" },
-                        gap: { xs: 1, sm: 1.5 },
+                        gap: { xs: 2, sm: 2.5 },
                         alignItems: { xs: "stretch", sm: "flex-start" },
                       }}
                     >
@@ -1256,6 +1258,7 @@ export default function LogPage() {
                             },
                             "& input": {
                               color: "#333",
+                              padding: { xs: "10px 12px", sm: "12px 14px" },
                             },
                             "& input::placeholder": {
                               color: "#999",
@@ -1302,6 +1305,7 @@ export default function LogPage() {
                             },
                             "& textarea": {
                               color: "#333",
+                              padding: { xs: "10px 12px", sm: "12px 14px" },
                             },
                             "& textarea::placeholder": {
                               color: "#999",
@@ -1324,93 +1328,99 @@ export default function LogPage() {
                   )}
 
                   {/* Log Button */}
-                  <Button
-                    onClick={async () => {
-                      const independentValue =
-                        experimentValues[experiment.variable] || "";
-                      const independentNotes =
-                        experimentNotes[experiment.variable] || "";
-                      const dependentVariable =
-                        experiment.effect || experiment.dependent_variable;
-                      const dependentValue =
-                        experimentValues[dependentVariable] || "";
-                      const dependentNotes =
-                        experimentNotes[dependentVariable] || "";
+                  <Box sx={{ mt: { xs: 1, sm: 2 } }}>
+                    <Button
+                      onClick={async () => {
+                        const independentValue =
+                          experimentValues[experiment.variable] || "";
+                        const independentNotes =
+                          experimentNotes[experiment.variable] || "";
+                        const dependentVariable =
+                          experiment.effect || experiment.dependent_variable;
+                        const dependentValue =
+                          experimentValues[dependentVariable] || "";
+                        const dependentNotes =
+                          experimentNotes[dependentVariable] || "";
 
-                      // Prepare variables array for submission
-                      const variablesToLog = [
-                        {
-                          name: experiment.variable,
-                          value: independentValue,
-                          notes: independentNotes,
+                        // Prepare variables array for submission
+                        const variablesToLog = [
+                          {
+                            name: experiment.variable,
+                            value: independentValue,
+                            notes: independentNotes,
+                          },
+                        ];
+
+                        if (dependentVariable) {
+                          variablesToLog.push({
+                            name: dependentVariable,
+                            value: dependentValue,
+                            notes: dependentNotes,
+                          });
+                        }
+
+                        await submitExperimentLogs(variablesToLog);
+
+                        if (!expError) {
+                          setExperimentValues((prev) => ({
+                            ...prev,
+                            [experiment.variable]: "",
+                            [dependentVariable]: "",
+                          }));
+                          setExperimentNotes((prev) => ({
+                            ...prev,
+                            [experiment.variable]: "",
+                            [dependentVariable]: "",
+                          }));
+
+                          calculateExperimentProgress();
+                          calculateLoggingStreak();
+                        }
+                      }}
+                      disabled={
+                        submitting ||
+                        !experimentValues[experiment.variable]?.trim() ||
+                        ((experiment.effect || experiment.dependent_variable) &&
+                          !experimentValues[
+                            experiment.effect || experiment.dependent_variable
+                          ]?.trim())
+                      }
+                      variant="contained"
+                      size="small"
+                      fullWidth={isMobile}
+                      sx={{
+                        minWidth: { xs: "auto", sm: "auto" },
+                        px: { xs: 3, sm: 4 },
+                        py: { xs: 1.5, sm: 1.2 },
+                        backgroundColor: "#ffd700",
+                        color: "#333",
+                        fontWeight: "bold",
+                        fontSize: { xs: "0.95rem", sm: "1rem" },
+                        borderRadius: 2,
+                        "&:hover": {
+                          backgroundColor: "#ffed4a",
+                          transform: "translateY(-1px)",
+                          boxShadow: "0 4px 12px rgba(255, 215, 0, 0.3)",
                         },
-                      ];
-
-                      if (dependentVariable) {
-                        variablesToLog.push({
-                          name: dependentVariable,
-                          value: dependentValue,
-                          notes: dependentNotes,
-                        });
-                      }
-
-                      await submitExperimentLogs(variablesToLog);
-
-                      if (!expError) {
-                        setExperimentValues((prev) => ({
-                          ...prev,
-                          [experiment.variable]: "",
-                          [dependentVariable]: "",
-                        }));
-                        setExperimentNotes((prev) => ({
-                          ...prev,
-                          [experiment.variable]: "",
-                          [dependentVariable]: "",
-                        }));
-
-                        calculateExperimentProgress();
-                        calculateLoggingStreak();
-                      }
-                    }}
-                    disabled={
-                      submitting ||
-                      !experimentValues[experiment.variable]?.trim() ||
-                      ((experiment.effect || experiment.dependent_variable) &&
-                        !experimentValues[
-                          experiment.effect || experiment.dependent_variable
-                        ]?.trim())
-                    }
-                    variant="contained"
-                    size="small"
-                    fullWidth={isMobile}
-                    sx={{
-                      minWidth: { xs: "auto", sm: "auto" },
-                      px: { xs: 2, sm: 2 },
-                      py: { xs: 1, sm: 0.5 },
-                      backgroundColor: "#ffd700",
-                      color: "#333",
-                      fontWeight: "bold",
-                      fontSize: { xs: "0.9rem", sm: "0.875rem" },
-                      "&:hover": {
-                        backgroundColor: "#ffed4a",
-                      },
-                      "&:disabled": {
-                        backgroundColor: "rgba(255,215,0,0.5)",
-                        color: "rgba(51,51,51,0.5)",
-                      },
-                    }}
-                  >
-                    {submitting ? "..." : "Log Both Variables"}
-                  </Button>
+                        "&:disabled": {
+                          backgroundColor: "rgba(255,215,0,0.5)",
+                          color: "rgba(51,51,51,0.5)",
+                        },
+                        transition: "all 0.2s ease",
+                      }}
+                    >
+                      {submitting ? "..." : "Log Both Variables"}
+                    </Button>
+                  </Box>
                 </Box>
 
                 <Typography
                   variant="caption"
                   sx={{
                     opacity: 0.8,
-                    mt: 1,
+                    mt: { xs: 2, sm: 2.5 },
                     display: "block",
-                    fontSize: { xs: "0.7rem", sm: "0.75rem" },
+                    fontSize: { xs: "0.75rem", sm: "0.8rem" },
                   }}
                 >
                   Target: {experiment.frequency || 1} log
@@ -1430,11 +1440,18 @@ export default function LogPage() {
             sx={{
               color: "primary.main",
               borderColor: "primary.main",
-              py: { xs: 1.5, sm: 1 },
+              py: { xs: 2, sm: 1.5 },
+              px: { xs: 3, sm: 4 },
+              fontSize: { xs: "0.95rem", sm: "1rem" },
+              fontWeight: 500,
+              borderRadius: 2,
               "&:hover": {
                 backgroundColor: "rgba(102, 126, 234, 0.1)",
                 borderColor: "primary.main",
+                transform: "translateY(-1px)",
+                boxShadow: "0 4px 12px rgba(102, 126, 234, 0.2)",
               },
+              transition: "all 0.2s ease",
             }}
           >
             View All Active Experiments
@@ -1447,15 +1464,16 @@ export default function LogPage() {
         <Alert
           severity="success"
           sx={{
-            mb: 3,
+            mb: { xs: 3, sm: 4 },
             borderRadius: 2,
+            p: { xs: 2, sm: 2.5 },
             "& .MuiAlert-message": {
               display: "flex",
               flexDirection: { xs: "column", sm: "row" },
               alignItems: { xs: "stretch", sm: "center" },
               justifyContent: { xs: "center", sm: "space-between" },
               width: "100%",
-              gap: { xs: 1, sm: 0 },
+              gap: { xs: 2, sm: 0 },
             },
           }}
         >
@@ -1472,6 +1490,8 @@ export default function LogPage() {
             fullWidth={isMobile}
             sx={{
               ml: { xs: 0, sm: 2 },
+              py: { xs: 1, sm: 0.75 },
+              px: { xs: 2, sm: 2.5 },
               color: "success.main",
               borderColor: "success.main",
               "&:hover": {
@@ -1573,17 +1593,20 @@ export default function LogPage() {
 
       {/* Error Message */}
       {expError && (
-        <Alert severity="error" sx={{ mb: 3 }}>
+        <Alert severity="error" sx={{ mb: { xs: 3, sm: 4 } }}>
           {expError}
         </Alert>
       )}
 
       {/* Research Question Builder */}
-      <Paper elevation={3} sx={{ p: { xs: 2, sm: 4 }, mb: { xs: 3, sm: 4 } }}>
+      <Paper elevation={3} sx={{ p: { xs: 3, sm: 4 }, mb: { xs: 4, sm: 5 } }}>
         <Typography
           variant="h6"
           gutterBottom
-          sx={{ fontSize: { xs: "1.1rem", sm: "1.25rem" } }}
+          sx={{
+            fontSize: { xs: "1.1rem", sm: "1.25rem" },
+            mb: { xs: 2, sm: 3 },
+          }}
         >
           {experimentsNeedingLogs.length > 0
             ? "Log Any Other Variables"
@@ -1591,7 +1614,7 @@ export default function LogPage() {
         </Typography>
 
         {experimentsNeedingLogs.length > 0 && (
-          <Alert severity="info" sx={{ mb: { xs: 2, sm: 3 } }}>
+          <Alert severity="info" sx={{ mb: { xs: 3, sm: 4 } }}>
             <Typography
               variant="body2"
               sx={{ fontSize: { xs: "0.85rem", sm: "0.875rem" } }}
@@ -1604,13 +1627,16 @@ export default function LogPage() {
         )}
 
         {/* Variable Selection */}
-        <Box sx={{ mb: { xs: 2, sm: 3 } }}>
+        <Box sx={{ mb: { xs: 3, sm: 4 } }}>
           {/* Popular Variables */}
-          <Box sx={{ mb: 2 }}>
+          <Box sx={{ mb: { xs: 2.5, sm: 3 } }}>
             <Typography
               variant="subtitle2"
               gutterBottom
-              sx={{ fontSize: { xs: "0.9rem", sm: "0.875rem" } }}
+              sx={{
+                fontSize: { xs: "0.9rem", sm: "0.875rem" },
+                mb: { xs: 1.5, sm: 2 },
+              }}
             >
               Popular Variables
             </Typography>
@@ -1618,7 +1644,7 @@ export default function LogPage() {
               sx={{
                 display: "flex",
                 flexWrap: "wrap",
-                gap: { xs: 0.5, sm: 1 },
+                gap: { xs: 1, sm: 1.5 },
               }}
             >
               {["Mood", "Energy", "Sleep Quality", "Stress", "Exercise"].map(
@@ -1642,8 +1668,15 @@ export default function LogPage() {
                       clickable
                       size={isMobile ? "small" : "medium"}
                       sx={{
-                        fontSize: { xs: "0.7rem", sm: "0.8125rem" },
+                        fontSize: { xs: "0.75rem", sm: "0.8125rem" },
                         height: { xs: "auto", sm: "auto" },
+                        px: { xs: 1, sm: 1.5 },
+                        py: { xs: 0.5, sm: 0.75 },
+                        "&:hover": {
+                          transform: "translateY(-1px)",
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                        },
+                        transition: "all 0.2s ease",
                       }}
                     />
                   ) : null;
@@ -1665,6 +1698,17 @@ export default function LogPage() {
                 {...params}
                 placeholder="Search variables or type a new one..."
                 size={isMobile ? "small" : "medium"}
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    borderRadius: 2,
+                    "&:hover fieldset": {
+                      borderColor: "primary.main",
+                    },
+                    "&.Mui-focused fieldset": {
+                      borderWidth: "2px",
+                    },
+                  },
+                }}
                 InputProps={{
                   ...params.InputProps,
                   startAdornment: (
@@ -1682,11 +1726,15 @@ export default function LogPage() {
                 sx={{
                   display: "flex",
                   alignItems: "center",
-                  gap: { xs: 1, sm: 2 },
-                  py: { xs: 1, sm: 1.5 },
+                  gap: { xs: 1.5, sm: 2 },
+                  py: { xs: 1.5, sm: 2 },
+                  px: { xs: 2, sm: 2.5 },
+                  "&:hover": {
+                    backgroundColor: "rgba(25, 118, 210, 0.04)",
+                  },
                 }}
               >
-                <span>{option.icon}</span>
+                <span style={{ fontSize: "1.2rem" }}>{option.icon}</span>
                 <Box>
                   <Typography
                     variant="body1"
@@ -1739,7 +1787,7 @@ export default function LogPage() {
 
               if (constraintText) {
                 return (
-                  <Box sx={{ mb: { xs: 1.5, sm: 2 } }}>
+                  <Box sx={{ mb: { xs: 2.5, sm: 3 } }}>
                     <Typography
                       variant="caption"
                       sx={{
@@ -1748,8 +1796,8 @@ export default function LogPage() {
                         fontSize: { xs: "0.75rem", sm: "0.8rem" },
                         display: "block",
                         backgroundColor: "rgba(255, 215, 0, 0.1)",
-                        padding: "4px 8px",
-                        borderRadius: 1,
+                        padding: { xs: "6px 10px", sm: "8px 12px" },
+                        borderRadius: 2,
                         border: "1px solid rgba(255, 215, 0, 0.3)",
                       }}
                     >
