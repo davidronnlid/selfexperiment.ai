@@ -41,7 +41,7 @@ import {
 import {
   createVariable,
   updateVariable,
-  searchVariables,
+  getVariablesWithPreferences,
   updateUserVariablePreference,
 } from "../utils/variableUtils";
 import { useUser } from "../pages/_app";
@@ -124,13 +124,9 @@ export default function VariableManager({
 
     setLoading(true);
     try {
-      const response = await searchVariables(
-        {
-          limit: 100,
-          is_tracked: undefined,
-        },
-        user.id
-      );
+      const response = await getVariablesWithPreferences(user.id, {
+        limit: 100,
+      });
 
       setVariables(response.variables);
       setUserPreferences(
@@ -625,20 +621,6 @@ export default function VariableManager({
                             control={
                               <Switch
                                 size="small"
-                                checked={preference.is_tracked}
-                                onChange={(e) =>
-                                  handleUpdatePreference(variable.id, {
-                                    is_tracked: e.target.checked,
-                                  })
-                                }
-                              />
-                            }
-                            label="Track this variable"
-                          />
-                          <FormControlLabel
-                            control={
-                              <Switch
-                                size="small"
                                 checked={preference.is_shared}
                                 onChange={(e) =>
                                   handleUpdatePreference(variable.id, {
@@ -648,20 +630,6 @@ export default function VariableManager({
                               />
                             }
                             label="Share with others"
-                          />
-                          <FormControlLabel
-                            control={
-                              <Switch
-                                size="small"
-                                checked={preference.is_favorite}
-                                onChange={(e) =>
-                                  handleUpdatePreference(variable.id, {
-                                    is_favorite: e.target.checked,
-                                  })
-                                }
-                              />
-                            }
-                            label="Mark as favorite"
                           />
                         </Box>
                       </Box>

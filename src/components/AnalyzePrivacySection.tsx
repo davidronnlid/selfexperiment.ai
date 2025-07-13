@@ -27,6 +27,7 @@ import { supabase } from "@/utils/supaBase";
 import { LOG_LABELS } from "@/utils/logLabels";
 import { useUser } from "@/pages/_app";
 import LogPrivacyManager from "./LogPrivacyManager";
+import { UserVariablePreference } from "../hooks/useVariableSharingSettings";
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -60,8 +61,8 @@ interface VariableSharingSettings {
 export default function AnalyzePrivacySection() {
   const { user } = useUser();
   const [tabValue, setTabValue] = useState(0);
-  const [variableSettings, setVariableSettings] = useState<
-    VariableSharingSettings[]
+  const [variablePreferences, setVariablePreferences] = useState<
+    UserVariablePreference[]
   >([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -168,25 +169,25 @@ export default function AnalyzePrivacySection() {
 
   useEffect(() => {
     if (user) {
-      loadPrivacySettings();
+      loadVariablePreferences();
     }
   }, [user]);
 
-  const loadPrivacySettings = async () => {
+  const loadVariablePreferences = async () => {
     try {
       setLoading(true);
-
-      const { data: varSettings, error: varError } = await supabase
-        .from("variable_sharing_settings")
+      const { data: prefs, error: prefsError } = await supabase
+        .from("user_variable_preferences")
         .select("*")
         .eq("user_id", user?.id);
-
-      if (varError) throw varError;
-
-      setVariableSettings(varSettings || []);
+      if (prefsError) throw prefsError;
+      setVariablePreferences(prefs || []);
     } catch (error) {
-      console.error("Error loading privacy settings:", error);
-      setMessage({ type: "error", text: "Failed to load privacy settings" });
+      console.error("Error loading variable preferences:", error);
+      setMessage({
+        type: "error",
+        text: "Failed to load variable preferences",
+      });
     } finally {
       setLoading(false);
     }
@@ -198,34 +199,41 @@ export default function AnalyzePrivacySection() {
   ) => {
     try {
       setSaving(true);
+      // First get the variable ID from the variable name
+      const { data: variable, error: varError } = await supabase
+        .from("variables")
+        .select("id")
+        .eq("label", variableName)
+        .single();
+
+      if (varError) {
+        console.error("Error finding variable:", varError);
+        throw new Error("Variable not found");
+      }
 
       const { error } = await supabase
-        .from("variable_sharing_settings")
+        .from("user_variable_preferences")
         .upsert({
           user_id: user?.id,
-          variable_name: variableName,
+          variable_id: variable.id,
           is_shared: isShared,
-          variable_type: "predefined",
           updated_at: new Date().toISOString(),
         });
-
       if (error) throw error;
-
-      setVariableSettings((prev) =>
+      setVariablePreferences((prev) =>
         prev
-          .map((setting) =>
-            setting.variable_name === variableName
-              ? { ...setting, is_shared: isShared }
-              : setting
+          .map((pref) =>
+            pref.variable_name === variableName
+              ? { ...pref, is_shared: isShared }
+              : pref
           )
-          .filter((setting) => setting.variable_name !== variableName)
+          .filter((pref) => pref.variable_name !== variableName)
           .concat({
             variable_name: variableName,
             is_shared: isShared,
             variable_type: "predefined",
           })
       );
-
       setMessage({ type: "success", text: "Variable sharing setting updated" });
     } catch (error) {
       console.error("Error updating variable sharing:", error);
@@ -239,14 +247,14 @@ export default function AnalyzePrivacySection() {
   };
 
   const getVariableSharingStatus = (variableName: string) => {
-    const setting = variableSettings.find(
+    const pref = variablePreferences.find(
       (s) => s.variable_name === variableName
     );
-    return setting?.is_shared ?? false;
+    return pref?.is_shared ?? false;
   };
 
   const getSharedVariablesCount = () => {
-    return variableSettings.filter((s) => s.is_shared).length;
+    return variablePreferences.filter((s) => s.is_shared).length;
   };
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -257,7 +265,7 @@ export default function AnalyzePrivacySection() {
     return (
       <Paper elevation={3} sx={{ p: 4 }}>
         <Typography variant="h6" gutterBottom>
-          Loading privacy settings...
+          Loading variable preferences...
         </Typography>
       </Paper>
     );

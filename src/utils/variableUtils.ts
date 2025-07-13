@@ -1,102 +1,15 @@
-// Universal Variables System Utilities
-// Optimized for performance and type safety
+// Simplified Variables System Utilities
+// Only includes functions that are actually used in the app
 
 import { supabase } from "./supaBase";
 import type {
   Variable,
   VariableLog,
-  UserVariablePreference,
-  UnitConversion,
   ValidationResult,
-  ValidationContext,
-  VariableDisplayData,
   CreateVariableRequest,
   UpdateVariableRequest,
   CreateVariableLogRequest,
-  VariableSearchRequest,
-  VariableSearchResponse,
-  VariableAnalytics,
-  VariableCorrelation,
-  VariableInsight,
-  UNIT_GROUPS,
-  DataType,
-  SourceType,
 } from "../types/variables";
-
-// ============================================================================
-// UNIT CONVERSION UTILITIES
-// ============================================================================
-
-/**
- * Convert a value between units using the database conversion table
- */
-export async function convertUnit(
-  value: number,
-  fromUnit: string,
-  toUnit: string
-): Promise<number> {
-  if (fromUnit === toUnit) return value;
-
-  try {
-    const { data, error } = await supabase.rpc("convert_unit", {
-      value,
-      from_unit: fromUnit,
-      to_unit: toUnit,
-    });
-
-    if (error) throw error;
-    return data || value;
-  } catch (error) {
-    console.error("Unit conversion failed:", error);
-    return value; // Return original value if conversion fails
-  }
-}
-
-/**
- * Get all available units for a variable
- */
-export async function getVariableUnits(variableId: string): Promise<string[]> {
-  try {
-    const { data: variable, error } = await supabase
-      .from("variables")
-      .select("convertible_units, canonical_unit")
-      .eq("id", variableId)
-      .single();
-
-    if (error) throw error;
-
-    const units = variable?.convertible_units || [];
-    if (variable?.canonical_unit && !units.includes(variable.canonical_unit)) {
-      units.unshift(variable.canonical_unit);
-    }
-
-    return units;
-  } catch (error) {
-    console.error("Failed to get variable units:", error);
-    return [];
-  }
-}
-
-/**
- * Get user's preferred unit for a variable
- */
-export async function getUserPreferredUnit(
-  userId: string,
-  variableId: string
-): Promise<string | null> {
-  try {
-    const { data, error } = await supabase.rpc("get_user_preferred_unit", {
-      user_uuid: userId,
-      variable_uuid: variableId,
-    });
-
-    if (error) throw error;
-    return data;
-  } catch (error) {
-    console.error("Failed to get user preferred unit:", error);
-    return null;
-  }
-}
 
 // ============================================================================
 // VARIABLE VALIDATION
@@ -107,8 +20,7 @@ export async function getUserPreferredUnit(
  */
 export function validateVariableValue(
   value: string | number,
-  variable: Variable,
-  context?: ValidationContext
+  variable: Variable
 ): ValidationResult {
   const rules = variable.validation_rules;
   if (!rules) return { isValid: true };
@@ -200,7 +112,7 @@ function validateBooleanValue(
   if (!validBooleans.includes(normalizedValue)) {
     return {
       isValid: false,
-      error: `${variable.label} must be yes/no, true/false, or 1/0`,
+      error: `${variable.label} must be a valid boolean value`,
     };
   }
 
@@ -212,12 +124,13 @@ function validateTimeValue(
   rules: any,
   variable: Variable
 ): ValidationResult {
-  const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+  // Basic time format validation (HH:MM or HH:MM:SS)
+  const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/;
 
   if (!timeRegex.test(value)) {
     return {
       isValid: false,
-      error: `${variable.label} must be in HH:MM format (e.g., 23:30)`,
+      error: `${variable.label} must be in HH:MM or HH:MM:SS format`,
     };
   }
 
@@ -243,14 +156,11 @@ function validateTextValue(
     };
   }
 
-  if (rules.pattern) {
-    const regex = new RegExp(rules.pattern);
-    if (!regex.test(value)) {
-      return {
-        isValid: false,
-        error: `${variable.label} format is invalid`,
-      };
-    }
+  if (rules.pattern && !new RegExp(rules.pattern).test(value)) {
+    return {
+      isValid: false,
+      error: `${variable.label} format is invalid`,
+    };
   }
 
   return { isValid: true };
@@ -268,20 +178,11 @@ export async function createVariable(
   userId: string
 ): Promise<Variable | null> {
   try {
-    // Auto-generate slug if not provided
-    if (!request.slug) {
-      request.slug = request.label
-        .toLowerCase()
-        .replace(/\s+/g, "_")
-        .replace(/[^a-z0-9_]/g, "");
-    }
-
     const { data, error } = await supabase
       .from("variables")
       .insert({
         ...request,
         created_by: userId,
-        is_active: true,
       })
       .select()
       .single();
@@ -298,6 +199,7 @@ export async function createVariable(
  * Update an existing variable
  */
 export async function updateVariable(
+  variableId: string,
   request: UpdateVariableRequest
 ): Promise<Variable | null> {
   try {
@@ -307,7 +209,7 @@ export async function updateVariable(
         ...request,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", request.id)
+      .eq("id", variableId)
       .select()
       .single();
 
@@ -320,7 +222,7 @@ export async function updateVariable(
 }
 
 /**
- * Get variable by ID
+ * Get a variable by ID
  */
 export async function getVariable(id: string): Promise<Variable | null> {
   try {
@@ -328,7 +230,6 @@ export async function getVariable(id: string): Promise<Variable | null> {
       .from("variables")
       .select("*")
       .eq("id", id)
-      .eq("is_active", true)
       .single();
 
     if (error) throw error;
@@ -340,70 +241,66 @@ export async function getVariable(id: string): Promise<Variable | null> {
 }
 
 /**
- * Search variables with filters
+ * Get all variables for a user
  */
-export async function searchVariables(
-  request: VariableSearchRequest,
-  userId?: string
-): Promise<VariableSearchResponse> {
+export async function getVariables(userId?: string): Promise<Variable[]> {
   try {
     let query = supabase
       .from("variables")
-      .select("*, user_variable_preferences!inner(*)", { count: "exact" })
-      .eq("is_active", true);
+      .select("*")
+      .eq("is_active", true)
+      .order("label");
 
-    // Apply filters
-    if (request.query) {
-      query = query.or(
-        `label.ilike.%${request.query}%,description.ilike.%${request.query}%`
-      );
+    const { data, error } = await query;
+
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error("Failed to get variables:", error);
+    return [];
+  }
+}
+
+/**
+ * Get variables with user preferences included
+ */
+export async function getVariablesWithPreferences(
+  userId: string,
+  options?: {
+    limit?: number;
+  }
+): Promise<{ variables: Variable[] }> {
+  try {
+    let query = supabase
+      .from("variables")
+      .select(
+        `
+        *,
+        user_preferences:user_variable_preferences!user_variable_preferences_variable_id_fkey (
+          id,
+          user_id,
+          variable_id,
+          is_shared,
+          created_at,
+          updated_at
+        )
+      `
+      )
+      .eq("is_active", true)
+      .order("label");
+
+    if (options?.limit) {
+      query = query.limit(options.limit);
     }
 
-    if (request.category) {
-      query = query.eq("category", request.category);
-    }
-
-    if (request.data_type) {
-      query = query.eq("data_type", request.data_type);
-    }
-
-    if (request.source_type) {
-      query = query.eq("source_type", request.source_type);
-    }
-
-    if (request.is_tracked !== undefined) {
-      query = query.eq(
-        "user_variable_preferences.is_tracked",
-        request.is_tracked
-      );
-    }
-
-    // Filter by user if provided
-    if (userId) {
-      query = query.eq("user_variable_preferences.user_id", userId);
-    }
-
-    // Apply pagination
-    const limit = request.limit || 20;
-    const offset = request.offset || 0;
-    query = query.range(offset, offset + limit - 1);
-
-    const { data, error, count } = await query;
+    const { data, error } = await query;
 
     if (error) throw error;
 
-    return {
-      variables: data || [],
-      total: count || 0,
-      has_more: (count || 0) > offset + limit,
-    };
+    return { variables: data || [] };
   } catch (error) {
-    console.error("Failed to search variables:", error);
-    return {
-      variables: [],
-      total: 0,
-      has_more: false,
-    };
+    console.error("Failed to get variables with preferences:", error);
+    return { variables: [] };
   }
 }
 
@@ -419,45 +316,17 @@ export async function createVariableLog(
   userId: string
 ): Promise<VariableLog | null> {
   try {
-    // Get variable to determine canonical unit
-    const variable = await getVariable(request.variable_id);
-    if (!variable) {
-      throw new Error("Variable not found");
-    }
-
-    // Convert to canonical unit if needed
-    let canonicalValue: number | undefined;
-    if (
-      variable.canonical_unit &&
-      request.display_unit &&
-      request.display_unit !== variable.canonical_unit
-    ) {
-      const numValue = parseFloat(request.display_value);
-      if (!isNaN(numValue)) {
-        canonicalValue = await convertUnit(
-          numValue,
-          request.display_unit,
-          variable.canonical_unit
-        );
-      }
-    } else if (variable.canonical_unit) {
-      canonicalValue = parseFloat(request.display_value);
-    }
-
     const { data, error } = await supabase
-      .from("variable_logs")
+      .from("logs")
       .insert({
         user_id: userId,
         variable_id: request.variable_id,
-        canonical_value: canonicalValue,
-        display_value: request.display_value,
+        value: request.value,
         display_unit: request.display_unit,
         notes: request.notes,
-        tags: request.tags,
         context: request.context,
         is_private: request.is_private || false,
-        source: "manual",
-        confidence_score: 1.0,
+        source: ["manual"],
       })
       .select()
       .single();
@@ -485,11 +354,11 @@ export async function getVariableLogs(
 ): Promise<VariableLog[]> {
   try {
     let query = supabase
-      .from("variable_logs")
+      .from("logs")
       .select("*")
       .eq("user_id", userId)
       .eq("variable_id", variableId)
-      .order("logged_at", { ascending: false });
+      .order("created_at", { ascending: false });
 
     if (options?.limit) {
       query = query.limit(options.limit);
@@ -503,11 +372,11 @@ export async function getVariableLogs(
     }
 
     if (options?.startDate) {
-      query = query.gte("logged_at", options.startDate);
+      query = query.gte("created_at", options.startDate);
     }
 
     if (options?.endDate) {
-      query = query.lte("logged_at", options.endDate);
+      query = query.lte("created_at", options.endDate);
     }
 
     const { data, error } = await query;
@@ -520,110 +389,59 @@ export async function getVariableLogs(
   }
 }
 
-// ============================================================================
-// USER PREFERENCES MANAGEMENT
-// ============================================================================
-
 /**
- * Get user preferences for a variable
+ * Update a variable log
  */
-export async function getUserVariablePreference(
-  userId: string,
-  variableId: string
-): Promise<UserVariablePreference | null> {
-  try {
-    const { data, error } = await supabase
-      .from("user_variable_preferences")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("variable_id", variableId)
-      .single();
-
-    if (error && error.code !== "PGRST116") throw error;
-    return data;
-  } catch (error) {
-    console.error("Failed to get user variable preference:", error);
-    return null;
+export async function updateVariableLog(
+  logId: string,
+  updates: {
+    value?: string;
+    display_unit?: string;
+    notes?: string;
+    context?: Record<string, any>;
+    is_private?: boolean;
   }
-}
-
-/**
- * Update user preferences for a variable
- */
-export async function updateUserVariablePreference(
-  userId: string,
-  variableId: string,
-  updates: Partial<UserVariablePreference>
-): Promise<UserVariablePreference | null> {
+): Promise<VariableLog | null> {
   try {
     const { data, error } = await supabase
-      .from("user_variable_preferences")
-      .upsert({
-        user_id: userId,
-        variable_id: variableId,
-        ...updates,
-        updated_at: new Date().toISOString(),
-      })
+      .from("logs")
+      .update(updates)
+      .eq("id", logId)
       .select()
       .single();
 
     if (error) throw error;
     return data;
   } catch (error) {
-    console.error("Failed to update user variable preference:", error);
+    console.error("Failed to update variable log:", error);
     return null;
   }
 }
 
-// ============================================================================
-// DISPLAY UTILITIES
-// ============================================================================
-
 /**
- * Format a variable value for display
+ * Delete a variable log
  */
-export async function formatVariableValue(
-  variable: Variable,
-  value: string | number,
-  unit?: string,
-  userId?: string
-): Promise<VariableDisplayData> {
-  let displayUnit = unit;
-  let convertedValue: number | undefined;
+export async function deleteVariableLog(logId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.from("logs").delete().eq("id", logId);
 
-  // Get user's preferred unit if available
-  if (userId && variable.canonical_unit) {
-    const preferredUnit = await getUserPreferredUnit(userId, variable.id);
-    if (preferredUnit && preferredUnit !== unit) {
-      const numValue = typeof value === "string" ? parseFloat(value) : value;
-      if (!isNaN(numValue)) {
-        convertedValue = await convertUnit(
-          numValue,
-          unit || variable.canonical_unit,
-          preferredUnit
-        );
-        displayUnit = preferredUnit;
-      }
-    }
+    if (error) throw error;
+    return true;
+  } catch (error) {
+    console.error("Failed to delete variable log:", error);
+    return false;
   }
-
-  return {
-    variable,
-    value: convertedValue !== undefined ? convertedValue : value,
-    unit: displayUnit,
-    converted_value: convertedValue,
-    converted_unit: displayUnit,
-  };
 }
 
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
 /**
- * Get display-friendly variable name
+ * Get variable display name
  */
-export function getVariableDisplayName(
-  variable: Variable,
-  userPreferences?: UserVariablePreference
-): string {
-  return userPreferences?.display_name || variable.label;
+export function getVariableDisplayName(variable: Variable): string {
+  return variable.label;
 }
 
 /**
@@ -633,41 +451,141 @@ export function getVariableIcon(variable: Variable): string {
   return variable.icon || "📊";
 }
 
+/**
+ * Validate a value for a specific variable name (used in log/now.tsx)
+ */
+export function validateValue(
+  variableName: string,
+  value: string
+): ValidationResult {
+  // Basic validation - can be enhanced based on variable type
+  if (!value || value.trim() === "") {
+    return {
+      isValid: false,
+      error: `${variableName} is required`,
+    };
+  }
+  return { isValid: true };
+}
+
 // ============================================================================
-// ANALYTICS UTILITIES
+// SEARCH & UTILITY FUNCTIONS
 // ============================================================================
+
+/**
+ * Search variables by name or description
+ */
+export async function searchVariables(
+  query: string,
+  userId?: string
+): Promise<Variable[]> {
+  try {
+    const { data, error } = await supabase
+      .from("variables")
+      .select("*")
+      .or(`label.ilike.%${query}%,description.ilike.%${query}%`)
+      .eq("is_active", true)
+      .order("label");
+
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error("Failed to search variables:", error);
+    return [];
+  }
+}
+
+/**
+ * Convert between units
+ */
+export function convertUnit(
+  value: number,
+  fromUnit: string,
+  toUnit: string
+): number {
+  // Basic unit conversion - can be enhanced with more conversions
+  if (fromUnit === toUnit) return value;
+
+  // Common conversions
+  const conversions: Record<string, Record<string, number>> = {
+    kg: { lbs: 2.20462 },
+    lbs: { kg: 0.453592 },
+    km: { miles: 0.621371 },
+    miles: { km: 1.60934 },
+  };
+
+  // Temperature conversions (special case)
+  if (fromUnit === "celsius" && toUnit === "fahrenheit") {
+    return (value * 9) / 5 + 32;
+  }
+  if (fromUnit === "fahrenheit" && toUnit === "celsius") {
+    return ((value - 32) * 5) / 9;
+  }
+
+  const conversion = conversions[fromUnit]?.[toUnit];
+  if (typeof conversion === "number") {
+    return value * conversion;
+  }
+
+  return value; // Return original if no conversion found
+}
+
+/**
+ * Get user's preferred unit for a variable
+ */
+export function getUserPreferredUnit(variable: Variable): string {
+  return variable.default_display_unit || variable.canonical_unit || "";
+}
+
+/**
+ * Format variable value for display
+ */
+export function formatVariableValue(
+  value: string | number,
+  unit?: string
+): string {
+  const formattedValue = typeof value === "number" ? value.toString() : value;
+  return unit ? `${formattedValue} ${unit}` : formattedValue;
+}
+
+/**
+ * Update user variable preference
+ */
+export async function updateUserVariablePreference(
+  variableId: string,
+  userId: string,
+  preference: any
+): Promise<boolean> {
+  try {
+    const { error } = await supabase.from("variable_preferences").upsert({
+      variable_id: variableId,
+      user_id: userId,
+      preference: preference,
+    });
+
+    if (error) throw error;
+    return true;
+  } catch (error) {
+    console.error("Failed to update variable preference:", error);
+    return false;
+  }
+}
 
 /**
  * Get variable correlations
  */
 export async function getVariableCorrelations(
   variableId: string,
-  userId: string,
-  options?: {
-    startDate?: string;
-    endDate?: string;
-    minStrength?: number;
-  }
-): Promise<VariableCorrelation[]> {
+  userId: string
+): Promise<any[]> {
   try {
-    // This would implement correlation analysis
-    // For now, return mock data
-    return [
-      {
-        variable_id: "sleep_duration",
-        correlation_strength: 0.3,
-        confidence: 0.8,
-        direction: "positive",
-        sample_size: 100,
-      },
-      {
-        variable_id: "stress",
-        correlation_strength: -0.2,
-        confidence: 0.7,
-        direction: "negative",
-        sample_size: 100,
-      },
-    ];
+    const { data, error } = await supabase.rpc("get_variable_correlations", {
+      p_variable_id: variableId,
+      p_user_id: userId,
+    });
+
+    if (error) throw error;
+    return data || [];
   } catch (error) {
     console.error("Failed to get variable correlations:", error);
     return [];
@@ -680,33 +598,20 @@ export async function getVariableCorrelations(
 export async function getVariableTrends(
   variableId: string,
   userId: string,
-  options?: {
-    period?: string;
-    granularity?: string;
-  }
-): Promise<{
-  direction: "increasing" | "decreasing" | "stable";
-  changePercentage: number;
-  period: string;
-  confidence: number;
-}> {
+  days: number = 30
+): Promise<any> {
   try {
-    // This would implement trend analysis
-    // For now, return mock data
-    return {
-      direction: "increasing",
-      changePercentage: 5.2,
-      period: "30 days",
-      confidence: 0.8,
-    };
+    const { data, error } = await supabase.rpc("get_variable_trends", {
+      p_variable_id: variableId,
+      p_user_id: userId,
+      p_days: days,
+    });
+
+    if (error) throw error;
+    return data || {};
   } catch (error) {
     console.error("Failed to get variable trends:", error);
-    return {
-      direction: "stable",
-      changePercentage: 0,
-      period: "30 days",
-      confidence: 0,
-    };
+    return {};
   }
 }
 
@@ -715,88 +620,18 @@ export async function getVariableTrends(
  */
 export async function getVariableInsights(
   variableId: string,
-  userId: string,
-  options?: {
-    includePatterns?: boolean;
-    includeAnomalies?: boolean;
-  }
-): Promise<VariableInsight[]> {
+  userId: string
+): Promise<any> {
   try {
-    // This would implement insight generation
-    // For now, return mock data
-    return [
-      {
-        type: "trend",
-        title: "Consistent Improvement",
-        description:
-          "Your weight has been decreasing steadily over the past month",
-        confidence: 0.9,
-        data_points: 30,
-      },
-      {
-        type: "pattern",
-        title: "Weekly Pattern",
-        description: "Weight tends to be higher on weekends",
-        confidence: 0.7,
-        data_points: 90,
-      },
-    ];
+    const { data, error } = await supabase.rpc("get_variable_insights", {
+      p_variable_id: variableId,
+      p_user_id: userId,
+    });
+
+    if (error) throw error;
+    return data || {};
   } catch (error) {
     console.error("Failed to get variable insights:", error);
-    return [];
-  }
-}
-
-// ============================================================================
-// MIGRATION UTILITIES
-// ============================================================================
-
-/**
- * Migrate existing daily_logs to the new variable system
- */
-export async function migrateDailyLogsToVariables(): Promise<void> {
-  try {
-    const { error } = await supabase.rpc("migrate_daily_logs_to_variables");
-    if (error) throw error;
-    console.log("Migration completed successfully");
-  } catch (error) {
-    console.error("Migration failed:", error);
-    throw error;
-  }
-}
-
-/**
- * Create default variables for a user
- */
-export async function createDefaultVariables(userId: string): Promise<void> {
-  try {
-    // Import default variables from types
-    const { DEFAULT_VARIABLES } = await import("../types/variables");
-
-    for (const defaultVar of DEFAULT_VARIABLES) {
-      const slug = defaultVar.label.toLowerCase().replace(/\s+/g, "_");
-
-      // Create variable
-      const variable = await createVariable(
-        {
-          ...defaultVar,
-          slug,
-        },
-        userId
-      );
-
-      if (variable) {
-        // Set user preferences
-        await updateUserVariablePreference(userId, variable.id, {
-          is_tracked: true,
-          is_shared: false,
-          share_level: "private",
-          display_order: 0,
-          is_favorite: false,
-        });
-      }
-    }
-  } catch (error) {
-    console.error("Failed to create default variables:", error);
+    return {};
   }
 }

@@ -127,26 +127,28 @@ export default function CompletedExperimentsPage() {
       for (const exp of experiments) {
         // Fetch logs for independent variable within experiment date range
         const { data: independentLogs } = await supabase
-          .from("daily_logs")
+          .from("logs")
           .select("*")
           .eq("user_id", user.id)
           .eq("variable", exp.variable)
           .gte("date", exp.start_date)
           .lte("date", exp.end_date)
-          .order("date", { ascending: false });
+          .order("date", { ascending: false })
+          .limit(50); // Add limit to prevent loading too many logs
 
         // Fetch logs for dependent variable within experiment date range
         const dependentVariable = exp.dependent_variable || exp.effect;
         let dependentLogs: LogEntry[] = [];
         if (dependentVariable) {
           const { data } = await supabase
-            .from("daily_logs")
+            .from("logs")
             .select("*")
             .eq("user_id", user.id)
             .eq("variable", dependentVariable)
             .gte("date", exp.start_date)
             .lte("date", exp.end_date)
-            .order("date", { ascending: false });
+            .order("date", { ascending: false })
+            .limit(50); // Add limit to prevent loading too many logs
           dependentLogs = data || [];
         }
 

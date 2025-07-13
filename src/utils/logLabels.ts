@@ -364,6 +364,10 @@ export const validateValue = (
       break;
 
     case "scale":
+      // Check for decimals in scale values
+      if (value.includes(".") || value.includes(",")) {
+        return { isValid: false, error: `${label} must be a whole number` };
+      }
       const scaleValue = parseInt(value);
       if (isNaN(scaleValue)) {
         return { isValid: false, error: `${label} must be a number` };

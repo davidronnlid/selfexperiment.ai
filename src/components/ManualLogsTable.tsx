@@ -17,8 +17,10 @@ import {
   Tooltip,
   TextField,
   Button,
+  Card,
+  CardContent,
+  Divider,
 } from "@mui/material";
-import { Grid } from "@mui/material";
 import {
   ExpandMore,
   ExpandLess,
@@ -30,6 +32,9 @@ import {
   Today,
   History,
   Refresh,
+  TrendingUp,
+  TrendingDown,
+  TrendingFlat,
 } from "@mui/icons-material";
 import { supabase } from "@/utils/supaBase";
 import { format, parseISO, subDays, startOfDay, endOfDay } from "date-fns";
@@ -38,7 +43,7 @@ import { useRouter } from "next/router";
 interface ManualLog {
   id: number;
   date: string;
-  variable: string;
+  variable_id: string;
   value: string;
   notes?: string;
   created_at: string;
@@ -51,7 +56,7 @@ interface ManualLogsTableProps {
 
 export default function ManualLogsTable({
   userId,
-  maxRows = 50,
+  maxRows = 25, // Reduced from 50 to 25 for faster loading
 }: ManualLogsTableProps) {
   const router = useRouter();
   const [logs, setLogs] = useState<ManualLog[]>([]);
@@ -70,9 +75,29 @@ export default function ManualLogsTable({
     return format(new Date(), "yyyy-MM-dd");
   });
 
+  // Add state for variables
+  const [variables, setVariables] = useState<Record<string, string>>({}); // variable_id -> label
+
   useEffect(() => {
     fetchManualLogs();
   }, [userId, startDate, endDate]);
+
+  useEffect(() => {
+    // Fetch all variables for mapping
+    async function fetchVariables() {
+      const { data, error } = await supabase
+        .from("variables")
+        .select("id, label");
+      if (!error && data) {
+        const map: Record<string, string> = {};
+        data.forEach((v: any) => {
+          map[v.id] = v.label;
+        });
+        setVariables(map);
+      }
+    }
+    fetchVariables();
+  }, []);
 
   const fetchManualLogs = async () => {
     try {
@@ -84,8 +109,8 @@ export default function ManualLogsTable({
       const endDateTime = endOfDay(parseISO(endDate)).toISOString();
 
       const { data, error } = await supabase
-        .from("daily_logs")
-        .select("id, date, variable, value, notes, created_at")
+        .from("logs")
+        .select("id, date, variable_id, value, notes, created_at")
         .eq("user_id", userId)
         .gte("date", startDateTime)
         .lte("date", endDateTime)
@@ -94,7 +119,41 @@ export default function ManualLogsTable({
 
       if (error) throw error;
 
-      setLogs(data || []);
+      // Deduplicate logs - keep only the most recent entry for each variable_id+date combination
+      const deduplicatedLogs = [];
+      const seen = new Set();
+
+      // Sort by created_at descending to get most recent first
+      const sortedData = (data || []).sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      for (const log of sortedData) {
+        const dateKey = log.date.split("T")[0]; // Get just the date part
+        const key = `${log.variable_id}-${dateKey}`;
+
+        if (!seen.has(key)) {
+          seen.add(key);
+          deduplicatedLogs.push(log);
+        }
+      }
+
+      // Sort the final result by date descending for display
+      deduplicatedLogs.sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+
+      // Map logs to ManualLog type
+      const mappedLogs: ManualLog[] = deduplicatedLogs.map((log: any) => ({
+        id: log.id,
+        date: log.date,
+        variable_id: log.variable_id,
+        value: log.value,
+        notes: log.notes,
+        created_at: log.created_at,
+      }));
+      setLogs(mappedLogs);
     } catch (err) {
       console.error("Error fetching manual logs:", err);
       setError("Failed to load manual logs");
@@ -141,9 +200,22 @@ export default function ManualLogsTable({
     }
   };
 
+  // Helper to normalize variable names for deduplication
+  const normalizeVariable = (name: string) =>
+    name
+      .toLowerCase()
+      .replace(/\s*\([^)]*\)\s*$/, "")
+      .trim();
+
   const getUniqueVariables = () => {
-    const variables = new Set(logs.map((log) => log.variable));
-    return Array.from(variables);
+    const seen = new Map<string, string>();
+    for (const log of logs) {
+      const norm = normalizeVariable(log.variable_id);
+      if (!seen.has(norm)) {
+        seen.set(norm, log.variable_id);
+      }
+    }
+    return Array.from(seen.values());
   };
 
   const getVariableColor = (variable: string) => {
@@ -165,20 +237,15 @@ export default function ManualLogsTable({
 
   if (loading) {
     return (
-      <Box
-        display="flex"
-        justifyContent="center"
-        alignItems="center"
-        minHeight={200}
-      >
-        <CircularProgress />
+      <Box className="flex justify-center items-center min-h-[200px]">
+        <CircularProgress className="text-gold" />
       </Box>
     );
   }
 
   if (error) {
     return (
-      <Alert severity="error" sx={{ mt: 2 }}>
+      <Alert severity="error" sx={{ mt: 2 }} icon={<TrendingDown />}>
         {error}
       </Alert>
     );
@@ -186,138 +253,122 @@ export default function ManualLogsTable({
 
   if (logs.length === 0) {
     return (
-      <Alert severity="info" sx={{ mt: 2 }}>
+      <Alert severity="info" sx={{ mt: 2 }} icon={<TrendingFlat />}>
         No manual logs found. Start logging data to see your trends here!
       </Alert>
     );
   }
 
   return (
-    <Box>
-      <Box
-        sx={{
-          mb: 2,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <Typography variant="h6" component="h3">
-          📝 Manual Logs
-        </Typography>
-        <Typography variant="body2" color="textSecondary">
-          {logs.length} {logs.length === 1 ? "entry" : "entries"}
-        </Typography>
+    <Box className="space-y-6">
+      {/* Header Section */}
+      <Box className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <Box className="flex items-center gap-3">
+          <Box className="p-2 bg-gold/10 rounded-lg">
+            <TrendingUp className="text-gold text-xl" />
+          </Box>
+          <Box>
+            <Typography variant="h5" className="text-white font-semibold">
+              Manual Logs
+            </Typography>
+            <Typography variant="body2" className="text-text-secondary">
+              {logs.length} {logs.length === 1 ? "entry" : "entries"} found
+            </Typography>
+          </Box>
+        </Box>
+
+        <Chip
+          label={`${formatDate(startDate)} - ${formatDate(endDate)}`}
+          className="bg-gold/20 text-gold border border-gold/30"
+          icon={<DateRange />}
+        />
       </Box>
 
       {/* Date Range Filter */}
-      <Paper
-        elevation={2}
+      <Card
         sx={{
-          p: 3,
-          mb: 3,
-          bgcolor: "background.paper",
-          borderRadius: 2,
-          border: "1px solid",
-          borderColor: "divider",
+          background: "var(--surface-light)",
+          border: "1px solid var(--border)",
+          borderRadius: "12px",
+          overflow: "hidden",
         }}
       >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 3 }}>
-          <DateRange sx={{ color: "primary.main" }} />
-          <Typography variant="h6" fontWeight="600" color="text.primary">
-            Date Range Filter
-          </Typography>
-        </Box>
+        <CardContent sx={{ p: 3 }}>
+          <Box className="flex items-center gap-2 mb-4">
+            <FilterList className="text-gold text-xl" />
+            <Typography variant="h6" className="text-white font-semibold">
+              Date Range Filter
+            </Typography>
+          </Box>
 
-        <Box
-          sx={{
-            display: "flex",
-            flexDirection: { xs: "column", lg: "row" },
-            gap: 3,
-            alignItems: { xs: "stretch", lg: "flex-start" },
-          }}
-        >
-          {/* Date Inputs Section */}
-          <Box
-            sx={{
-              display: "flex",
-              flexDirection: { xs: "column", sm: "row" },
-              gap: 2,
-              flex: 1,
-              minWidth: 0,
-            }}
-          >
-            <Box sx={{ flex: 1, minWidth: 180 }}>
+          <Box className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Date Inputs Section */}
+            <Box className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <TextField
                 label="Start Date"
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                InputLabelProps={{
-                  shrink: true,
-                }}
+                InputLabelProps={{ shrink: true }}
                 size="small"
                 fullWidth
                 InputProps={{
                   startAdornment: (
-                    <Box sx={{ mr: 1, display: "flex", alignItems: "center" }}>
-                      <Today fontSize="small" color="action" />
+                    <Box className="mr-2 flex items-center">
+                      <Today fontSize="small" className="text-text-secondary" />
                     </Box>
                   ),
                 }}
                 sx={{
                   "& .MuiOutlinedInput-root": {
-                    backgroundColor: "background.default",
-                    transition: "all 0.2s ease-in-out",
+                    backgroundColor: "var(--surface)",
+                    transition: "all var(--transition-normal)",
                     "&:hover": {
-                      backgroundColor: "background.paper",
+                      backgroundColor: "var(--surface-light)",
                       "& fieldset": {
-                        borderColor: "primary.main",
+                        borderColor: "var(--gold)",
                       },
                     },
                     "&.Mui-focused": {
-                      backgroundColor: "background.paper",
+                      backgroundColor: "var(--surface-light)",
                       "& fieldset": {
-                        borderColor: "primary.main",
+                        borderColor: "var(--gold)",
                         borderWidth: 2,
                       },
                     },
                   },
                 }}
               />
-            </Box>
-            <Box sx={{ flex: 1, minWidth: 180 }}>
+
               <TextField
                 label="End Date"
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                InputLabelProps={{
-                  shrink: true,
-                }}
+                InputLabelProps={{ shrink: true }}
                 size="small"
                 fullWidth
                 InputProps={{
                   startAdornment: (
-                    <Box sx={{ mr: 1, display: "flex", alignItems: "center" }}>
-                      <Today fontSize="small" color="action" />
+                    <Box className="mr-2 flex items-center">
+                      <Today fontSize="small" className="text-text-secondary" />
                     </Box>
                   ),
                 }}
                 sx={{
                   "& .MuiOutlinedInput-root": {
-                    backgroundColor: "background.default",
-                    transition: "all 0.2s ease-in-out",
+                    backgroundColor: "var(--surface)",
+                    transition: "all var(--transition-normal)",
                     "&:hover": {
-                      backgroundColor: "background.paper",
+                      backgroundColor: "var(--surface-light)",
                       "& fieldset": {
-                        borderColor: "primary.main",
+                        borderColor: "var(--gold)",
                       },
                     },
                     "&.Mui-focused": {
-                      backgroundColor: "background.paper",
+                      backgroundColor: "var(--surface-light)",
                       "& fieldset": {
-                        borderColor: "primary.main",
+                        borderColor: "var(--gold)",
                         borderWidth: 2,
                       },
                     },
@@ -325,272 +376,345 @@ export default function ManualLogsTable({
                 }}
               />
             </Box>
-          </Box>
 
-          {/* Quick Actions Section */}
-          <Box
-            sx={{
-              display: "flex",
-              flexDirection: { xs: "column", sm: "row" },
-              gap: 1,
-              flexWrap: "wrap",
-              alignItems: "center",
-              justifyContent: { xs: "center", lg: "flex-start" },
-              mt: { xs: 1, lg: 0 },
-            }}
-          >
-            <Tooltip title="View last 7 days" arrow>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<History />}
-                onClick={() => handleQuickDateRange(7)}
-                sx={{
-                  minWidth: 110,
-                  borderRadius: 1.5,
-                  textTransform: "none",
-                  fontWeight: 500,
-                  transition: "all 0.2s ease-in-out",
-                  "&:hover": {
-                    backgroundColor: "primary.main",
-                    color: "primary.contrastText",
-                    borderColor: "primary.main",
-                    transform: "translateY(-1px)",
-                    boxShadow: 2,
-                  },
-                }}
-              >
-                7 days
-              </Button>
-            </Tooltip>
-            <Tooltip title="View last 30 days" arrow>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<History />}
-                onClick={() => handleQuickDateRange(30)}
-                sx={{
-                  minWidth: 110,
-                  borderRadius: 1.5,
-                  textTransform: "none",
-                  fontWeight: 500,
-                  transition: "all 0.2s ease-in-out",
-                  "&:hover": {
-                    backgroundColor: "primary.main",
-                    color: "primary.contrastText",
-                    borderColor: "primary.main",
-                    transform: "translateY(-1px)",
-                    boxShadow: 2,
-                  },
-                }}
-              >
-                30 days
-              </Button>
-            </Tooltip>
-            <Tooltip title="View last 90 days" arrow>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<History />}
-                onClick={() => handleQuickDateRange(90)}
-                sx={{
-                  minWidth: 110,
-                  borderRadius: 1.5,
-                  textTransform: "none",
-                  fontWeight: 500,
-                  transition: "all 0.2s ease-in-out",
-                  "&:hover": {
-                    backgroundColor: "primary.main",
-                    color: "primary.contrastText",
-                    borderColor: "primary.main",
-                    transform: "translateY(-1px)",
-                    boxShadow: 2,
-                  },
-                }}
-              >
-                90 days
-              </Button>
-            </Tooltip>
-            <Tooltip title="Reset to default range" arrow>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<Refresh />}
-                onClick={handleDateRangeReset}
-                sx={{
-                  minWidth: 90,
-                  borderRadius: 1.5,
-                  textTransform: "none",
-                  fontWeight: 500,
-                  borderColor: "grey.400",
-                  color: "text.secondary",
-                  transition: "all 0.2s ease-in-out",
-                  "&:hover": {
-                    backgroundColor: "grey.100",
-                    borderColor: "grey.600",
-                    color: "text.primary",
-                    transform: "translateY(-1px)",
-                    boxShadow: 1,
-                  },
-                }}
-              >
-                Reset
-              </Button>
-            </Tooltip>
-          </Box>
-        </Box>
-      </Paper>
-
-      <Box sx={{ mb: 2 }}>
-        <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-          Variables logged:
-        </Typography>
-        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-          {getUniqueVariables().map((variable) => (
-            <Chip
-              key={variable}
-              label={variable}
-              size="small"
-              sx={{
-                backgroundColor: getVariableColor(variable),
-                color: "white",
-                fontSize: "0.75rem",
-                cursor: "pointer",
-                "&:hover": {
-                  opacity: 0.8,
-                  transform: "scale(1.02)",
-                },
-              }}
-              onClick={() =>
-                router.push(`/variable/${encodeURIComponent(variable)}`)
-              }
-            />
-          ))}
-        </Box>
-      </Box>
-
-      <TableContainer component={Paper} sx={{ maxHeight: 400 }}>
-        <Table stickyHeader size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell width="20%">Date</TableCell>
-              <TableCell width="25%">Variable</TableCell>
-              <TableCell width="20%">Value</TableCell>
-              <TableCell width="20%">Logged At</TableCell>
-              <TableCell width="15%">Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {logs.map((log) => (
-              <React.Fragment key={log.id}>
-                <TableRow
-                  hover
+            {/* Quick Actions Section */}
+            <Box className="flex flex-wrap gap-2 items-center">
+              <Tooltip title="Last 7 days" arrow>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<History />}
+                  onClick={() => handleQuickDateRange(7)}
+                  className="transition-all duration-300 hover:bg-gold/10"
                   sx={{
-                    cursor: log.notes ? "pointer" : "default",
-                    "& > *": { borderBottom: "unset" },
+                    minWidth: 110,
+                    borderRadius: 1.5,
+                    textTransform: "none",
+                    fontWeight: 500,
+                    borderColor: "var(--gold)",
+                    color: "var(--gold)",
+                    "&:hover": {
+                      backgroundColor: "rgba(255, 215, 0, 0.1)",
+                      borderColor: "var(--gold-light)",
+                      color: "var(--gold-light)",
+                      transform: "translateY(-1px)",
+                      boxShadow: "var(--shadow-sm)",
+                    },
                   }}
                 >
-                  <TableCell>{formatDate(log.date)}</TableCell>
-                  <TableCell>
-                    <Chip
-                      label={log.variable}
-                      size="small"
+                  7 Days
+                </Button>
+              </Tooltip>
+
+              <Tooltip title="Last 30 days" arrow>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<History />}
+                  onClick={() => handleQuickDateRange(30)}
+                  className="transition-all duration-300 hover:bg-gold/10"
+                  sx={{
+                    minWidth: 110,
+                    borderRadius: 1.5,
+                    textTransform: "none",
+                    fontWeight: 500,
+                    borderColor: "var(--gold)",
+                    color: "var(--gold)",
+                    "&:hover": {
+                      backgroundColor: "rgba(255, 215, 0, 0.1)",
+                      borderColor: "var(--gold-light)",
+                      color: "var(--gold-light)",
+                      transform: "translateY(-1px)",
+                      boxShadow: "var(--shadow-sm)",
+                    },
+                  }}
+                >
+                  30 Days
+                </Button>
+              </Tooltip>
+
+              <Tooltip title="Reset to default" arrow>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<Clear />}
+                  onClick={handleDateRangeReset}
+                  className="transition-all duration-300 hover:bg-gold/10"
+                  sx={{
+                    minWidth: 110,
+                    borderRadius: 1.5,
+                    textTransform: "none",
+                    fontWeight: 500,
+                    borderColor: "var(--gold)",
+                    color: "var(--gold)",
+                    "&:hover": {
+                      backgroundColor: "rgba(255, 215, 0, 0.1)",
+                      borderColor: "var(--gold-light)",
+                      color: "var(--gold-light)",
+                      transform: "translateY(-1px)",
+                      boxShadow: "var(--shadow-sm)",
+                    },
+                  }}
+                >
+                  Reset
+                </Button>
+              </Tooltip>
+
+              <Tooltip title="Refresh data" arrow>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<Refresh />}
+                  onClick={fetchManualLogs}
+                  className="transition-all duration-300 hover:bg-gold/10"
+                  sx={{
+                    minWidth: 110,
+                    borderRadius: 1.5,
+                    textTransform: "none",
+                    fontWeight: 500,
+                    borderColor: "var(--gold)",
+                    color: "var(--gold)",
+                    "&:hover": {
+                      backgroundColor: "rgba(255, 215, 0, 0.1)",
+                      borderColor: "var(--gold-light)",
+                      color: "var(--gold-light)",
+                      transform: "translateY(-1px)",
+                      boxShadow: "var(--shadow-sm)",
+                    },
+                  }}
+                >
+                  Refresh
+                </Button>
+              </Tooltip>
+            </Box>
+          </Box>
+        </CardContent>
+      </Card>
+
+      {/* Table Section */}
+      <Card
+        sx={{
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: "12px",
+          overflow: "hidden",
+        }}
+      >
+        <TableContainer
+          sx={{
+            maxHeight: 600,
+            "&::-webkit-scrollbar": {
+              width: "8px",
+              height: "8px",
+            },
+            "&::-webkit-scrollbar-track": {
+              background: "var(--surface-dark)",
+              borderRadius: "4px",
+            },
+            "&::-webkit-scrollbar-thumb": {
+              background: "var(--gold)",
+              borderRadius: "4px",
+              transition: "background var(--transition-normal)",
+            },
+            "&::-webkit-scrollbar-thumb:hover": {
+              background: "var(--gold-light)",
+            },
+          }}
+        >
+          <Table stickyHeader>
+            <TableHead>
+              <TableRow>
+                <TableCell
+                  sx={{
+                    background: "var(--surface-dark)",
+                    color: "var(--text-primary)",
+                    fontWeight: 600,
+                    borderBottom: "2px solid var(--border)",
+                    minWidth: 120,
+                  }}
+                >
+                  Date
+                </TableCell>
+                <TableCell
+                  sx={{
+                    background: "var(--surface-dark)",
+                    color: "var(--text-primary)",
+                    fontWeight: 600,
+                    borderBottom: "2px solid var(--border)",
+                    minWidth: 150,
+                  }}
+                >
+                  Variable
+                </TableCell>
+                <TableCell
+                  sx={{
+                    background: "var(--surface-dark)",
+                    color: "var(--text-primary)",
+                    fontWeight: 600,
+                    borderBottom: "2px solid var(--border)",
+                    minWidth: 120,
+                  }}
+                >
+                  Value
+                </TableCell>
+                <TableCell
+                  sx={{
+                    background: "var(--surface-dark)",
+                    color: "var(--text-primary)",
+                    fontWeight: 600,
+                    borderBottom: "2px solid var(--border)",
+                    width: 60,
+                  }}
+                >
+                  Details
+                </TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {logs.map((log) => {
+                const isExpanded = expandedRows.has(log.id);
+                return (
+                  <React.Fragment key={log.id}>
+                    <TableRow
+                      hover
                       sx={{
-                        backgroundColor: getVariableColor(log.variable),
-                        color: "white",
-                        fontSize: "0.75rem",
-                        cursor: "pointer",
+                        transition: "all var(--transition-fast)",
                         "&:hover": {
-                          opacity: 0.8,
-                          transform: "scale(1.02)",
+                          background: "var(--surface-light)",
                         },
                       }}
-                      onClick={() =>
-                        router.push(
-                          `/variable/${encodeURIComponent(log.variable)}`
-                        )
-                      }
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <strong>{log.value}</strong>
-                  </TableCell>
-                  <TableCell>
-                    <Box
-                      sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
                     >
-                      <AccessTime fontSize="small" color="action" />
-                      <Typography variant="body2" color="textSecondary">
-                        {formatDateTime(log.created_at)}
-                      </Typography>
-                    </Box>
-                  </TableCell>
-                  <TableCell>
-                    {log.notes && (
-                      <Tooltip
-                        title={
-                          expandedRows.has(log.id) ? "Hide notes" : "Show notes"
-                        }
+                      <TableCell
+                        sx={{
+                          color: "var(--text-secondary)",
+                          borderBottom: "1px solid var(--border-light)",
+                          padding: "16px",
+                        }}
                       >
-                        <IconButton
-                          size="small"
-                          onClick={() => handleRowToggle(log.id)}
-                        >
-                          {expandedRows.has(log.id) ? (
-                            <ExpandLess />
-                          ) : (
-                            <ExpandMore />
-                          )}
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                  </TableCell>
-                </TableRow>
-                {log.notes && (
-                  <TableRow>
-                    <TableCell
-                      style={{ paddingBottom: 0, paddingTop: 0 }}
-                      colSpan={5}
-                    >
-                      <Collapse
-                        in={expandedRows.has(log.id)}
-                        timeout="auto"
-                        unmountOnExit
-                      >
-                        <Box
-                          sx={{
-                            margin: 1,
-                            p: 2,
-                            bgcolor: "grey.50",
-                            borderRadius: 1,
-                          }}
-                        >
-                          <Box
-                            sx={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 1,
-                              mb: 1,
-                            }}
-                          >
-                            <Notes fontSize="small" color="action" />
-                            <Typography variant="body2" fontWeight="bold">
-                              Notes:
-                            </Typography>
-                          </Box>
-                          <Typography variant="body2" color="textSecondary">
-                            {log.notes}
+                        <Box className="flex items-center gap-2">
+                          <AccessTime className="text-gold text-sm" />
+                          <Typography variant="body2" className="font-medium">
+                            {formatDate(log.date)}
                           </Typography>
                         </Box>
-                      </Collapse>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </React.Fragment>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+                      </TableCell>
+
+                      <TableCell
+                        sx={{
+                          color: "var(--text-primary)",
+                          borderBottom: "1px solid var(--border-light)",
+                          padding: "16px",
+                        }}
+                      >
+                        <Box className="flex items-center gap-2">
+                          <Box
+                            className="w-3 h-3 rounded-full"
+                            sx={{
+                              backgroundColor: getVariableColor(
+                                log.variable_id
+                              ),
+                            }}
+                          />
+                          <Typography variant="body2" className="font-medium">
+                            {variables[log.variable_id] || log.variable_id}
+                          </Typography>
+                        </Box>
+                      </TableCell>
+
+                      <TableCell
+                        sx={{
+                          color: "var(--text-secondary)",
+                          borderBottom: "1px solid var(--border-light)",
+                          padding: "16px",
+                        }}
+                      >
+                        <Typography variant="body2" className="font-medium">
+                          {log.value}
+                        </Typography>
+                      </TableCell>
+
+                      <TableCell
+                        sx={{
+                          borderBottom: "1px solid var(--border-light)",
+                          padding: "8px 16px",
+                        }}
+                      >
+                        <Tooltip
+                          title={isExpanded ? "Hide details" : "Show details"}
+                        >
+                          <IconButton
+                            size="small"
+                            onClick={() => handleRowToggle(log.id)}
+                            sx={{
+                              color: "var(--gold)",
+                              transition: "all var(--transition-normal)",
+                              "&:hover": {
+                                backgroundColor: "rgba(255, 215, 0, 0.1)",
+                                transform: "scale(1.1)",
+                              },
+                            }}
+                          >
+                            {isExpanded ? <ExpandLess /> : <ExpandMore />}
+                          </IconButton>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+
+                    <TableRow>
+                      <TableCell
+                        style={{ paddingBottom: 0, paddingTop: 0 }}
+                        colSpan={4}
+                      >
+                        <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                          <Box
+                            sx={{
+                              p: 3,
+                              background: "var(--surface-light)",
+                              borderTop: "1px solid var(--border-light)",
+                            }}
+                          >
+                            <Box className="space-y-3">
+                              {log.notes && (
+                                <Box className="flex items-start gap-2">
+                                  <Notes className="text-gold text-sm mt-1" />
+                                  <Box className="flex-1">
+                                    <Typography
+                                      variant="body2"
+                                      className="text-text-secondary font-medium mb-1"
+                                    >
+                                      Notes:
+                                    </Typography>
+                                    <Typography
+                                      variant="body2"
+                                      className="text-text-secondary"
+                                    >
+                                      {log.notes}
+                                    </Typography>
+                                  </Box>
+                                </Box>
+                              )}
+
+                              <Box className="flex items-center gap-2">
+                                <AccessTime className="text-gold text-sm" />
+                                <Typography
+                                  variant="caption"
+                                  className="text-text-muted"
+                                >
+                                  Logged on {formatDateTime(log.created_at)}
+                                </Typography>
+                              </Box>
+                            </Box>
+                          </Box>
+                        </Collapse>
+                      </TableCell>
+                    </TableRow>
+                  </React.Fragment>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Card>
     </Box>
   );
 }

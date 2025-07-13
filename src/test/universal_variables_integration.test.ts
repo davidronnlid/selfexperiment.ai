@@ -158,16 +158,10 @@ async function runIntegrationTests() {
   });
 
   runner.test("should search variables", async () => {
-    const result = await searchVariables(
-      {
-        query: "mood",
-        limit: 10,
-      },
-      testUserId
-    );
+    const result = await searchVariables("mood", testUserId);
 
-    expect(result.variables).toBeDefined();
-    expectArray(result.variables);
+    expect(result).toBeDefined();
+    expectArray(result);
   });
 
   runner.test("should validate variable values", () => {
@@ -197,8 +191,8 @@ async function runIntegrationTests() {
   // Privacy Settings Tests
   runner.test("should fetch variable sharing settings", async () => {
     const result = await fetchVariableSharingSettings(testUserId);
-    expect(result.data).toBeDefined();
-    expectArray(result.data);
+    expect(result).toBeDefined();
+    expectArray(result);
   });
 
   runner.test("should upsert variable sharing setting", async () => {
@@ -243,22 +237,17 @@ async function runIntegrationTests() {
 
   // Frontend Component Integration Tests
   runner.test("should handle variable loading in components", async () => {
-    const result = await searchVariables({
-      query: "",
-      limit: 100,
-      category: "Mental & Emotional",
-    });
+    const result = await searchVariables("", testUserId);
 
-    expect(result.variables).toBeDefined();
-    expectType(result.total, "number");
-    expectType(result.has_more, "boolean");
+    expect(result).toBeDefined();
+    expectArray(result);
   });
 
   runner.test("should handle privacy API calls", async () => {
     const result = await fetchVariableSharingSettings(testUserId);
 
-    expect(result.data).toBeDefined();
-    expectArray(result.data);
+    expect(result).toBeDefined();
+    expectArray(result);
   });
 
   // Error Handling Tests

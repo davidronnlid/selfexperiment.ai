@@ -64,7 +64,7 @@ export default function LogPrivacyManager({
 
       // Load logs with privacy settings
       const { data: logsData, error: logsError } = await supabase
-        .from("daily_logs")
+        .from("logs")
         .select("id, date, label, value, notes")
         .eq("user_id", user?.id)
         .order("date", { ascending: false })

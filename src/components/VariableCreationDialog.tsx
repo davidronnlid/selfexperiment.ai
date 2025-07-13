@@ -302,8 +302,6 @@ export default function VariableCreationDialog({
   const [constraints, setConstraints] = useState({
     min: "",
     max: "",
-    scaleMin: "",
-    scaleMax: "",
     type: "continuous",
   });
   const [icon, setIcon] = useState("📊");
@@ -321,8 +319,6 @@ export default function VariableCreationDialog({
       setConstraints({
         min: "",
         max: "",
-        scaleMin: "",
-        scaleMax: "",
         type: "continuous",
       });
       setIcon("📊");
@@ -399,10 +395,6 @@ export default function VariableCreationDialog({
       const validationRules: any = {};
       if (constraints.min) validationRules.min = parseFloat(constraints.min);
       if (constraints.max) validationRules.max = parseFloat(constraints.max);
-      if (constraints.scaleMin)
-        validationRules.scaleMin = parseFloat(constraints.scaleMin);
-      if (constraints.scaleMax)
-        validationRules.scaleMax = parseFloat(constraints.scaleMax);
       if (unit) validationRules.unit = unit;
 
       const variableData = {
@@ -436,9 +428,6 @@ export default function VariableCreationDialog({
         user_id: user.id,
         variable_id: newVariable.id,
         is_shared: isShared,
-        is_tracked: true,
-        is_favorite: false,
-        display_order: 0,
       };
 
       const { error: prefError } = await supabase
@@ -707,42 +696,6 @@ export default function VariableCreationDialog({
                         ? "Maximum number of characters"
                         : "Maximum allowed value"
                     }
-                  />
-                </Box>
-
-                <Box
-                  sx={{
-                    display: "flex",
-                    flexDirection: { xs: "column", sm: "row" },
-                    gap: 2,
-                  }}
-                >
-                  <TextField
-                    fullWidth
-                    label="Scale Minimum"
-                    type="number"
-                    value={constraints.scaleMin}
-                    onChange={(e) =>
-                      setConstraints((prev) => ({
-                        ...prev,
-                        scaleMin: e.target.value,
-                      }))
-                    }
-                    helperText="e.g., 1 for a 1-10 scale"
-                  />
-
-                  <TextField
-                    fullWidth
-                    label="Scale Maximum"
-                    type="number"
-                    value={constraints.scaleMax}
-                    onChange={(e) =>
-                      setConstraints((prev) => ({
-                        ...prev,
-                        scaleMax: e.target.value,
-                      }))
-                    }
-                    helperText="e.g., 10 for a 1-10 scale"
                   />
                 </Box>
               </>

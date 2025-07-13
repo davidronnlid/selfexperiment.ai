@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, memo, useCallback } from "react";
 import {
   Box,
   Typography,
@@ -58,7 +58,7 @@ ChartJS.register(
 interface ManualLog {
   id: number;
   date: string;
-  variable: string;
+  variable_id: string;
   value: string;
   notes?: string;
   created_at: string;
@@ -93,7 +93,7 @@ interface VariableStats {
   weeklyPattern: { day: string; average: number }[];
 }
 
-export default function ManualLogsChart({
+const ManualLogsChart = memo(function ManualLogsChart({
   userId,
   maxDays = 30,
 }: ManualLogsChartProps) {
@@ -102,61 +102,19 @@ export default function ManualLogsChart({
   const [error, setError] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<string>("30");
   const [selectedVariable, setSelectedVariable] = useState<string>("");
+  const [variables, setVariables] = useState<Record<string, string>>({}); // variable_id -> label
 
-  useEffect(() => {
-    fetchManualLogs();
-  }, [userId, timeRange]);
+  // Utility functions - must be defined before useMemo/useCallback hooks
+  const isNumeric = (value: string): boolean => {
+    return !isNaN(parseFloat(value)) && isFinite(parseFloat(value));
+  };
 
-  // Auto-select first variable when logs are loaded
-  useEffect(() => {
-    if (logs.length > 0 && !selectedVariable) {
-      const numericVariables = getUniqueVariables().filter((variable) =>
-        logs.some((log) => log.variable === variable && isNumeric(log.value))
-      );
-      if (numericVariables.length > 0) {
-        setSelectedVariable(numericVariables[0]);
-      }
-    }
-  }, [logs, selectedVariable]);
-
-  const fetchManualLogs = async () => {
+  const formatDate = (dateString: string) => {
     try {
-      setLoading(true);
-      setError(null);
-
-      const daysBack = parseInt(timeRange);
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - daysBack);
-
-      const { data, error } = await supabase
-        .from("daily_logs")
-        .select("id, date, variable, value, notes, created_at")
-        .eq("user_id", userId)
-        .gte("date", cutoffDate.toISOString())
-        .order("date", { ascending: true });
-
-      if (error) throw error;
-
-      setLogs(data || []);
-    } catch (err) {
-      console.error("Error fetching manual logs:", err);
-      setError("Failed to load manual logs");
-    } finally {
-      setLoading(false);
+      return format(parseISO(dateString), "MMM dd");
+    } catch {
+      return dateString;
     }
-  };
-
-  const handleTimeRangeChange = (event: SelectChangeEvent) => {
-    setTimeRange(event.target.value);
-  };
-
-  const handleVariableChange = (event: SelectChangeEvent) => {
-    setSelectedVariable(event.target.value);
-  };
-
-  const getUniqueVariables = () => {
-    const variables = new Set(logs.map((log) => log.variable));
-    return Array.from(variables).sort();
   };
 
   const getVariableColor = (variable: string) => {
@@ -176,104 +134,212 @@ export default function ManualLogsChart({
     return colors[index];
   };
 
-  const isNumeric = (value: string): boolean => {
-    return !isNaN(parseFloat(value)) && isFinite(parseFloat(value));
-  };
+  // Memoize expensive calculations
+  const uniqueVariables = useMemo(() => {
+    const variables = new Set(logs.map((log) => log.variable_id));
+    return Array.from(variables).sort();
+  }, [logs]);
 
-  const formatDate = (dateString: string) => {
-    try {
-      return format(parseISO(dateString), "MMM dd");
-    } catch {
-      return dateString;
-    }
-  };
-
-  // Calculate variable statistics
-  const calculateStats = (variableLogs: ManualLog[]): VariableStats => {
-    const numericLogs = variableLogs.filter((log) => isNumeric(log.value));
-    const values = numericLogs.map((log) => parseFloat(log.value));
-
-    if (values.length === 0) {
-      return {
-        average: 0,
-        min: 0,
-        max: 0,
-        latest: 0,
-        trend: "stable",
-        changePercentage: 0,
-        streak: 0,
-        totalLogs: 0,
-        weeklyPattern: [],
-      };
-    }
-
-    const average = values.reduce((sum, val) => sum + val, 0) / values.length;
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const latest = values[values.length - 1];
-
-    // Calculate trend (compare first half vs second half)
-    const midpoint = Math.floor(values.length / 2);
-    const firstHalf = values.slice(0, midpoint);
-    const secondHalf = values.slice(midpoint);
-
-    const firstHalfAvg =
-      firstHalf.reduce((sum, val) => sum + val, 0) / firstHalf.length;
-    const secondHalfAvg =
-      secondHalf.reduce((sum, val) => sum + val, 0) / secondHalf.length;
-
-    const changePercentage = firstHalfAvg
-      ? ((secondHalfAvg - firstHalfAvg) / firstHalfAvg) * 100
-      : 0;
-
-    let trend: "up" | "down" | "stable" = "stable";
-    if (Math.abs(changePercentage) > 5) {
-      trend = changePercentage > 0 ? "up" : "down";
-    }
-
-    // Calculate current streak (consecutive days with data)
-    const sortedLogs = [...numericLogs].sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  const numericVariables = useMemo(() => {
+    return uniqueVariables.filter((variable) =>
+      logs.some((log) => log.variable_id === variable && isNumeric(log.value))
     );
-    let streak = 0;
-    let lastDate = new Date();
+  }, [uniqueVariables, logs]);
 
-    for (const log of sortedLogs) {
-      const logDate = new Date(log.date);
-      const daysDiff = differenceInDays(lastDate, logDate);
+  // Memoize filtered logs for selected variable
+  // Calculate variable statistics
+  const calculateStats = useCallback(
+    (variableLogs: ManualLog[]): VariableStats => {
+      const numericLogs = variableLogs.filter((log) => isNumeric(log.value));
+      const values = numericLogs.map((log) => parseFloat(log.value));
 
-      if (daysDiff <= 1) {
-        streak++;
-        lastDate = logDate;
-      } else {
-        break;
+      if (values.length === 0) {
+        return {
+          average: 0,
+          min: 0,
+          max: 0,
+          latest: 0,
+          trend: "stable",
+          changePercentage: 0,
+          streak: 0,
+          totalLogs: 0,
+          weeklyPattern: [],
+        };
       }
+
+      const average = values.reduce((sum, val) => sum + val, 0) / values.length;
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const latest = values[values.length - 1];
+
+      // Calculate trend (compare first half vs second half)
+      const midpoint = Math.floor(values.length / 2);
+      const firstHalf = values.slice(0, midpoint);
+      const secondHalf = values.slice(midpoint);
+
+      const firstHalfAvg =
+        firstHalf.reduce((sum, val) => sum + val, 0) / firstHalf.length;
+      const secondHalfAvg =
+        secondHalf.reduce((sum, val) => sum + val, 0) / secondHalf.length;
+
+      const changePercentage = firstHalfAvg
+        ? ((secondHalfAvg - firstHalfAvg) / firstHalfAvg) * 100
+        : 0;
+
+      let trend: "up" | "down" | "stable" = "stable";
+      if (Math.abs(changePercentage) > 5) {
+        trend = changePercentage > 0 ? "up" : "down";
+      }
+
+      // Calculate current streak (consecutive days with data)
+      const sortedLogs = [...numericLogs].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+      let streak = 0;
+      let lastDate = new Date();
+
+      for (const log of sortedLogs) {
+        const logDate = new Date(log.date);
+        const daysDiff = differenceInDays(lastDate, logDate);
+
+        if (daysDiff <= 1) {
+          streak++;
+          lastDate = logDate;
+        } else {
+          break;
+        }
+      }
+
+      // Calculate weekly pattern
+      const weeklyData: { [key: string]: number[] } = {};
+      numericLogs.forEach((log) => {
+        const day = format(parseISO(log.date), "EEEE");
+        if (!weeklyData[day]) weeklyData[day] = [];
+        weeklyData[day].push(parseFloat(log.value));
+      });
+
+      const weeklyPattern = Object.entries(weeklyData).map(([day, values]) => ({
+        day,
+        average: values.reduce((sum, val) => sum + val, 0) / values.length,
+      }));
+
+      return {
+        average: Math.round(average * 100) / 100,
+        min: Math.round(min * 100) / 100,
+        max: Math.round(max * 100) / 100,
+        latest: Math.round(latest * 100) / 100,
+        trend,
+        changePercentage: Math.round(changePercentage * 100) / 100,
+        streak,
+        totalLogs: numericLogs.length,
+        weeklyPattern,
+      };
+    },
+    []
+  );
+
+  const selectedVariableLogs = useMemo(() => {
+    return logs.filter(
+      (log) => log.variable_id === selectedVariable && isNumeric(log.value)
+    );
+  }, [logs, selectedVariable]);
+
+  // Memoize chart data preparation
+  const chartData = useMemo(() => {
+    if (!selectedVariable || selectedVariableLogs.length === 0) {
+      return null;
     }
 
-    // Calculate weekly pattern
-    const weeklyData: { [key: string]: number[] } = {};
-    numericLogs.forEach((log) => {
-      const day = format(parseISO(log.date), "EEEE");
-      if (!weeklyData[day]) weeklyData[day] = [];
-      weeklyData[day].push(parseFloat(log.value));
-    });
-
-    const weeklyPattern = Object.entries(weeklyData).map(([day, values]) => ({
-      day,
-      average: values.reduce((sum, val) => sum + val, 0) / values.length,
-    }));
+    const sortedLogs = selectedVariableLogs.sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
 
     return {
-      average: Math.round(average * 100) / 100,
-      min: Math.round(min * 100) / 100,
-      max: Math.round(max * 100) / 100,
-      latest: Math.round(latest * 100) / 100,
-      trend,
-      changePercentage: Math.round(changePercentage * 100) / 100,
-      streak,
-      totalLogs: numericLogs.length,
-      weeklyPattern,
+      labels: sortedLogs.map((log) => formatDate(log.date)),
+      datasets: [
+        {
+          label: variables[selectedVariable] || selectedVariable,
+          data: sortedLogs.map((log) => parseFloat(log.value)),
+          borderColor: getVariableColor(selectedVariable),
+          backgroundColor: getVariableColor(selectedVariable) + "20",
+          fill: false,
+          tension: 0.1,
+        },
+      ],
     };
+  }, [selectedVariable, selectedVariableLogs, variables]);
+
+  // Memoize stats calculation
+  const variableStats = useMemo(() => {
+    return calculateStats(selectedVariableLogs);
+  }, [selectedVariableLogs, calculateStats]);
+
+  // Use useCallback for event handlers
+  const handleTimeRangeChange = useCallback((event: SelectChangeEvent) => {
+    setTimeRange(event.target.value);
+  }, []);
+
+  const handleVariableChange = useCallback((event: SelectChangeEvent) => {
+    setSelectedVariable(event.target.value);
+  }, []);
+
+  const fetchManualLogs = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const daysBack = parseInt(timeRange);
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysBack);
+
+      const { data, error } = await supabase
+        .from("logs")
+        .select("id, date, variable_id, value, notes, created_at")
+        .eq("user_id", userId)
+        .gte("date", cutoffDate.toISOString())
+        .order("date", { ascending: true });
+
+      if (error) throw error;
+      setLogs(data || []);
+    } catch (err) {
+      console.error("Error fetching manual logs:", err);
+      setError("Failed to load manual logs");
+    } finally {
+      setLoading(false);
+    }
+  }, [userId, timeRange]);
+
+  useEffect(() => {
+    fetchManualLogs();
+  }, [fetchManualLogs]);
+
+  useEffect(() => {
+    // Fetch all variables for mapping
+    async function fetchVariables() {
+      const { data, error } = await supabase
+        .from("variables")
+        .select("id, label");
+      if (!error && data) {
+        const map: Record<string, string> = {};
+        data.forEach((v: any) => {
+          map[v.id] = v.label;
+        });
+        setVariables(map);
+      }
+    }
+    fetchVariables();
+  }, []);
+
+  // Auto-select first numeric variable
+  useEffect(() => {
+    if (numericVariables.length > 0 && !selectedVariable) {
+      setSelectedVariable(numericVariables[0]);
+    }
+  }, [numericVariables, selectedVariable]);
+
+  const getUniqueVariables = () => {
+    const variables = new Set(logs.map((log) => log.variable_id));
+    return Array.from(variables).sort();
   };
 
   const prepareChartData = (): { [variable: string]: ChartData } => {
@@ -281,10 +347,10 @@ export default function ManualLogsChart({
 
     // Group logs by variable
     const logsByVariable = logs.reduce((acc, log) => {
-      if (!acc[log.variable]) {
-        acc[log.variable] = [];
+      if (!acc[log.variable_id]) {
+        acc[log.variable_id] = [];
       }
-      acc[log.variable].push(log);
+      acc[log.variable_id].push(log);
       return acc;
     }, {} as { [variable: string]: ManualLog[] });
 
@@ -300,7 +366,7 @@ export default function ManualLogsChart({
           labels: numericLogs.map((log) => formatDate(log.date)),
           datasets: [
             {
-              label: variable,
+              label: variables[variable] || variable,
               data: numericLogs.map((log) => parseFloat(log.value)),
               borderColor: color,
               backgroundColor: color + "20",
@@ -355,14 +421,6 @@ export default function ManualLogsChart({
     },
   };
 
-  const variableStats = useMemo(() => {
-    if (!selectedVariable) return null;
-    const variableLogs = logs.filter(
-      (log) => log.variable === selectedVariable
-    );
-    return calculateStats(variableLogs);
-  }, [logs, selectedVariable]);
-
   if (loading) {
     return (
       <Box
@@ -393,17 +451,8 @@ export default function ManualLogsChart({
     );
   }
 
-  const chartData = prepareChartData();
-  const variables = getUniqueVariables();
-  const numericVariables = variables.filter((variable) =>
-    logs.some((log) => log.variable === variable && isNumeric(log.value))
-  );
-
-  // Show only the selected variable's chart
-  const displayedChartData =
-    selectedVariable && chartData[selectedVariable]
-      ? { [selectedVariable]: chartData[selectedVariable] }
-      : {};
+  // chartData is ChartData | null
+  const displayedChartData = chartData ? chartData : undefined;
 
   return (
     <Box>
@@ -418,9 +467,7 @@ export default function ManualLogsChart({
           No numeric variables found for charting. Charts can only display
           numeric values.
         </Alert>
-      ) : selectedVariable &&
-        displayedChartData[selectedVariable] &&
-        variableStats ? (
+      ) : selectedVariable && displayedChartData && variableStats ? (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
           {/* Statistics Cards */}
           <Box>
@@ -557,7 +604,7 @@ export default function ManualLogsChart({
               >
                 {numericVariables.map((variable) => (
                   <MenuItem key={variable} value={variable}>
-                    {variable}
+                    {variables[variable] || variable}
                   </MenuItem>
                 ))}
               </Select>
@@ -569,7 +616,7 @@ export default function ManualLogsChart({
             <Card>
               <CardContent>
                 <Typography variant="h6" component="h4" gutterBottom>
-                  {selectedVariable}
+                  {variables[selectedVariable] || selectedVariable}
                 </Typography>
                 <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
                   <Chip
@@ -584,10 +631,7 @@ export default function ManualLogsChart({
                   />
                 </Box>
                 <Box sx={{ height: 400 }}>
-                  <Line
-                    data={displayedChartData[selectedVariable]}
-                    options={chartOptions}
-                  />
+                  <Line data={displayedChartData} options={chartOptions} />
                 </Box>
               </CardContent>
             </Card>
@@ -632,16 +676,22 @@ export default function ManualLogsChart({
         </Alert>
       )}
 
-      {variables.length > numericVariables.length && (
+      {/* Info about non-numeric variables */}
+      {uniqueVariables.length > numericVariables.length && (
         <Alert severity="info" sx={{ mt: 2 }}>
           <Typography variant="body2">
             <strong>Note:</strong> Some variables (
-            {variables.length - numericVariables.length}) contain non-numeric
-            data and cannot be displayed in charts. These include:{" "}
-            {variables.filter((v) => !numericVariables.includes(v)).join(", ")}
+            {uniqueVariables.length - numericVariables.length}) contain
+            non-numeric data and cannot be displayed in charts. These include:{" "}
+            {uniqueVariables
+              .filter((v: string) => !numericVariables.includes(v))
+              .map((v: string) => variables[v] || v)
+              .join(", ")}
           </Typography>
         </Alert>
       )}
     </Box>
   );
-}
+});
+
+export default ManualLogsChart;

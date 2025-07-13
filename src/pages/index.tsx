@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { Card, CardContent, Typography, Button } from "@mui/material";
+import {
+  Card,
+  CardContent,
+  Typography,
+  Button,
+  Box,
+  Container,
+} from "@mui/material";
 import { useUser } from "./_app";
 import { useRouter } from "next/router";
 import { useEffect } from "react";
@@ -11,95 +18,113 @@ export default function Home() {
   // If user is authenticated, redirect to dashboard or main app
   useEffect(() => {
     if (!loading && user) {
-      router.push("/log");
+      router.push("/dashboard");
     }
   }, [user, loading, router]);
 
   // Show loading state while checking authentication
   if (loading) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-gray-900 to-black">
-        <Card className="w-full max-w-lg shadow-xl rounded-2xl border border-gray-700 bg-gray-800/90 backdrop-blur-sm">
-          <CardContent className="flex flex-col items-center p-8">
-            <Typography
-              variant="h5"
-              className="font-bold text-white mb-2 tracking-tight text-center"
-            >
-              Loading...
-            </Typography>
+      <Container
+        maxWidth="sm"
+        className="flex items-center justify-center min-h-screen px-4"
+      >
+        <Card className="w-full shadow-2xl border border-border bg-surface/95 backdrop-blur-sm">
+          <CardContent className="flex flex-col items-center p-6 lg:p-8">
+            <Box className="animate-pulse">
+              <Typography
+                variant="h5"
+                className="font-bold text-white mb-4 tracking-tight text-center"
+              >
+                Loading...
+              </Typography>
+              <Box className="w-8 h-8 border-4 border-gold border-t-transparent rounded-full animate-spin mx-auto"></Box>
+            </Box>
           </CardContent>
         </Card>
-      </main>
+      </Container>
     );
   }
 
   // Show sign-in page for unauthenticated users
   if (!user) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-gray-900 to-black">
-        <Card className="w-full max-w-lg shadow-xl rounded-2xl border border-gray-700 bg-gray-800/90 backdrop-blur-sm">
-          <CardContent className="flex flex-col items-center p-8">
+      <Container
+        maxWidth="sm"
+        className="flex items-center justify-center min-h-screen px-4"
+      >
+        <Card className="w-full shadow-2xl border border-border bg-surface/95 backdrop-blur-sm">
+          <CardContent className="flex flex-col items-center p-6 lg:p-8">
             <Typography
               variant="h3"
-              className="font-bold text-white mb-2 tracking-tight text-center"
+              className="font-bold text-white mb-4 tracking-tight text-center bg-gradient-to-r from-gold to-gold-light bg-clip-text text-transparent text-2xl lg:text-3xl"
               component="h1"
             >
-              SelfExperiment.AI
+              Modular Health
             </Typography>
             <Typography
-              variant="subtitle1"
-              className="mb-6 text-gray-200 text-center"
+              variant="h6"
+              className="mb-6 text-gold text-center font-medium text-lg lg:text-xl"
             >
               Understand yourself better with AI
             </Typography>
             <Typography
               variant="body1"
-              className="mb-6 text-gray-300 text-center"
+              className="mb-8 text-text-secondary text-center leading-relaxed text-sm lg:text-base"
             >
               Sign in to start tracking your experiments, logging data, and
-              discovering insights about yourself.
+              discovering insights about yourself through intelligent analysis.
             </Typography>
-            <div className="flex flex-col gap-4 w-full">
+            <Box className="flex flex-col gap-4 w-full max-w-sm">
               <Link href="/auth" passHref legacyBehavior>
                 <Button
                   variant="contained"
-                  className="w-full !bg-blue-600 hover:!bg-blue-700 text-white text-lg py-3 rounded-lg shadow-md transition"
+                  className="w-full text-lg py-3 rounded-lg shadow-lg transition-all duration-200 hover:shadow-xl"
                   size="large"
                   fullWidth
                 >
                   Sign In / Sign Up
                 </Button>
               </Link>
-            </div>
+              <Typography
+                variant="body2"
+                className="text-text-muted text-center mt-4 text-xs lg:text-sm"
+              >
+                Join thousands of users discovering insights about themselves
+              </Typography>
+            </Box>
           </CardContent>
         </Card>
-      </main>
+      </Container>
     );
   }
 
   // This shouldn't be reached due to the redirect above, but just in case
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-gray-900 to-black">
-      <Card className="w-full max-w-lg shadow-xl rounded-2xl border border-gray-700 bg-gray-800/90 backdrop-blur-sm">
-        <CardContent className="flex flex-col items-center p-8">
+    <Container
+      maxWidth="md"
+      className="flex items-center justify-center min-h-screen px-4"
+    >
+      <Card className="w-full shadow-2xl border border-border bg-surface/95 backdrop-blur-sm">
+        <CardContent className="flex flex-col items-center p-6 lg:p-8">
           <Typography
             variant="h3"
-            className="font-bold text-white mb-2 tracking-tight text-center"
+            className="font-bold text-white mb-4 tracking-tight text-center bg-gradient-to-r from-gold to-gold-light bg-clip-text text-transparent text-2xl lg:text-3xl"
             component="h1"
           >
-            SelfExperiment.AI
+            Modular Health
           </Typography>
           <Typography
-            variant="subtitle1"
-            className="mb-6 text-gray-200 text-center"
+            variant="h6"
+            className="mb-8 text-gold text-center font-medium text-lg lg:text-xl"
           >
-            Understand yourself better with AI
+            Welcome back! What would you like to do today?
           </Typography>
-          <div className="flex flex-col gap-4 w-full">
+          <Box className="flex flex-col gap-4 w-full max-w-sm">
             <Link href="/experiment/builder" passHref legacyBehavior>
               <Button
                 variant="contained"
-                className="w-full !bg-blue-600 hover:!bg-blue-700 text-white text-lg py-3 rounded-lg shadow-md transition"
+                className="w-full text-lg py-3 rounded-lg shadow-lg transition-all duration-200 hover:shadow-xl"
                 size="large"
                 fullWidth
               >
@@ -109,8 +134,7 @@ export default function Home() {
             <Link href="/log" passHref legacyBehavior>
               <Button
                 variant="outlined"
-                color="secondary"
-                className="w-full border-gray-400 text-gray-200 hover:!bg-gray-700 text-lg py-3 rounded-lg transition"
+                className="w-full text-lg py-3 rounded-lg transition-all duration-200"
                 size="large"
                 fullWidth
               >
@@ -120,17 +144,16 @@ export default function Home() {
             <Link href="/analytics" passHref legacyBehavior>
               <Button
                 variant="outlined"
-                color="secondary"
-                className="w-full border-gray-400 text-gray-200 hover:!bg-gray-700 text-lg py-3 rounded-lg transition"
+                className="w-full text-lg py-3 rounded-lg transition-all duration-200"
                 size="large"
                 fullWidth
               >
-                Analytics
+                View Analytics
               </Button>
             </Link>
-          </div>
+          </Box>
         </CardContent>
       </Card>
-    </main>
+    </Container>
   );
 }

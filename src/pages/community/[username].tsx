@@ -88,12 +88,12 @@ export default function CommunityProfilePage() {
       console.log("Fetching logs for variable:", variable);
       // Fetch logs for this variable for this user
       const { data: logs, error } = await supabase
-        .from("daily_logs")
+        .from("logs")
         .select("id, date, value, notes")
         .eq("user_id", profile.id)
         .ilike("label", variable)
         .order("date", { ascending: false })
-        .limit(50);
+        .limit(20); // Reduced from 50 to 20 for faster loading
       console.log("Fetched logs:", logs, error);
       // Fetch likes for these logs
       const logIds = (logs || []).map((log: any) => log.id).filter(Boolean);

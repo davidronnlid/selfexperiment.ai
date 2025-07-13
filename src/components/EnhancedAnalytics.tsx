@@ -67,7 +67,7 @@ ChartJS.register(
 interface ManualLog {
   id: number;
   date: string;
-  variable: string;
+  variable_id: string;
   value: string;
   notes?: string;
   created_at: string;
@@ -99,6 +99,7 @@ export default function EnhancedAnalytics({ userId }: EnhancedAnalyticsProps) {
   const [timeRange, setTimeRange] = useState<string>("30");
   const [selectedVariable, setSelectedVariable] = useState<string>("");
   const [chartType, setChartType] = useState<ChartType>("line");
+  const [variables, setVariables] = useState<Record<string, string>>({}); // variable_id -> label
 
   useEffect(() => {
     fetchManualLogs();
@@ -107,13 +108,30 @@ export default function EnhancedAnalytics({ userId }: EnhancedAnalyticsProps) {
   useEffect(() => {
     if (logs.length > 0 && !selectedVariable) {
       const numericVariables = getUniqueVariables().filter((variable) =>
-        logs.some((log) => log.variable === variable && isNumeric(log.value))
+        logs.some((log) => log.variable_id === variable && isNumeric(log.value))
       );
       if (numericVariables.length > 0) {
         setSelectedVariable(numericVariables[0]);
       }
     }
   }, [logs, selectedVariable]);
+
+  useEffect(() => {
+    // Fetch all variables for mapping
+    async function fetchVariables() {
+      const { data, error } = await supabase
+        .from("variables")
+        .select("id, label");
+      if (!error && data) {
+        const map: Record<string, string> = {};
+        data.forEach((v: any) => {
+          map[v.id] = v.label;
+        });
+        setVariables(map);
+      }
+    }
+    fetchVariables();
+  }, []);
 
   const fetchManualLogs = async () => {
     try {
@@ -125,11 +143,12 @@ export default function EnhancedAnalytics({ userId }: EnhancedAnalyticsProps) {
       cutoffDate.setDate(cutoffDate.getDate() - daysBack);
 
       const { data, error } = await supabase
-        .from("daily_logs")
-        .select("id, date, variable, value, notes, created_at")
+        .from("logs")
+        .select("id, date, variable_id, value, notes, created_at")
         .eq("user_id", userId)
         .gte("date", cutoffDate.toISOString())
-        .order("date", { ascending: true });
+        .order("date", { ascending: true })
+        .limit(200); // Add limit to prevent loading too much data
 
       if (error) throw error;
       setLogs(data || []);
@@ -159,7 +178,7 @@ export default function EnhancedAnalytics({ userId }: EnhancedAnalyticsProps) {
   };
 
   const getUniqueVariables = () => {
-    const variables = new Set(logs.map((log) => log.variable));
+    const variables = new Set(logs.map((log) => log.variable_id));
     return Array.from(variables).sort();
   };
 
@@ -367,7 +386,7 @@ export default function EnhancedAnalytics({ userId }: EnhancedAnalyticsProps) {
     if (!selectedVariable) return null;
 
     const variableLogs = logs.filter(
-      (log) => log.variable === selectedVariable
+      (log) => log.variable_id === selectedVariable
     );
     const numericLogs = variableLogs.filter((log) => isNumeric(log.value));
 
@@ -380,7 +399,7 @@ export default function EnhancedAnalytics({ userId }: EnhancedAnalyticsProps) {
       labels: numericLogs.map((log) => formatDate(log.date)),
       datasets: [
         {
-          label: selectedVariable,
+          label: variables[selectedVariable] || selectedVariable,
           data,
           borderColor: color,
           backgroundColor: chartType === "bar" ? color + "80" : color + "20",
@@ -426,7 +445,7 @@ export default function EnhancedAnalytics({ userId }: EnhancedAnalyticsProps) {
   const variableStats = useMemo(() => {
     if (!selectedVariable) return null;
     const variableLogs = logs.filter(
-      (log) => log.variable === selectedVariable
+      (log) => log.variable_id === selectedVariable
     );
     return calculateStats(variableLogs);
   }, [logs, selectedVariable]);
@@ -461,11 +480,7 @@ export default function EnhancedAnalytics({ userId }: EnhancedAnalyticsProps) {
     );
   }
 
-  const variables = getUniqueVariables();
-  const numericVariables = variables.filter((variable) =>
-    logs.some((log) => log.variable === variable && isNumeric(log.value))
-  );
-
+  const numericVariables = getUniqueVariables();
   const chartData = prepareChartData();
 
   return (
@@ -500,7 +515,7 @@ export default function EnhancedAnalytics({ userId }: EnhancedAnalyticsProps) {
             >
               {numericVariables.map((variable) => (
                 <MenuItem key={variable} value={variable}>
-                  {variable}
+                  {variables[variable] || variable}
                 </MenuItem>
               ))}
             </Select>
@@ -676,7 +691,7 @@ export default function EnhancedAnalytics({ userId }: EnhancedAnalyticsProps) {
                 }}
               >
                 <Typography variant="h6" component="h4">
-                  {selectedVariable}
+                  {variables[selectedVariable] || selectedVariable}
                 </Typography>
                 <Box sx={{ display: "flex", gap: 1 }}>
                   <Chip

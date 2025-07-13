@@ -19,6 +19,10 @@ import {
   FormControlLabel,
   Chip,
   CircularProgress,
+  Card,
+  CardContent,
+  CardHeader,
+  Grid,
 } from "@mui/material";
 import {
   FaShieldAlt,
@@ -64,7 +68,7 @@ function SharedVariablesViewer({ username }: { username: string }) {
       }
       // 2. Fetch shared variables
       const { data: vars, error: varError } = await supabase
-        .from("variable_sharing_settings")
+        .from("user_variable_preferences")
         .select("variable_name, category")
         .eq("user_id", userProfile.id)
         .eq("is_shared", true);
@@ -84,16 +88,23 @@ function SharedVariablesViewer({ username }: { username: string }) {
   if (!sharedVars.length)
     return <Typography>No shared variables for this user.</Typography>;
   return (
-    <Paper sx={{ p: 2, mb: 2 }}>
-      <Typography variant="h6" gutterBottom>
-        Shared Variables
-      </Typography>
-      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-        {sharedVars.map((v) => (
-          <Chip key={v.variable_name} label={v.variable_name} />
-        ))}
-      </Box>
-    </Paper>
+    <Card className="mb-4">
+      <CardContent className="p-4 lg:p-6">
+        <Typography variant="h6" className="text-white font-semibold mb-3">
+          Shared Variables
+        </Typography>
+        <Box className="flex flex-wrap gap-2">
+          {sharedVars.map((v) => (
+            <Chip
+              key={v.variable_name}
+              label={v.variable_name}
+              className="bg-gold text-black font-medium"
+              size="small"
+            />
+          ))}
+        </Box>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -154,10 +165,10 @@ export default function ProfilePage() {
   // Load privacy settings
   const loadPrivacySettings = async () => {
     try {
-      setLoading(true);
+      setPrivacyLoading(true);
 
       const { data: varSettings, error: varError } = await supabase
-        .from("variable_sharing_settings")
+        .from("user_variable_preferences")
         .select("*")
         .eq("user_id", user?.id);
 
@@ -168,7 +179,7 @@ export default function ProfilePage() {
       console.error("Error loading privacy settings:", error);
       setError("Failed to load shared variables");
     } finally {
-      setLoading(false);
+      setPrivacyLoading(false);
     }
   };
 
@@ -198,87 +209,99 @@ export default function ProfilePage() {
   const handleEdit = () => {
     setForm(profile!);
     setEditMode(true);
-    setError("");
   };
 
   const handleCancel = () => {
-    setEditMode(false);
     setForm(profile!);
-    setError("");
+    setEditMode(false);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setForm((f) => ({ ...f, [name]: value }));
-    if (name === "username") checkUsername(value);
+    if (name === "username") {
+      checkUsername(value);
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    if (!form.name || !form.date_of_birth || !form.username) {
-      setError("All fields are required.");
-      return;
-    }
-    if (!usernameAvailable) {
-      setError("Username is already taken.");
-      return;
-    }
+    if (!user) return;
     setSaving(true);
-    const { error: upsertError } = await supabase.from("profiles").upsert({
-      id: user?.id,
-      ...form,
-    });
-    setSaving(false);
-    if (upsertError) {
-      setError(upsertError.message);
-    } else {
+    try {
+      const { error } = await supabase.from("profiles").upsert({
+        id: user.id,
+        username: form.username,
+        name: form.name,
+        date_of_birth: form.date_of_birth,
+      });
+      if (error) throw error;
       setProfile(form);
       setEditMode(false);
+    } catch (error) {
+      console.error("Error saving profile:", error);
+      setError("Failed to save profile.");
+    } finally {
+      setSaving(false);
     }
   };
 
-  // Handle avatar upload
   const handleAvatarUpload = async (filePath: string) => {
-    setSaving(true);
-    const { error: upsertError } = await supabase.from("profiles").upsert({
-      id: user?.id,
-      avatar_url: filePath,
-    });
-    setSaving(false);
-    if (!upsertError) {
-      setProfile((prev) => (prev ? { ...prev, avatar_url: filePath } : prev));
-      setForm((prev) => ({ ...prev, avatar_url: filePath }));
+    if (!user) return;
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ avatar_url: filePath })
+        .eq("id", user.id);
+      if (error) throw error;
+      setProfile((p) => ({ ...p!, avatar_url: filePath }));
+    } catch (error) {
+      console.error("Error updating avatar:", error);
     }
   };
 
-  // Privacy functions
   const handleVariableSharingChange = async (
     variableName: string,
     isShared: boolean
   ) => {
+    if (!user) return;
+    setPrivacySaving(true);
     try {
-      setPrivacySaving(true);
+      // First get the variable ID from the variable name
+      const { data: variable, error: varError } = await supabase
+        .from("variables")
+        .select("id")
+        .eq("label", variableName)
+        .single();
+
+      if (varError) {
+        console.error("Error finding variable:", varError);
+        throw new Error("Variable not found");
+      }
+
       const { error } = await supabase
-        .from("variable_sharing_settings")
+        .from("user_variable_preferences")
         .upsert({
-          user_id: user?.id,
-          variable_name: variableName,
+          user_id: user.id,
+          variable_id: variable.id,
           is_shared: isShared,
-          variable_type: "predefined",
-          updated_at: new Date().toISOString(),
         });
       if (error) throw error;
-      await loadPrivacySettings();
       setPrivacyMessage({
         type: "success",
-        text: "Variable sharing setting updated",
+        text: `${variableName} ${
+          isShared ? "shared" : "unshared"
+        } successfully.`,
       });
+      setTimeout(() => setPrivacyMessage(null), 3000);
+      loadPrivacySettings();
     } catch (error) {
+      console.error("Error updating variable sharing:", error);
       setPrivacyMessage({
         type: "error",
-        text: "Failed to update variable sharing setting",
+        text: "Failed to update variable sharing.",
       });
+      setTimeout(() => setPrivacyMessage(null), 3000);
     } finally {
       setPrivacySaving(false);
     }
@@ -288,281 +311,258 @@ export default function ProfilePage() {
     const setting = variableSettings.find(
       (s) => s.variable_name === variableName
     );
-    return setting?.is_shared ?? false;
+    return setting?.is_shared || false;
   };
 
   const getSharedVariablesCount = () => {
     return variableSettings.filter((s) => s.is_shared).length;
   };
 
-  // Group variables by category
-  const groupedVariables = {
-    "Mental & Emotional": LOG_LABELS.filter((v) =>
-      [
-        "Stress",
-        "Cognitive Control",
-        "Anxiety Before Bed",
-        "Mood",
-        "Emotional Event",
-      ].includes(v.label)
-    ),
-    "Sleep & Recovery": LOG_LABELS.filter((v) =>
-      [
-        "Sleep Time",
-        "Fell Asleep Time",
-        "Sleep Duration",
-        "Sleep Quality",
-        "Naps",
-      ].includes(v.label)
-    ),
-    "Physical Health": LOG_LABELS.filter((v) =>
-      [
-        "Exercise",
-        "Illness/Symptoms",
-        "Body Temp (subjective)",
-        "Menstrual Phase",
-      ].includes(v.label)
-    ),
-    "Substances & Diet": LOG_LABELS.filter((v) =>
-      [
-        "Caffeine",
-        "Alcohol",
-        "Nicotine",
-        "Cannabis/THC",
-        "Medications/Supplements",
-        "Big Meal Late",
-        "Late Sugar Intake",
-        "Intermittent Fasting",
-        "Hydration",
-      ].includes(v.label)
-    ),
-    Environment: LOG_LABELS.filter((v) =>
-      [
-        "Room Temp",
-        "Light Exposure",
-        "Noise Disturbances",
-        "Travel/Jet Lag",
-        "Altitude Change",
-      ].includes(v.label)
-    ),
-    "Oura Data": [
-      {
-        label: "Heart Rate",
-        type: "number",
-        description: "Resting heart rate data",
-        icon: "❤️",
-      },
-      {
-        label: "Sleep Score",
-        type: "number",
-        description: "Oura sleep score",
-        icon: "😴",
-      },
-      {
-        label: "Readiness Score",
-        type: "number",
-        description: "Oura readiness score",
-        icon: "⚡",
-      },
-      {
-        label: "Activity Score",
-        type: "number",
-        description: "Oura activity score",
-        icon: "🏃",
-      },
-      {
-        label: "Deep Sleep",
-        type: "number",
-        description: "Deep sleep duration",
-        icon: "🌙",
-      },
-      {
-        label: "REM Sleep",
-        type: "number",
-        description: "REM sleep duration",
-        icon: "💭",
-      },
-      {
-        label: "Light Sleep",
-        type: "number",
-        description: "Light sleep duration",
-        icon: "😌",
-      },
-    ],
-  };
+  useEffect(() => {
+    if (user) {
+      loadPrivacySettings();
+    }
+  }, [user]);
 
   if (loading || profileLoading) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
-        Loading...
-      </div>
+      <Container maxWidth="md" className="px-4">
+        <Box className="flex items-center justify-center min-h-96">
+          <CircularProgress className="text-gold" />
+        </Box>
+      </Container>
     );
   }
 
   if (!user) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
-        <Paper elevation={4} className="p-10 rounded-2xl shadow-lg">
-          <Typography variant="h5">You are not logged in.</Typography>
-        </Paper>
-      </div>
+      <Container maxWidth="md" className="px-4">
+        <Box className="text-center">
+          <Typography variant="h6" className="text-white">
+            Please sign in to view your profile.
+          </Typography>
+        </Box>
+      </Container>
     );
   }
 
-  if (error && !editMode) {
+  // If viewing another user's profile
+  if (username && username !== profile?.username) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
-        <Paper elevation={4} className="p-10 rounded-2xl shadow-lg">
-          <Typography color="error">{error}</Typography>
-        </Paper>
-      </div>
+      <Container maxWidth="md" className="px-4">
+        <Box className="space-y-6">
+          <Box className="text-center">
+            <Typography
+              variant="h3"
+              className="font-bold text-white mb-2 text-2xl lg:text-3xl"
+            >
+              {username}'s Profile
+            </Typography>
+          </Box>
+          <SharedVariablesViewer username={username as string} />
+        </Box>
+      </Container>
     );
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Typography
-        variant="h3"
-        component="h1"
-        gutterBottom
-        align="center"
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 1,
-        }}
-      >
-        <FaUserCircle
-          style={{ fontSize: 48, marginRight: 12, verticalAlign: "middle" }}
-        />
-        Profile & Privacy
-      </Typography>
-
-      {/* Profile Section */}
-      <Paper elevation={3} sx={{ p: 4, mb: 4 }}>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 3 }}>
-          <Typography variant="h5" component="h2">
-            Profile Information
+    <Container maxWidth="md" className="px-4">
+      <Box className="space-y-6 lg:space-y-8">
+        {/* Header Section */}
+        <Box className="text-center mb-6 lg:mb-8">
+          <Typography
+            variant="h3"
+            className="font-bold text-white mb-2 text-2xl lg:text-3xl"
+          >
+            Profile
+          </Typography>
+          <Typography
+            variant="body1"
+            className="text-text-secondary text-sm lg:text-base"
+          >
+            Manage your account and privacy settings
           </Typography>
         </Box>
 
-        <Box
-          sx={{
-            display: "flex",
-            flexDirection: { xs: "column", md: "row" },
-            gap: 4,
-          }}
-        >
-          {/* Avatar Section */}
-          <Box
-            sx={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              minWidth: 200,
-            }}
-          >
-            <AvatarUploader
-              userId={user.id}
-              avatarUrl={profile?.avatar_url || null}
-              onUpload={handleAvatarUpload}
-            />
-          </Box>
-
-          {/* Profile Details */}
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="body1" sx={{ mb: 2 }}>
-              <b>Email:</b> {user.email}
-            </Typography>
-
-            {editMode ? (
-              <form
-                onSubmit={handleSave}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "16px",
-                }}
-              >
-                <TextField
-                  label="Username"
-                  name="username"
-                  value={form.username}
-                  onChange={handleChange}
-                  required
-                  helperText={
-                    checkingUsername
-                      ? "Checking..."
-                      : form.username && !usernameAvailable
-                      ? "Username is taken"
-                      : form.username
-                      ? "Username is available"
-                      : ""
-                  }
-                  error={!!form.username && !usernameAvailable}
-                />
-                <TextField
-                  label="Name"
-                  name="name"
-                  value={form.name}
-                  onChange={handleChange}
-                  required
-                />
-                <TextField
-                  label="Date of Birth"
-                  name="date_of_birth"
-                  type="date"
-                  InputLabelProps={{ shrink: true }}
-                  value={form.date_of_birth}
-                  onChange={handleChange}
-                  required
-                />
-                {error && <Typography color="error">{error}</Typography>}
-                <Box sx={{ display: "flex", gap: 2, mt: 2 }}>
-                  <Button
-                    type="submit"
-                    variant="contained"
-                    color="primary"
-                    disabled={saving || checkingUsername || !usernameAvailable}
-                  >
-                    {saving ? "Saving..." : "Save"}
-                  </Button>
-                  <Button
-                    onClick={handleCancel}
-                    variant="outlined"
-                    color="secondary"
-                  >
-                    Cancel
-                  </Button>
-                </Box>
-              </form>
-            ) : (
-              <>
-                <Typography variant="body1" sx={{ mb: 2 }}>
-                  <b>Username:</b> {profile?.username}
-                </Typography>
-                <Typography variant="body1" sx={{ mb: 2 }}>
-                  <b>Name:</b> {profile?.name}
-                </Typography>
-                <Typography variant="body1" sx={{ mb: 2 }}>
-                  <b>Date of Birth:</b> {profile?.date_of_birth}
-                </Typography>
-                <Button onClick={handleEdit} variant="contained" sx={{ mt: 2 }}>
-                  Edit Profile
+        {/* Profile Information */}
+        <Card>
+          <CardHeader
+            title={
+              <Typography variant="h6" className="text-white font-semibold">
+                Profile Information
+              </Typography>
+            }
+            action={
+              !editMode && (
+                <Button
+                  variant="outlined"
+                  onClick={handleEdit}
+                  className="text-gold border-gold hover:bg-gold/10"
+                  size="small"
+                >
+                  Edit
                 </Button>
-              </>
+              )
+            }
+          />
+          <CardContent className="p-4 lg:p-6">
+            {error && (
+              <Alert severity="error" className="mb-4">
+                {error}
+              </Alert>
             )}
-          </Box>
-        </Box>
-      </Paper>
 
-      {/* Privacy & Sharing Section (moved from /analytics) */}
-      <AnalyzePrivacySection />
+            <Box className="space-y-6">
+              {/* Avatar Section */}
+              <Box className="flex flex-col lg:flex-row lg:items-center gap-4">
+                <AvatarUploader
+                  currentAvatarUrl={profile?.avatar_url}
+                  onUpload={handleAvatarUpload}
+                />
+                <Box className="flex-1">
+                  <Typography
+                    variant="body2"
+                    className="text-text-secondary mb-2"
+                  >
+                    Profile Picture
+                  </Typography>
+                  <Typography variant="body2" className="text-text-secondary">
+                    Upload a profile picture to personalize your account
+                  </Typography>
+                </Box>
+              </Box>
 
-      <SharedVariablesViewer
-        username={typeof username === "string" ? username : ""}
-      />
+              {/* Profile Form */}
+              <Box component="form" onSubmit={handleSave} className="space-y-4">
+                <Grid container spacing={3}>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      fullWidth
+                      label="Username"
+                      name="username"
+                      value={form.username}
+                      onChange={handleChange}
+                      disabled={!editMode}
+                      error={
+                        !usernameAvailable &&
+                        form.username !== profile?.username
+                      }
+                      helperText={
+                        !usernameAvailable &&
+                        form.username !== profile?.username
+                          ? "Username is already taken"
+                          : checkingUsername
+                          ? "Checking availability..."
+                          : ""
+                      }
+                      className="mb-4"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      fullWidth
+                      label="Full Name"
+                      name="name"
+                      value={form.name}
+                      onChange={handleChange}
+                      disabled={!editMode}
+                      className="mb-4"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      fullWidth
+                      label="Date of Birth"
+                      name="date_of_birth"
+                      type="date"
+                      value={form.date_of_birth}
+                      onChange={handleChange}
+                      disabled={!editMode}
+                      InputLabelProps={{ shrink: true }}
+                      className="mb-4"
+                    />
+                  </Grid>
+                </Grid>
+
+                {editMode && (
+                  <Box className="flex flex-col sm:flex-row gap-3 pt-4">
+                    <Button
+                      type="submit"
+                      variant="contained"
+                      disabled={saving || !usernameAvailable}
+                      className="flex-1"
+                      size="large"
+                    >
+                      {saving ? "Saving..." : "Save Changes"}
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      onClick={handleCancel}
+                      disabled={saving}
+                      className="flex-1"
+                      size="large"
+                    >
+                      Cancel
+                    </Button>
+                  </Box>
+                )}
+              </Box>
+            </Box>
+          </CardContent>
+        </Card>
+
+        {/* Privacy Settings */}
+        <Card>
+          <CardHeader
+            title={
+              <Box className="flex items-center gap-2">
+                <FaShieldAlt className="text-gold" />
+                <Typography variant="h6" className="text-white font-semibold">
+                  Privacy Settings
+                </Typography>
+              </Box>
+            }
+          />
+          <CardContent className="p-4 lg:p-6">
+            {privacyMessage && (
+              <Alert
+                severity={privacyMessage.type}
+                className="mb-4"
+                onClose={() => setPrivacyMessage(null)}
+              >
+                {privacyMessage.text}
+              </Alert>
+            )}
+
+            <Box className="space-y-4">
+              <Typography variant="body2" className="text-text-secondary mb-4">
+                Control which variables you want to share with the community.
+                Shared variables will be visible to other users.
+              </Typography>
+
+              <VariableSharingManager
+                variableSettings={variableSettings}
+                onVariableSharingChange={handleVariableSharingChange}
+                loading={privacyLoading}
+                saving={privacySaving}
+              />
+
+              <Box className="mt-6">
+                <Typography
+                  variant="h6"
+                  className="text-white font-semibold mb-3"
+                >
+                  Privacy Analysis
+                </Typography>
+                <AnalyzePrivacySection
+                  variableSettings={variableSettings}
+                  sharedCount={getSharedVariablesCount()}
+                />
+              </Box>
+            </Box>
+          </CardContent>
+        </Card>
+      </Box>
     </Container>
   );
 }

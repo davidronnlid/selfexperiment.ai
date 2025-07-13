@@ -7,8 +7,11 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
 
-  // Performance optimizations
-  swcMinify: true, // Use SWC for faster minification
+  // Completely hide Next.js development indicators/overlays
+  devIndicators: {
+    buildActivity: false,
+    buildActivityPosition: "bottom-right",
+  },
 
   // Experimental features for better performance
   experimental: {
@@ -53,6 +56,11 @@ const nextConfig: NextConfig = {
   // TypeScript optimizations
   typescript: {
     ignoreBuildErrors: false,
+  },
+
+  // Disable all overlay systems
+  compiler: {
+    removeConsole: process.env.NODE_ENV === "production",
   },
 };
 

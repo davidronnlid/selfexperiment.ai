@@ -275,34 +275,11 @@ export default function VariableDisplay({
               Your Settings:
             </Typography>
             <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-              {userPreferences.preferred_unit && (
-                <Chip
-                  label={`Unit: ${userPreferences.preferred_unit}`}
-                  size="small"
-                  variant="outlined"
-                />
-              )}
-              {userPreferences.is_tracked && (
-                <Chip
-                  label="Tracking"
-                  size="small"
-                  color="success"
-                  variant="outlined"
-                />
-              )}
               {userPreferences.is_shared && (
                 <Chip
-                  label={`Shared (${userPreferences.share_level})`}
+                  label="Shared"
                   size="small"
                   color="info"
-                  variant="outlined"
-                />
-              )}
-              {userPreferences.is_favorite && (
-                <Chip
-                  label="Favorite"
-                  size="small"
-                  color="warning"
                   variant="outlined"
                 />
               )}
@@ -359,11 +336,11 @@ export default function VariableDisplay({
                   sx={{ display: "flex", justifyContent: "space-between" }}
                 >
                   <Typography variant="body2" color="textSecondary">
-                    {new Date(log.logged_at).toLocaleDateString()}
+                    {new Date(log.created_at).toLocaleDateString()}
                   </Typography>
                   <Typography variant="body2">
                     {formatValue(
-                      log.display_value || log.canonical_value || 0,
+                      log.value || log.canonical_value || 0,
                       log.display_unit
                     )}
                   </Typography>

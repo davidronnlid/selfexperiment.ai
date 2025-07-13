@@ -389,7 +389,7 @@ export default function ExperimentDesigner() {
 
   useEffect(() => {
     async function fetchAndSortVariables() {
-      const { data: logs } = await supabase.from("daily_logs").select("label");
+      const { data: logs } = await supabase.from("logs").select("label");
       const logCounts: Record<string, number> = {};
       (logs || []).forEach((row: any) => {
         if (row.label) logCounts[row.label] = (logCounts[row.label] || 0) + 1;

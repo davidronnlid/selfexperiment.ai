@@ -1,10 +1,10 @@
 import { useState, useCallback } from "react";
 import {
-  fetchVariableSharingSettings,
-  upsertVariableSharingSetting,
+  fetchUserVariablePreferences,
+  upsertUserVariablePreference,
 } from "../utils/privacyApi";
 
-export interface VariableSharingSetting {
+export interface UserVariablePreference {
   variable_name: string;
   is_shared: boolean;
   variable_type: string;
@@ -12,10 +12,13 @@ export interface VariableSharingSetting {
   variable_id?: string;
   label?: string;
   icon?: string;
+  preferred_unit?: string;
+  display_name?: string;
+  is_favorite?: boolean;
 }
 
-export function useVariableSharingSettings(userId: string) {
-  const [settings, setSettings] = useState<VariableSharingSetting[]>([]);
+export function useUserVariablePreferences(userId: string) {
+  const [preferences, setPreferences] = useState<UserVariablePreference[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,19 +29,21 @@ export function useVariableSharingSettings(userId: string) {
     setError(null);
 
     try {
-      const { data, error: fetchError } = await fetchVariableSharingSettings(
+      const { data, error: fetchError } = await fetchUserVariablePreferences(
         userId
       );
 
       if (fetchError) {
         setError(fetchError.message);
-        setSettings([]);
+        setPreferences([]);
       } else {
-        setSettings((data as VariableSharingSetting[]) || []);
+        setPreferences((data as UserVariablePreference[]) || []);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load settings");
-      setSettings([]);
+      setError(
+        err instanceof Error ? err.message : "Failed to load preferences"
+      );
+      setPreferences([]);
     } finally {
       setLoading(false);
     }
@@ -49,7 +54,10 @@ export function useVariableSharingSettings(userId: string) {
       variableName: string,
       isShared: boolean,
       variableType: string,
-      category?: string
+      category?: string,
+      preferredUnit?: string,
+      displayName?: string,
+      isFavorite?: boolean
     ) => {
       if (!userId) return;
 
@@ -57,22 +65,25 @@ export function useVariableSharingSettings(userId: string) {
       setError(null);
 
       try {
-        const { error: updateError } = await upsertVariableSharingSetting({
+        const { error: updateError } = await upsertUserVariablePreference({
           userId,
           variableName,
           isShared,
           variableType,
           category,
+          preferredUnit,
+          displayName,
+          isFavorite,
         });
 
         if (updateError) {
           setError(updateError.message);
         } else {
-          await load(); // Reload settings after update
+          await load(); // Reload preferences after update
         }
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Failed to update setting"
+          err instanceof Error ? err.message : "Failed to update preference"
         );
       } finally {
         setLoading(false);
@@ -81,5 +92,5 @@ export function useVariableSharingSettings(userId: string) {
     [userId, load]
   );
 
-  return { settings, loading, error, load, update };
+  return { preferences, loading, error, load, update };
 }

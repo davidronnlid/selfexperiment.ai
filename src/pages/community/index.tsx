@@ -86,13 +86,13 @@ export default function CommunityPage() {
       }
       // Get recent shared logs from followed users
       const { data: logs, error: logsError } = await supabase
-        .from("daily_logs")
+        .from("logs")
         .select(
           "id, date, value, notes, label, user_id, profiles: user_id (username)"
         )
         .in("user_id", followedIds)
         .order("date", { ascending: false })
-        .limit(30);
+        .limit(15); // Reduced from 30 to 15 for faster loading
       console.log("logs query result", { logs, logsError }); // DEBUG LOG
       if (logsError) {
         console.error("Logs query error:", logsError);

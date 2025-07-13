@@ -1,5 +1,5 @@
-// Universal Variables System TypeScript Interfaces
-// Optimized for type safety and developer experience
+// Simplified Variables System TypeScript Interfaces
+// Only includes fields that are actually used in the app
 
 // ============================================================================
 // CORE INTERFACES
@@ -30,17 +30,13 @@ export interface Variable {
     | "apple_health"
     | "formula"
     | "calculated";
-  collection_method?: string;
-  frequency?: string;
 
   // Categorization
   category?: string;
-  subcategory?: string;
-  tags?: string[];
+  tags?: string[]; // For variable tagging
 
-  // Privacy & Sharing
-  is_public?: boolean;
-  privacy_level?: "private" | "friends" | "public";
+  // User preferences
+  user_preferences?: any; // User-specific preferences
 
   // Metadata
   created_at: string;
@@ -52,38 +48,14 @@ export interface Variable {
 export interface VariableValidationRules {
   min?: number;
   max?: number;
-  minLength?: number;
-  maxLength?: number;
-  required?: boolean;
-  unit?: string;
-  scaleMin?: number;
-  scaleMax?: number;
-  options?: string[];
+  scaleMin?: number; // For scale-based validation
+  scaleMax?: number; // For scale-based validation
+  step?: number;
   pattern?: string;
-}
-
-export interface UserVariablePreference {
-  id: string;
-  user_id: string;
-  variable_id: string;
-
-  // User-specific settings
-  preferred_unit?: string;
-  display_name?: string;
-  is_tracked: boolean;
-  tracking_frequency?: string;
-
-  // Privacy settings
-  is_shared: boolean;
-  share_level: "private" | "friends" | "public";
-
-  // UI preferences
-  display_order: number;
-  is_favorite: boolean;
-
-  // Metadata
-  created_at: string;
-  updated_at: string;
+  required?: boolean;
+  options?: string[]; // For categorical variables
+  maxLength?: number; // For text validation
+  unit?: string; // For unit validation
 }
 
 export interface VariableLog {
@@ -91,170 +63,78 @@ export interface VariableLog {
   user_id: string;
   variable_id: string;
 
-  // Core data
-  canonical_value?: number;
-  display_value?: string;
-  display_unit?: string;
+  // Core data (simplified)
+  value?: string;
+  canonical_value?: string; // Canonical value for the log
 
   // Metadata
-  logged_at: string;
+  created_at: string;
   source?: string;
-  confidence_score?: number;
 
   // Additional context
   notes?: string;
-  tags?: string[];
-  location?: GeoLocation;
   context?: Record<string, any>;
 
   // Privacy
   is_private: boolean;
 }
 
-export interface GeoLocation {
-  latitude: number;
-  longitude: number;
-  accuracy?: number;
-}
-
-export interface UnitConversion {
-  id: string;
-  from_unit: string;
-  to_unit: string;
-  conversion_factor: number;
-  offset?: number;
-  formula?: string;
-  unit_group: string;
-  is_active: boolean;
-  created_at: string;
-}
-
-export interface VariableRelationship {
-  id: string;
-  variable_id_1: string;
-  variable_id_2: string;
-  relationship_type: "correlation" | "causation" | "inverse" | "composite";
-  strength?: number;
-  confidence?: number;
-  analysis_date: string;
-  sample_size?: number;
-  methodology?: string;
-}
-
-// ============================================================================
-// UTILITY TYPES
-// ============================================================================
-
-export type DataType = Variable["data_type"];
-export type SourceType = Variable["source_type"];
-export type PrivacyLevel = Variable["privacy_level"];
-export type RelationshipType = VariableRelationship["relationship_type"];
-
-export interface VariableWithPreferences extends Variable {
-  user_preferences?: UserVariablePreference;
-}
-
 export interface VariableWithLogs extends Variable {
   logs?: VariableLog[];
 }
 
-export interface VariableDisplayData {
-  variable: Variable;
-  value: string | number;
-  unit?: string;
-  converted_value?: number;
-  converted_unit?: string;
-  user_preferences?: UserVariablePreference;
+// ============================================================================
+// ROUTINE INTERFACES
+// ============================================================================
+
+export interface DailyRoutine {
+  id: string;
+  user_id: string;
+  routine_name: string;
+  notes?: string;
+  is_active: boolean;
+  weekdays: number[];
+  created_at: string;
+  updated_at: string;
+  last_auto_logged?: string;
+  times?: RoutineTime[];
 }
 
-// ============================================================================
-// UNIT CONVERSION TYPES
-// ============================================================================
-
-export interface UnitGroup {
-  name: string;
-  units: string[];
-  base_unit: string;
+export interface RoutineTime {
+  time_id: string;
+  time_of_day: string;
+  time_name?: string;
+  is_active: boolean;
+  display_order: number;
+  variables?: RoutineVariable[];
 }
 
-export const UNIT_GROUPS: Record<string, UnitGroup> = {
-  mass: {
-    name: "Mass",
-    units: ["kg", "lb", "g", "oz"],
-    base_unit: "kg",
-  },
-  distance: {
-    name: "Distance",
-    units: ["km", "mi", "m", "ft", "cm", "in"],
-    base_unit: "m",
-  },
-  time: {
-    name: "Time",
-    units: ["hours", "minutes", "seconds"],
-    base_unit: "seconds",
-  },
-  temperature: {
-    name: "Temperature",
-    units: ["°C", "°F"],
-    base_unit: "°C",
-  },
-};
-
-// ============================================================================
-// VALIDATION TYPES
-// ============================================================================
-
-export interface ValidationResult {
-  isValid: boolean;
-  error?: string;
-  warning?: string;
-  suggestions?: string[];
-}
-
-export interface ValidationContext {
-  variable: Variable;
-  user_preferences?: UserVariablePreference;
-  previous_values?: VariableLog[];
-}
-
-// ============================================================================
-// ANALYTICS TYPES
-// ============================================================================
-
-export interface VariableAnalytics {
+export interface RoutineVariable {
   variable_id: string;
-  total_logs: number;
-  date_range: {
-    start: string;
-    end: string;
-  };
-  trends: {
-    direction: "increasing" | "decreasing" | "stable";
-    change_percentage: number;
-    period: string;
-  };
-  correlations: VariableCorrelation[];
-  insights: VariableInsight[];
-}
-
-export interface VariableCorrelation {
-  variable_id: string;
-  correlation_strength: number;
-  confidence: number;
-  direction: "positive" | "negative";
-  sample_size: number;
-}
-
-export interface VariableInsight {
-  type: "trend" | "pattern" | "anomaly" | "correlation";
-  title: string;
-  description: string;
-  confidence: number;
-  data_points: number;
+  variable_name: string;
+  variable_slug: string;
+  default_value: string;
+  default_unit?: string;
+  display_order: number;
 }
 
 // ============================================================================
-// API REQUEST/RESPONSE TYPES
+// SHARING INTERFACES
+// ============================================================================
+
+export interface VariableSharingSettings {
+  id: number;
+  user_id: string;
+  variable_name: string;
+  is_shared: boolean;
+  variable_type: "predefined" | "custom" | "oura";
+  category?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ============================================================================
+// API REQUEST/RESPONSE INTERFACES
 // ============================================================================
 
 export interface CreateVariableRequest {
@@ -262,155 +142,215 @@ export interface CreateVariableRequest {
   label: string;
   description?: string;
   icon?: string;
-  data_type: DataType;
+  data_type: "continuous" | "categorical" | "boolean" | "time" | "text";
+  validation_rules?: VariableValidationRules;
   canonical_unit?: string;
   unit_group?: string;
   convertible_units?: string[];
   default_display_unit?: string;
-  source_type: SourceType;
+  source_type:
+    | "manual"
+    | "withings"
+    | "oura"
+    | "apple_health"
+    | "formula"
+    | "calculated";
   category?: string;
-  subcategory?: string;
-  tags?: string[];
-  validation_rules?: VariableValidationRules;
 }
 
-export interface UpdateVariableRequest extends Partial<CreateVariableRequest> {
-  id: string;
+export interface UpdateVariableRequest {
+  label?: string;
+  description?: string;
+  icon?: string;
+  data_type?: "continuous" | "categorical" | "boolean" | "time" | "text";
+  validation_rules?: VariableValidationRules;
+  canonical_unit?: string;
+  unit_group?: string;
+  convertible_units?: string[];
+  default_display_unit?: string;
+  source_type?:
+    | "manual"
+    | "withings"
+    | "oura"
+    | "apple_health"
+    | "formula"
+    | "calculated";
+  category?: string;
+  is_active?: boolean;
 }
 
 export interface CreateVariableLogRequest {
   variable_id: string;
-  display_value: string;
-  display_unit?: string;
+  value: string;
   notes?: string;
-  tags?: string[];
   context?: Record<string, any>;
   is_private?: boolean;
 }
 
-export interface UpdateVariableLogRequest
-  extends Partial<CreateVariableLogRequest> {
-  id: string;
+export interface UpdateVariableLogRequest {
+  value?: string;
+  notes?: string;
+  context?: Record<string, any>;
+  is_private?: boolean;
 }
 
-export interface VariableSearchRequest {
-  query?: string;
+// ============================================================================
+// UTILITY INTERFACES
+// ============================================================================
+
+export interface GeoLocation {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+}
+
+export interface VariableFilter {
   category?: string;
-  data_type?: DataType;
-  source_type?: SourceType;
-  tags?: string[];
-  is_tracked?: boolean;
-  limit?: number;
-  offset?: number;
+  data_type?: string;
+  source_type?: string;
+  is_active?: boolean;
+  search?: string;
 }
 
-export interface VariableSearchResponse {
-  variables: VariableWithPreferences[];
+export interface VariableLogFilter {
+  variable_id?: string;
+  source?: string;
+  start_date?: string;
+  end_date?: string;
+  is_private?: boolean;
+}
+
+// ============================================================================
+// RESPONSE INTERFACES
+// ============================================================================
+
+export interface VariableListResponse {
+  variables: Variable[];
   total: number;
-  has_more: boolean;
+  page: number;
+  limit: number;
+}
+
+export interface VariableLogListResponse {
+  logs: VariableLog[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface VariableStats {
+  total_logs: number;
+  first_log_date?: string;
+  last_log_date?: string;
+  average_value?: number;
+  min_value?: number;
+  max_value?: number;
 }
 
 // ============================================================================
-// CONSTANTS
+// VALIDATION INTERFACES
 // ============================================================================
 
-export const VARIABLE_CATEGORIES = [
-  "Physical Health",
-  "Mental Health",
-  "Sleep & Recovery",
-  "Substances",
-  "Exercise & Fitness",
-  "Environment",
-  "Nutrition",
-  "Social",
-  "Work & Productivity",
-  "Custom",
-] as const;
+export interface ValidationResult {
+  isValid: boolean;
+  error?: string;
+  suggestions?: string[]; // For validation suggestions
+}
 
-export const VARIABLE_SUBCATEGORIES = {
-  "Physical Health": ["Body Metrics", "Vital Signs", "Symptoms", "Medications"],
-  "Mental Health": ["Emotional State", "Stress", "Anxiety", "Mood Disorders"],
-  "Sleep & Recovery": [
-    "Sleep Quality",
-    "Sleep Timing",
-    "Sleep Environment",
-    "Recovery",
-  ],
-  Substances: [
-    "Stimulants",
-    "Alcohol",
-    "Nicotine",
-    "Medications",
-    "Supplements",
-  ],
-  "Exercise & Fitness": [
-    "Exercise",
-    "Strength Training",
-    "Cardio",
-    "Flexibility",
-  ],
-  Environment: ["Temperature", "Light", "Noise", "Air Quality", "Location"],
-  Nutrition: ["Meals", "Hydration", "Supplements", "Dietary Restrictions"],
-  Social: ["Social Interactions", "Relationships", "Social Events"],
-  "Work & Productivity": ["Work Hours", "Focus", "Creativity", "Stress"],
-  Custom: ["User Defined"],
-} as const;
+export interface UnitConversion {
+  from_unit: string;
+  to_unit: string;
+  conversion_factor: number;
+  offset?: number;
+  formula?: string;
+}
 
-export const DEFAULT_VARIABLES: Omit<CreateVariableRequest, "slug">[] = [
-  {
-    label: "Weight",
-    description: "Body weight measurement",
-    icon: "⚖️",
-    data_type: "continuous",
-    canonical_unit: "kg",
-    unit_group: "mass",
-    convertible_units: ["kg", "lb", "g"],
-    default_display_unit: "kg",
-    source_type: "manual",
-    category: "Physical Health",
-    subcategory: "Body Metrics",
-    tags: ["health", "fitness"],
-    validation_rules: {
-      min: 20,
-      max: 300,
-      unit: "kg",
-      required: true,
-    },
-  },
-  {
-    label: "Sleep Duration",
-    description: "Total sleep time",
-    icon: "😴",
-    data_type: "continuous",
-    canonical_unit: "hours",
-    unit_group: "time",
-    convertible_units: ["hours", "minutes"],
-    default_display_unit: "hours",
-    source_type: "manual",
-    category: "Sleep & Recovery",
-    subcategory: "Sleep Quality",
-    tags: ["sleep", "recovery"],
-    validation_rules: {
-      min: 0,
-      max: 24,
-      unit: "hours",
-      required: true,
-    },
-  },
-  {
-    label: "Mood",
-    description: "Overall mood rating",
-    icon: "😊",
-    data_type: "continuous",
-    canonical_unit: "score",
-    source_type: "manual",
-    category: "Mental Health",
-    subcategory: "Emotional State",
-    tags: ["mental", "emotion"],
-    validation_rules: {
-      scaleMin: 1,
-      scaleMax: 10,
-      required: true,
-    },
-  },
-];
+// ============================================================================
+// EXPERIMENT INTERFACES
+// ============================================================================
+
+export interface Experiment {
+  id: string;
+  name: string;
+  description?: string;
+  start_date: string;
+  end_date: string;
+  is_active: boolean;
+  variables: ExperimentVariable[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExperimentVariable {
+  variable_id: string;
+  variable_name: string;
+  is_independent: boolean;
+  target_value?: string;
+  measurement_frequency: string;
+}
+
+// ============================================================================
+// ANALYTICS INTERFACES
+// ============================================================================
+
+export interface CorrelationAnalysis {
+  variable_id_1: string;
+  variable_id_2: string;
+  correlation_coefficient: number;
+  p_value: number;
+  sample_size: number;
+  analysis_date: string;
+}
+
+export interface TrendAnalysis {
+  variable_id: string;
+  trend_direction: "increasing" | "decreasing" | "stable";
+  trend_strength: number;
+  period_days: number;
+  analysis_date: string;
+}
+
+// ============================================================================
+// EXPORT/IMPORT INTERFACES
+// ============================================================================
+
+export interface VariableExport {
+  variables: Variable[];
+  logs: VariableLog[];
+  routines: DailyRoutine[];
+  sharing_settings: VariableSharingSettings[];
+  export_date: string;
+  version: string;
+}
+
+export interface VariableImport {
+  variables?: Variable[];
+  logs?: VariableLog[];
+  routines?: DailyRoutine[];
+  sharing_settings?: VariableSharingSettings[];
+  import_options: {
+    skip_existing_variables?: boolean;
+    skip_existing_logs?: boolean;
+    skip_existing_routines?: boolean;
+    merge_sharing_settings?: boolean;
+  };
+}
+
+// ============================================================================
+// USER PREFERENCES INTERFACES
+// ============================================================================
+
+export interface UserVariablePreference {
+  id: string;
+  user_id: string;
+  variable_id: string;
+  variable_name: string;
+  is_shared: boolean;
+  variable_type: string;
+  category?: string;
+  preferred_unit?: string;
+  display_name?: string;
+  is_favorite?: boolean;
+  created_at: string;
+  updated_at: string;
+}

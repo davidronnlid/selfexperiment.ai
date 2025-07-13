@@ -127,6 +127,7 @@ export default function ActiveExperimentsPage() {
     fetchExperiments();
   }, [user]);
 
+  // 1. Update fetchLogs and loadTodaysLogs to use logs and variable_id
   useEffect(() => {
     const fetchLogs = async () => {
       if (!user || experiments.length === 0) return;
@@ -137,24 +138,27 @@ export default function ActiveExperimentsPage() {
       > = {};
 
       for (const exp of experiments) {
-        // Fetch logs for independent variable
+        // Fetch logs for independent variable (by variable_id)
         const { data: independentLogs } = await supabase
-          .from("daily_logs")
+          .from("logs")
           .select("*")
           .eq("user_id", user.id)
-          .eq("variable", exp.variable)
-          .order("date", { ascending: false });
+          .eq("variable_id", exp.variable_id)
+          .order("created_at", { ascending: false })
+          .limit(30);
 
-        // Fetch logs for dependent variable
-        const dependentVariable = exp.dependent_variable || exp.effect;
+        // Fetch logs for dependent variable (by variable_id)
+        const dependentVariableId =
+          exp.dependent_variable_id || exp.effect_variable_id;
         let dependentLogs: LogEntry[] = [];
-        if (dependentVariable) {
+        if (dependentVariableId) {
           const { data } = await supabase
-            .from("daily_logs")
+            .from("logs")
             .select("*")
             .eq("user_id", user.id)
-            .eq("variable", dependentVariable)
-            .order("date", { ascending: false });
+            .eq("variable_id", dependentVariableId)
+            .order("created_at", { ascending: false })
+            .limit(30);
           dependentLogs = data || [];
         }
 
@@ -454,9 +458,9 @@ export default function ActiveExperimentsPage() {
     });
   };
 
-  // Submit experiment log
+  // 2. Update submitExperimentLog to use logs and variable_id
   const submitExperimentLog = async (
-    experimentVariableName: string,
+    experimentVariableId: string,
     logValue: string,
     logNotes: string
   ) => {
@@ -466,30 +470,30 @@ export default function ActiveExperimentsPage() {
     try {
       const logData = {
         user_id: user.id,
-        variable: experimentVariableName,
+        variable_id: experimentVariableId,
         value: logValue.trim(),
         notes: logNotes.trim() || null,
-        date: new Date().toISOString(),
         created_at: new Date().toISOString(),
+        source: ["manual"],
       };
 
-      const { error } = await supabase.from("daily_logs").insert([logData]);
+      const { error } = await supabase.from("logs").insert([logData]);
 
       if (error) throw error;
 
       // Clear the form
       setExperimentValues((prev) => ({
         ...prev,
-        [experimentVariableName]: "",
+        [experimentVariableId]: "",
       }));
       setExperimentNotes((prev) => ({
         ...prev,
-        [experimentVariableName]: "",
+        [experimentVariableId]: "",
       }));
 
       // Refresh today's logs and experiments
       await loadTodaysLogs();
-      setSuccessMessage(`Successfully logged ${experimentVariableName}!`);
+      setSuccessMessage(`Successfully logged!`);
       setShowSuccess(true);
     } catch (error) {
       console.error("Error logging experiment data:", error);
@@ -508,11 +512,11 @@ export default function ActiveExperimentsPage() {
     const endOfDay = `${today}T23:59:59.999Z`;
 
     const { data: logs } = await supabase
-      .from("daily_logs")
+      .from("logs")
       .select("*")
       .eq("user_id", user.id)
-      .gte("date", startOfDay)
-      .lte("date", endOfDay);
+      .gte("created_at", startOfDay)
+      .lte("created_at", endOfDay);
 
     if (logs) {
       setTodaysLogs(logs);
@@ -779,7 +783,7 @@ export default function ActiveExperimentsPage() {
                         variant="contained"
                         onClick={() =>
                           submitExperimentLog(
-                            experiment.variable,
+                            experiment.variable_id,
                             experimentValues[experiment.variable] || "",
                             experimentNotes[experiment.variable] || ""
                           )
@@ -903,8 +907,8 @@ export default function ActiveExperimentsPage() {
                           variant="contained"
                           onClick={() =>
                             submitExperimentLog(
-                              experiment.dependent_variable ||
-                                experiment.effect,
+                              experiment.dependent_variable_id ||
+                                experiment.effect_variable_id,
                               experimentValues[
                                 experiment.dependent_variable ||
                                   experiment.effect

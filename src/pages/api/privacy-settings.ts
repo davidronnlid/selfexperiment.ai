@@ -159,7 +159,7 @@ async function handlePost(
         const { data: variable, error: findVarError } = await supabase
           .from("variables")
           .select("id")
-          .eq("name", body.variable_name)
+          .eq("label", body.variable_name)
           .single();
 
         if (findVarError) throw findVarError;

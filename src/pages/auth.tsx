@@ -1,65 +1,306 @@
 "use client";
-import { Auth } from "@supabase/auth-ui-react";
-import { ThemeSupa } from "@supabase/auth-ui-shared";
-import { supabase } from "@/utils/supaBase";
-import { useUser } from "./_app";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { useEffect } from "react";
-import { Typography, Card, CardContent } from "@mui/material";
+import { supabase } from "@/utils/supaBase";
+import {
+  Container,
+  Box,
+  Typography,
+  Button,
+  Card,
+  CardContent,
+  TextField,
+  Divider,
+  Alert,
+  CircularProgress,
+} from "@mui/material";
+import { FaGoogle, FaEye, FaEyeSlash } from "react-icons/fa";
 
-export default function AuthPage() {
-  const { user, loading } = useUser();
+export default function Auth() {
   const router = useRouter();
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  // Redirect authenticated users to the main app
   useEffect(() => {
-    if (!loading && user) {
-      router.push("/log");
+    // Check if user is already authenticated
+    const checkUser = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        router.push("/dashboard");
+      }
+    };
+    checkUser();
+  }, [router]);
+
+  const handleGoogleSignIn = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/dashboard`,
+      },
+    });
+    if (error) {
+      console.error("Error signing in with Google:", error);
+      setError("Failed to sign in with Google. Please try again.");
     }
-  }, [user, loading, router]);
+  };
 
-  // Show loading state while checking authentication
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center min-h-screen bg-gray-50">
-        <Card className="w-full max-w-md">
-          <CardContent className="text-center p-8">
-            <Typography variant="h6">Loading...</Typography>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+    setLoading(true);
 
-  // Show auth form for unauthenticated users
-  if (!user) {
-    return (
-      <div className="flex justify-center items-center min-h-screen bg-gray-50">
-        <div className="w-full max-w-md">
-          <Card className="mb-4">
-            <CardContent className="text-center p-6">
-              <Typography variant="h4" gutterBottom>
-                Welcome to SelfExperiment.AI
+    if (isSignUp && password !== confirmPassword) {
+      setError("Passwords do not match");
+      setLoading(false);
+      return;
+    }
+
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters long");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      if (isSignUp) {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/dashboard`,
+          },
+        });
+        if (error) {
+          setError(error.message);
+        } else {
+          setSuccess(
+            "Check your email for a confirmation link to complete your registration."
+          );
+        }
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (error) {
+          setError(error.message);
+        } else {
+          router.push("/dashboard");
+        }
+      }
+    } catch (err) {
+      setError("An unexpected error occurred. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetForm = () => {
+    setEmail("");
+    setPassword("");
+    setConfirmPassword("");
+    setError("");
+    setSuccess("");
+  };
+
+  const toggleMode = () => {
+    setIsSignUp(!isSignUp);
+    resetForm();
+  };
+
+  return (
+    <Container
+      maxWidth="sm"
+      className="flex items-center justify-center min-h-screen px-4"
+    >
+      <Card className="w-full shadow-2xl border border-border bg-surface/95 backdrop-blur-sm">
+        <CardContent className="flex flex-col items-center p-6 lg:p-8">
+          <Typography
+            variant="h3"
+            className="font-bold text-white mb-4 tracking-tight text-center bg-gradient-to-r from-gold to-gold-light bg-clip-text text-transparent text-2xl lg:text-3xl"
+            component="h1"
+          >
+            Modular Health
+          </Typography>
+          <Typography
+            variant="h6"
+            className="mb-6 text-gold text-center font-medium text-lg lg:text-xl"
+          >
+            {isSignUp ? "Create your account" : "Sign in to continue"}
+          </Typography>
+          <Typography
+            variant="body1"
+            className="mb-8 text-text-secondary text-center leading-relaxed text-sm lg:text-base"
+          >
+            {isSignUp
+              ? "Join us to start tracking your health and discovering insights about yourself."
+              : "Choose your preferred sign-in method to access your personalized health tracking dashboard."}
+          </Typography>
+
+          <Box className="flex flex-col gap-4 w-full max-w-sm">
+            {/* Google Sign In */}
+            <Button
+              variant="contained"
+              onClick={handleGoogleSignIn}
+              className="w-full text-lg py-3 rounded-lg shadow-lg transition-all duration-200 hover:shadow-xl bg-white text-gray-800 hover:bg-gray-100"
+              size="large"
+              fullWidth
+              startIcon={<FaGoogle className="text-red-500" />}
+            >
+              Continue with Google
+            </Button>
+
+            <Divider className="my-4">
+              <Typography variant="body2" className="text-text-muted px-4">
+                or
               </Typography>
-              <Typography variant="body1" color="textSecondary">
-                Sign in to start tracking your experiments and discovering
-                insights about yourself.
-              </Typography>
-            </CardContent>
-          </Card>
-          <Auth
-            supabaseClient={supabase}
-            appearance={{ theme: ThemeSupa }}
-            providers={["google"]}
-            redirectTo={
-              typeof window !== "undefined" ? window.location.origin : ""
-            }
-          />
-        </div>
-      </div>
-    );
-  }
+            </Divider>
 
-  // This shouldn't be reached due to the redirect above
-  return null;
+            {/* Email/Password Form */}
+            <Box
+              component="form"
+              onSubmit={handleEmailAuth}
+              className="flex flex-col gap-4"
+            >
+              {error && (
+                <Alert severity="error" className="mb-4">
+                  {error}
+                </Alert>
+              )}
+              {success && (
+                <Alert severity="success" className="mb-4">
+                  {success}
+                </Alert>
+              )}
+
+              <TextField
+                type="email"
+                label="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                fullWidth
+                variant="outlined"
+                className="bg-surface-light"
+                InputProps={{
+                  style: { color: "white" },
+                }}
+                InputLabelProps={{
+                  style: { color: "#9CA3AF" },
+                }}
+              />
+
+              <TextField
+                type={showPassword ? "text" : "password"}
+                label="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                fullWidth
+                variant="outlined"
+                className="bg-surface-light"
+                InputProps={{
+                  style: { color: "white" },
+                  endAdornment: (
+                    <Button
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="min-w-0 p-2"
+                      style={{ color: "#9CA3AF" }}
+                    >
+                      {showPassword ? <FaEyeSlash /> : <FaEye />}
+                    </Button>
+                  ),
+                }}
+                InputLabelProps={{
+                  style: { color: "#9CA3AF" },
+                }}
+              />
+
+              {isSignUp && (
+                <TextField
+                  type={showConfirmPassword ? "text" : "password"}
+                  label="Confirm Password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  fullWidth
+                  variant="outlined"
+                  className="bg-surface-light"
+                  InputProps={{
+                    style: { color: "white" },
+                    endAdornment: (
+                      <Button
+                        onClick={() =>
+                          setShowConfirmPassword(!showConfirmPassword)
+                        }
+                        className="min-w-0 p-2"
+                        style={{ color: "#9CA3AF" }}
+                      >
+                        {showConfirmPassword ? <FaEyeSlash /> : <FaEye />}
+                      </Button>
+                    ),
+                  }}
+                  InputLabelProps={{
+                    style: { color: "#9CA3AF" },
+                  }}
+                />
+              )}
+
+              <Button
+                type="submit"
+                variant="outlined"
+                disabled={loading}
+                className="w-full text-lg py-3 rounded-lg transition-all duration-200 border-gold text-gold hover:bg-gold hover:text-gray-900"
+                size="large"
+                fullWidth
+              >
+                {loading ? (
+                  <CircularProgress size={24} className="text-gold" />
+                ) : isSignUp ? (
+                  "Sign Up"
+                ) : (
+                  "Sign In"
+                )}
+              </Button>
+            </Box>
+
+            {/* Toggle between Sign In and Sign Up */}
+            <Box className="text-center mt-4">
+              <Typography variant="body2" className="text-text-muted">
+                {isSignUp
+                  ? "Already have an account?"
+                  : "Don't have an account?"}
+              </Typography>
+              <Button
+                onClick={toggleMode}
+                className="text-gold hover:text-gold-light mt-2"
+                variant="text"
+              >
+                {isSignUp ? "Sign In" : "Sign Up"}
+              </Button>
+            </Box>
+
+            <Typography
+              variant="body2"
+              className="text-text-muted text-center mt-6 text-xs lg:text-sm"
+            >
+              By signing in, you agree to our terms of service and privacy
+              policy
+            </Typography>
+          </Box>
+        </CardContent>
+      </Card>
+    </Container>
+  );
 }

@@ -1,130 +1,163 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { useUser } from "./_app";
 import { supabase } from "@/utils/supaBase";
-import Paper from "@mui/material/Paper";
-import Typography from "@mui/material/Typography";
-import TextField from "@mui/material/TextField";
-import Button from "@mui/material/Button";
+import { useUser } from "./_app";
+import {
+  Container,
+  TextField,
+  Button,
+  Typography,
+  Box,
+  Avatar,
+  Alert,
+} from "@mui/material";
 
 export default function CompleteProfilePage() {
-  const { user, loading } = useUser();
+  const { user, loading: userLoading } = useUser();
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [dob, setDob] = useState("");
-  const [username, setUsername] = useState("");
-  const [usernameAvailable, setUsernameAvailable] = useState(true);
-  const [checking, setChecking] = useState(false);
+  const [form, setForm] = useState({
+    username: "",
+    name: "",
+    date_of_birth: "",
+    avatar_url: "",
+  });
   const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(true);
 
-  // Check username uniqueness
-  const checkUsername = async (val: string) => {
-    setChecking(true);
-    setUsername(val);
-    if (!val) {
-      setUsernameAvailable(true);
-      setChecking(false);
+  useEffect(() => {
+    if (!user && !userLoading) {
+      router.replace("/auth");
       return;
     }
-    const { data } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("username", val)
-      .single();
-    setUsernameAvailable(!data);
-    setChecking(false);
+    if (user) {
+      const fetchProfile = async () => {
+        try {
+          const { data, error } = await supabase
+            .from("profiles")
+            .select("username, name, date_of_birth, avatar_url")
+            .eq("id", user.id)
+            .single();
+
+          if (error) {
+            console.error("Error fetching profile:", error);
+            // Profile might not exist yet, that's okay
+          }
+
+          if (data) {
+            setForm({
+              username: data.username || "",
+              name: data.name || "",
+              date_of_birth: data.date_of_birth || "",
+              avatar_url: data.avatar_url || "",
+            });
+          }
+        } catch (err) {
+          console.error("Profile fetch error:", err);
+        } finally {
+          setLoadingProfile(false);
+        }
+      };
+
+      fetchProfile();
+    }
+  }, [user, userLoading, router]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm({ ...form, [e.target.name]: e.target.value });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (!name || !dob || !username) {
-      setError("All fields are required.");
+    if (!form.username || !form.name) {
+      setError("Username and name are required.");
       return;
     }
-    if (!usernameAvailable) {
-      setError("Username is already taken.");
+    if (!user) {
+      setError("User not authenticated.");
       return;
     }
-    setSaving(true);
-    const { error: upsertError } = await supabase.from("profiles").upsert({
-      id: user?.id,
-      username,
-      name,
-      date_of_birth: dob,
-    });
-    setSaving(false);
-    if (upsertError) {
-      setError(upsertError.message);
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        username: form.username,
+        name: form.name,
+        date_of_birth: form.date_of_birth,
+        avatar_url: form.avatar_url,
+      })
+      .eq("id", user.id);
+    if (error) {
+      setError(error.message);
     } else {
-      router.push("/analytics");
+      setSuccess(true);
+      setTimeout(() => router.replace("/log/now"), 1000);
     }
   };
 
-  if (loading) {
+  if (userLoading || loadingProfile) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
-        Loading...
-      </div>
-    );
-  }
-  if (!user) {
-    return (
-      <div className="flex justify-center items-center min-h-screen">
-        You must be logged in.
-      </div>
+      <Container sx={{ py: 8 }}>
+        <Typography>Loading...</Typography>
+      </Container>
     );
   }
 
   return (
-    <div className="flex justify-center items-center min-h-screen bg-gray-50">
-      <Paper elevation={4} className="p-10 rounded-2xl shadow-lg min-w-[340px]">
-        <Typography variant="h4" className="mb-4 font-bold">
-          Complete Your Profile
-        </Typography>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <TextField
-            label="Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
-          <TextField
-            label="Date of Birth"
-            type="date"
-            InputLabelProps={{ shrink: true }}
-            value={dob}
-            onChange={(e) => setDob(e.target.value)}
-            required
-          />
-          <TextField
-            label="Username"
-            value={username}
-            onChange={(e) => checkUsername(e.target.value)}
-            required
-            helperText={
-              checking
-                ? "Checking..."
-                : username && !usernameAvailable
-                ? "Username is taken"
-                : username
-                ? "Username is available"
-                : ""
-            }
-            error={!!username && !usernameAvailable}
-          />
-          {error && <Typography color="error">{error}</Typography>}
-          <Button
-            type="submit"
-            variant="contained"
-            color="primary"
-            disabled={saving || checking || !usernameAvailable}
-          >
-            {saving ? "Saving..." : "Save Profile"}
-          </Button>
-        </form>
-      </Paper>
-    </div>
+    <Container maxWidth="sm" sx={{ py: 8 }}>
+      <Typography variant="h4" gutterBottom>
+        Complete Your Profile
+      </Typography>
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+      {success && (
+        <Alert severity="success" sx={{ mb: 2 }}>
+          Profile updated!
+        </Alert>
+      )}
+      <Box
+        component="form"
+        onSubmit={handleSubmit}
+        sx={{ display: "flex", flexDirection: "column", gap: 2 }}
+      >
+        <TextField
+          label="Username"
+          name="username"
+          value={form.username}
+          onChange={handleChange}
+          required
+        />
+        <TextField
+          label="Name"
+          name="name"
+          value={form.name}
+          onChange={handleChange}
+          required
+        />
+        <TextField
+          label="Date of Birth"
+          name="date_of_birth"
+          type="date"
+          value={form.date_of_birth}
+          onChange={handleChange}
+          InputLabelProps={{ shrink: true }}
+        />
+        <TextField
+          label="Avatar URL"
+          name="avatar_url"
+          value={form.avatar_url}
+          onChange={handleChange}
+        />
+        {form.avatar_url && (
+          <Avatar src={form.avatar_url} sx={{ width: 56, height: 56, mb: 1 }} />
+        )}
+        <Button type="submit" variant="contained" color="primary">
+          Save
+        </Button>
+      </Box>
+    </Container>
   );
 }

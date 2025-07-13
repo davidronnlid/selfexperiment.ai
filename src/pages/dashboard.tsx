@@ -21,6 +21,11 @@ import TableRow from "@mui/material/TableRow";
 import Chip from "@mui/material/Chip";
 import IconButton from "@mui/material/IconButton";
 import Tooltip from "@mui/material/Tooltip";
+import Box from "@mui/material/Box";
+import Grid from "@mui/material/Grid";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
+import CardHeader from "@mui/material/CardHeader";
 
 interface HRRawData {
   bpm: number;
@@ -58,89 +63,107 @@ export default function Analytics() {
 
   useEffect(() => {
     const fetchData = async () => {
-      await fetch("/api/oura/fetch");
+      try {
+        // Parallel API and database calls instead of sequential
+        const [ouraResponse, readinessRes, sleepRes, hrRawRes, logsRes] =
+          await Promise.all([
+            fetch("/api/oura/fetch"),
+            supabase
+              .from("measurements")
+              .select("date, metric, value, raw")
+              .eq("source", "oura")
+              .in("metric", [
+                "hr_lowest_true",
+                "hr_average_true",
+                "temperature_deviation",
+                "temperature_trend_deviation",
+                "readiness_score",
+              ])
+              .order("date", { ascending: false })
+              .limit(50), // Reduced from 100 to 50
+            supabase
+              .from("measurements")
+              .select("date, metric, value, raw")
+              .eq("source", "oura")
+              .in("metric", [
+                "sleep_score",
+                "total_sleep_duration",
+                "rem_sleep_duration",
+                "deep_sleep_duration",
+                "efficiency",
+                "sleep_latency",
+              ])
+              .order("date", { ascending: false })
+              .limit(50), // Reduced from 100 to 50
+            supabase
+              .from("measurements")
+              .select("date, metric, raw")
+              .eq("source", "oura")
+              .eq("metric", "hr_raw_data")
+              .order("date", { ascending: false })
+              .limit(5), // Reduced from 10 to 5
+            // Fetch logs in parallel too
+            supabase
+              .from("logs")
+              .select("id, date, label, value, notes")
+              .order("date", { ascending: false })
+              .limit(10), // Reduced from 20 to 10
+          ]);
 
-      const [readinessRes, sleepRes, hrRawRes] = await Promise.all([
-        supabase
-          .from("measurements")
-          .select("date, metric, value, raw")
-          .eq("source", "oura")
-          .in("metric", [
-            "hr_lowest_true",
-            "hr_average_true",
-            "temperature_deviation",
-            "temperature_trend_deviation",
-            "readiness_score",
-          ])
-          .order("date", { ascending: false })
-          .limit(100),
+        // Process readiness data
+        const readinessByDate: Record<string, Record<string, unknown>> = {};
+        readinessRes.data?.forEach((entry) => {
+          const day = entry.date;
+          if (!readinessByDate[day]) readinessByDate[day] = { date: day };
+          readinessByDate[day][entry.metric] = entry.value;
+          if (entry.metric === "temperature_trend_deviation") {
+            readinessByDate[day].trend = entry.value;
+          }
+        });
 
-        supabase
-          .from("measurements")
-          .select("date, metric, value, raw")
-          .eq("source", "oura")
-          .in("metric", [
-            "sleep_score",
-            "total_sleep_duration",
-            "rem_sleep_duration",
-            "deep_sleep_duration",
-            "efficiency",
-            "sleep_latency",
-          ])
-          .order("date", { ascending: false })
-          .limit(100),
+        // Process sleep data
+        const sleepByDate: Record<string, Record<string, unknown>> = {};
+        sleepRes.data?.forEach((entry) => {
+          const day = entry.date;
+          if (!sleepByDate[day]) sleepByDate[day] = { day: day };
+          sleepByDate[day][entry.metric] = entry.value;
+        });
 
-        supabase
-          .from("measurements")
-          .select("date, metric, raw")
-          .eq("source", "oura")
-          .eq("metric", "hr_raw_data")
-          .order("date", { ascending: false })
-          .limit(10),
-      ]);
+        const raw = hrRawRes.data?.flatMap((entry) => entry.raw ?? []) ?? [];
 
-      const readinessByDate: Record<string, Record<string, unknown>> = {};
-      readinessRes.data?.forEach((entry) => {
-        const day = entry.date;
-        if (!readinessByDate[day]) readinessByDate[day] = { date: day };
-        readinessByDate[day][entry.metric] = entry.value;
-        if (entry.metric === "temperature_trend_deviation") {
-          readinessByDate[day].trend = entry.value;
+        // De-duplicate with better performance
+        const deduplicated = Object.values(
+          raw.reduce((acc: Record<string, HRRawData>, curr: HRRawData) => {
+            acc[curr.timestamp] = curr;
+            return acc;
+          }, {} as Record<string, HRRawData>)
+        ) as HRRawData[];
+
+        const sorted = deduplicated.sort(
+          (a: HRRawData, b: HRRawData) =>
+            new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        );
+
+        const latestDate = sorted[0]?.timestamp?.split("T")[0] ?? "";
+
+        setAllHrRaw(sorted);
+        setCurrentDate(latestDate);
+
+        // Set logs data
+        if (!logsRes.error && logsRes.data) {
+          setLogs(logsRes.data);
         }
-      });
 
-      const sleepByDate: Record<string, Record<string, unknown>> = {};
-      sleepRes.data?.forEach((entry) => {
-        const day = entry.date;
-        if (!sleepByDate[day]) sleepByDate[day] = { day: day };
-        sleepByDate[day][entry.metric] = entry.value;
-      });
-
-      const raw = hrRawRes.data?.flatMap((entry) => entry.raw ?? []) ?? [];
-
-      // De-duplicate
-      const deduplicated = Object.values(
-        raw.reduce((acc: Record<string, HRRawData>, curr: HRRawData) => {
-          acc[curr.timestamp] = curr;
-          return acc;
-        }, {} as Record<string, HRRawData>)
-      ) as HRRawData[];
-
-      const sorted = deduplicated.sort(
-        (a: HRRawData, b: HRRawData) =>
-          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-      );
-
-      const latestDate = sorted[0]?.timestamp?.split("T")[0] ?? "";
-
-      setAllHrRaw(sorted);
-      setCurrentDate(latestDate);
-      setLoading(false);
+        setLoading(false);
+      } catch (error) {
+        console.error("Error fetching dashboard data:", error);
+        setLoading(false);
+      }
     };
 
     const fetchLogs = async () => {
       const { data, error } = await supabase
-        .from("daily_logs")
+        .from("logs")
         .select("id, date, label, value, notes")
         .order("date", { ascending: false })
         .limit(20);
@@ -180,18 +203,11 @@ export default function Analytics() {
 
   // Helper to format time as HH:mm
   const formatTime = (date: Date) =>
-    date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  // Get interval string for first and last HR log
-  let interval = "-";
-  if (hrRawData.length > 0) {
-    const sortedHR = [...hrRawData].sort(
-      (a, b) =>
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
-    const first = new Date(sortedHR[0].timestamp);
-    const last = new Date(sortedHR[sortedHR.length - 1].timestamp);
-    interval = `${formatTime(first)} — ${formatTime(last)}`;
-  }
+    date.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
 
   const startEdit = (log: LogEntry) => {
     setEditingLogId(log.id);
@@ -210,402 +226,414 @@ export default function Analytics() {
   };
 
   const updateLog = async (logId: number) => {
-    const { error } = await supabase
-      .from("daily_logs")
-      .update({
-        label: editLabel.value,
-        date: editDate.toISOString(),
-        value: editValue,
-        notes: editNotes,
-      })
-      .eq("id", logId);
-    if (!error) {
-      setEditingLogId(null);
-      setEditLabel({ label: "", value: "" });
-      setEditDate(new Date());
-      setEditValue("");
-      setEditNotes("");
-      // Refresh logs
-      const { data, error: fetchError } = await supabase
-        .from("daily_logs")
-        .select("id, date, label, value, notes")
-        .order("date", { ascending: false })
-        .limit(20);
-      if (!fetchError && data) setLogs(data);
+    try {
+      const { error } = await supabase
+        .from("logs")
+        .update({
+          label: editLabel.label,
+          value: editValue,
+          notes: editNotes,
+          date: format(editDate, "yyyy-MM-dd"),
+        })
+        .eq("id", logId);
+
+      if (error) throw error;
+
+      // Update local state
+      setLogs(
+        logs.map((log) =>
+          log.id === logId
+            ? {
+                ...log,
+                label: editLabel.label,
+                value: editValue,
+                notes: editNotes,
+                date: format(editDate, "yyyy-MM-dd"),
+              }
+            : log
+        )
+      );
+
+      cancelEdit();
+    } catch (error) {
+      console.error("Error updating log:", error);
     }
   };
 
   const deleteLog = async (logId: number) => {
-    if (!confirm("Are you sure you want to delete this log?")) return;
-    const { error } = await supabase
-      .from("daily_logs")
-      .delete()
-      .eq("id", logId);
-    if (!error) {
-      // Refresh logs
-      const { data, error: fetchError } = await supabase
-        .from("daily_logs")
-        .select("id, date, label, value, notes")
-        .order("date", { ascending: false })
-        .limit(20);
-      if (!fetchError && data) setLogs(data);
+    try {
+      const { error } = await supabase.from("logs").delete().eq("id", logId);
+
+      if (error) throw error;
+
+      // Update local state
+      setLogs(logs.filter((log) => log.id !== logId));
+    } catch (error) {
+      console.error("Error deleting log:", error);
     }
   };
 
+  if (loading) {
+    return (
+      <Container maxWidth="xl" className="px-4">
+        <Box className="flex items-center justify-center min-h-96">
+          <Typography variant="h6" className="text-gold">
+            Loading dashboard data...
+          </Typography>
+        </Box>
+      </Container>
+    );
+  }
+
   return (
-    <div className="bg-gray-50 min-h-screen py-10">
-      <Container maxWidth="md">
-        <Paper elevation={4} className="p-10 rounded-2xl shadow-lg">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8 gap-4">
-            <Typography
-              variant="h3"
-              className="flex items-center gap-3 font-extrabold tracking-tight"
-            >
-              <span role="img" aria-label="chart">
-                📊
-              </span>{" "}
-              My Analytics
-            </Typography>
-            <Button
-              href="/api/oura/auth"
-              variant="contained"
-              startIcon={<FaCloud />}
-              className="bg-purple-600 hover:bg-purple-700 text-white shadow-md rounded-lg px-6 py-2 text-lg"
-              size="large"
-            >
-              Connect Oura
-            </Button>
-          </div>
-          <div className="flex items-center justify-center space-x-4 mb-8">
-            <Button
-              onClick={() => changeDate(-1)}
-              variant="outlined"
-              className="min-w-0 px-4 py-2 rounded-lg text-lg font-bold"
-            >
-              ←
-            </Button>
-            <Typography variant="h5" className="font-semibold px-4">
-              {new Date(currentDate).toLocaleDateString()}
-            </Typography>
-            <Button
-              onClick={() => changeDate(1)}
-              variant="outlined"
-              className="min-w-0 px-4 py-2 rounded-lg text-lg font-bold"
-            >
-              →
-            </Button>
-          </div>
-          {loading ? (
-            <Alert severity="info">Loading data...</Alert>
-          ) : (
-            <>
-              <section>
-                <Typography variant="h5" className="mb-4 font-bold">
-                  Daily Logs
-                </Typography>
-                <TableContainer
-                  component={Paper}
-                  className="shadow-sm rounded-xl"
+    <Container maxWidth="xl" className="px-4">
+      <Box className="space-y-6 lg:space-y-8">
+        {/* Header Section */}
+        <Box className="text-center mb-6 lg:mb-8">
+          <Typography
+            variant="h3"
+            className="font-bold text-white mb-2 text-2xl lg:text-3xl"
+          >
+            Dashboard
+          </Typography>
+          <Typography
+            variant="body1"
+            className="text-text-secondary text-sm lg:text-base"
+          >
+            Track your health metrics and daily logs
+          </Typography>
+        </Box>
+
+        {/* Date Navigation */}
+        <Card className="mb-6">
+          <CardContent className="p-4 lg:p-6">
+            <Box className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <Typography
+                variant="h6"
+                className="text-white font-semibold text-center lg:text-left"
+              >
+                Date: {format(parseISO(currentDate), "EEEE, MMMM d, yyyy")}
+              </Typography>
+              <Box className="flex gap-2 justify-center lg:justify-end">
+                <Button
+                  variant="outlined"
+                  onClick={() => changeDate(-1)}
+                  className="min-w-0 px-4"
+                  size="small"
                 >
-                  <Table size="medium" className="rounded-xl overflow-hidden">
-                    <TableHead className="bg-gray-100">
+                  Previous
+                </Button>
+                <Button
+                  variant="outlined"
+                  onClick={() => changeDate(1)}
+                  className="min-w-0 px-4"
+                  size="small"
+                >
+                  Next
+                </Button>
+              </Box>
+            </Box>
+          </CardContent>
+        </Card>
+
+        {/* Main Content Layout */}
+        <Box className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
+          {/* HR Data Section */}
+          <Box className="lg:col-span-2">
+            <Card className="h-full">
+              <CardHeader
+                title={
+                  <Typography variant="h6" className="text-white font-semibold">
+                    Heart Rate Data
+                  </Typography>
+                }
+                action={
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => setShowRawHR(!showRawHR)}
+                    className="text-xs"
+                  >
+                    {showRawHR ? "Hide Raw" : "Show Raw"}
+                  </Button>
+                }
+              />
+              <CardContent className="p-4 lg:p-6">
+                {hrRawData.length > 0 ? (
+                  <Box className="space-y-4">
+                    <Typography variant="body2" className="text-text-secondary">
+                      {hrRawData.length} data points for {currentDate}
+                    </Typography>
+                    {showRawHR && (
+                      <Box className="overflow-x-auto">
+                        <TableContainer
+                          component={Paper}
+                          className="bg-surface"
+                        >
+                          <Table size="small">
+                            <TableHead>
+                              <TableRow>
+                                <TableCell className="text-white font-semibold">
+                                  Time
+                                </TableCell>
+                                <TableCell className="text-white font-semibold">
+                                  BPM
+                                </TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {hrRawData.slice(0, 10).map((data, index) => (
+                                <TableRow key={index}>
+                                  <TableCell className="text-text-secondary">
+                                    {formatTime(new Date(data.timestamp))}
+                                  </TableCell>
+                                  <TableCell className="text-gold font-medium">
+                                    {data.bpm}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </TableContainer>
+                      </Box>
+                    )}
+                  </Box>
+                ) : (
+                  <Typography variant="body2" className="text-text-secondary">
+                    No heart rate data available for this date.
+                  </Typography>
+                )}
+              </CardContent>
+            </Card>
+          </Box>
+
+          {/* Logs Section */}
+          <Box>
+            <Card className="h-full">
+              <CardHeader
+                title={
+                  <Typography variant="h6" className="text-white font-semibold">
+                    Daily Logs
+                  </Typography>
+                }
+              />
+              <CardContent className="p-4 lg:p-6">
+                {logsForCurrentDate.length > 0 ? (
+                  <Box className="space-y-4">
+                    {logsForCurrentDate.map((log) => (
+                      <Box
+                        key={log.id}
+                        className="p-3 lg:p-4 bg-surface-light rounded-lg border border-border"
+                      >
+                        {editingLogId === log.id ? (
+                          <Box className="space-y-3">
+                            <CreatableSelect
+                              isClearable
+                              isMulti={false}
+                              components={animatedComponents}
+                              options={labelOptions}
+                              value={editLabel}
+                              onChange={(newValue) =>
+                                setEditLabel(
+                                  newValue || { label: "", value: "" }
+                                )
+                              }
+                              placeholder="Select or create label..."
+                              className="text-sm"
+                            />
+                            <DatePicker
+                              selected={editDate}
+                              onChange={(date: Date | null) =>
+                                date && setEditDate(date)
+                              }
+                              className="w-full p-2 bg-surface-light border border-border rounded text-white"
+                              dateFormat="yyyy-MM-dd"
+                            />
+                            <input
+                              type="text"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              placeholder="Value"
+                              className="w-full p-2 bg-surface-light border border-border rounded text-white"
+                            />
+                            <textarea
+                              value={editNotes}
+                              onChange={(e) => setEditNotes(e.target.value)}
+                              placeholder="Notes (optional)"
+                              className="w-full p-2 bg-surface-light border border-border rounded text-white resize-none"
+                              rows={2}
+                            />
+                            <Box className="flex gap-2">
+                              <Button
+                                variant="contained"
+                                size="small"
+                                onClick={() => updateLog(log.id)}
+                                className="flex-1"
+                              >
+                                Save
+                              </Button>
+                              <Button
+                                variant="outlined"
+                                size="small"
+                                onClick={cancelEdit}
+                                className="flex-1"
+                              >
+                                Cancel
+                              </Button>
+                            </Box>
+                          </Box>
+                        ) : (
+                          <Box>
+                            <Box className="flex items-center justify-between mb-2">
+                              <Chip
+                                label={log.label}
+                                className="bg-gold text-black font-medium"
+                                size="small"
+                              />
+                              <Box className="flex gap-1">
+                                <Tooltip title="Edit">
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => startEdit(log)}
+                                    className="text-gold hover:text-gold-light"
+                                  >
+                                    <FaEdit />
+                                  </IconButton>
+                                </Tooltip>
+                                <Tooltip title="Delete">
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => deleteLog(log.id)}
+                                    className="text-error hover:text-red-400"
+                                  >
+                                    <FaTrash />
+                                  </IconButton>
+                                </Tooltip>
+                              </Box>
+                            </Box>
+                            <Typography
+                              variant="body2"
+                              className="text-gold font-medium mb-1"
+                            >
+                              {log.value}
+                            </Typography>
+                            {log.notes && (
+                              <Typography
+                                variant="body2"
+                                className="text-text-secondary text-sm"
+                              >
+                                {log.notes}
+                              </Typography>
+                            )}
+                            <Typography
+                              variant="caption"
+                              className="text-text-muted"
+                            >
+                              {format(new Date(log.date), "MMM d, yyyy")}
+                            </Typography>
+                          </Box>
+                        )}
+                      </Box>
+                    ))}
+                  </Box>
+                ) : (
+                  <Typography variant="body2" className="text-text-secondary">
+                    No logs for this date.
+                  </Typography>
+                )}
+              </CardContent>
+            </Card>
+          </Box>
+        </Box>
+
+        {/* Recent Logs Section */}
+        <Card>
+          <CardHeader
+            title={
+              <Typography variant="h6" className="text-white font-semibold">
+                Recent Logs
+              </Typography>
+            }
+          />
+          <CardContent className="p-4 lg:p-6">
+            {logs.length > 0 ? (
+              <Box className="overflow-x-auto">
+                <TableContainer>
+                  <Table>
+                    <TableHead>
                       <TableRow>
-                        <TableCell className="font-bold text-lg">
+                        <TableCell className="text-white font-semibold">
                           Date
                         </TableCell>
-                        <TableCell className="font-bold text-lg">
-                          Variable
+                        <TableCell className="text-white font-semibold">
+                          Label
                         </TableCell>
-                        <TableCell className="font-bold text-lg">
+                        <TableCell className="text-white font-semibold">
                           Value
                         </TableCell>
-                        <TableCell className="font-bold text-lg">
+                        <TableCell className="text-white font-semibold mobile-hidden">
                           Notes
+                        </TableCell>
+                        <TableCell className="text-white font-semibold">
+                          Actions
                         </TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {logsForCurrentDate.length === 0 ? (
-                        <TableRow>
-                          <TableCell
-                            colSpan={4}
-                            align="center"
-                            className="text-gray-400"
-                          >
-                            No logs yet for this date.
+                      {logs.slice(0, 10).map((log) => (
+                        <TableRow key={log.id}>
+                          <TableCell className="text-text-secondary">
+                            {format(new Date(log.date), "MMM d, yyyy")}
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={log.label}
+                              size="small"
+                              className="bg-gold text-black font-medium"
+                            />
+                          </TableCell>
+                          <TableCell className="text-gold font-medium">
+                            {log.value}
+                          </TableCell>
+                          <TableCell className="text-text-secondary mobile-hidden">
+                            {log.notes || "-"}
+                          </TableCell>
+                          <TableCell>
+                            <Box className="flex gap-1">
+                              <Tooltip title="Edit">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => startEdit(log)}
+                                  className="text-gold hover:text-gold-light"
+                                >
+                                  <FaEdit />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Delete">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => deleteLog(log.id)}
+                                  className="text-error hover:text-red-400"
+                                >
+                                  <FaTrash />
+                                </IconButton>
+                              </Tooltip>
+                            </Box>
                           </TableCell>
                         </TableRow>
-                      ) : (
-                        logsForCurrentDate.map((log, idx) => (
-                          <TableRow
-                            key={log.id}
-                            className={
-                              editingLogId === log.id
-                                ? "bg-purple-50"
-                                : idx % 2 === 0
-                                ? "bg-white"
-                                : "bg-gray-50"
-                            }
-                            hover
-                            style={{
-                              borderLeft:
-                                editingLogId === log.id
-                                  ? "4px solid #a78bfa"
-                                  : undefined,
-                            }}
-                          >
-                            {editingLogId === log.id ? (
-                              <>
-                                <TableCell className="p-2 align-top">
-                                  <DatePicker
-                                    selected={editDate}
-                                    onChange={(d: Date | null) =>
-                                      d && setEditDate(d)
-                                    }
-                                    showTimeSelect
-                                    timeFormat="HH:mm"
-                                    timeIntervals={5}
-                                    timeCaption="Time"
-                                    dateFormat="yyyy-MM-dd HH:mm"
-                                    className="w-full border px-2 py-1 rounded"
-                                  />
-                                </TableCell>
-                                <TableCell className="p-2 align-top">
-                                  <CreatableSelect
-                                    isClearable
-                                    components={animatedComponents}
-                                    options={labelOptions}
-                                    value={editLabel}
-                                    onChange={(newValue) => {
-                                      if (
-                                        newValue &&
-                                        !Array.isArray(newValue)
-                                      ) {
-                                        setEditLabel(
-                                          newValue as {
-                                            label: string;
-                                            value: string;
-                                          }
-                                        );
-                                      } else {
-                                        setEditLabel({ label: "", value: "" });
-                                      }
-                                    }}
-                                    onCreateOption={(inputValue) => {
-                                      if (inputValue.length <= 25) {
-                                        const newOption = {
-                                          label: inputValue,
-                                          value: inputValue,
-                                        };
-                                        labelOptions.push(newOption);
-                                        setEditLabel(newOption);
-                                      }
-                                    }}
-                                    className="w-full"
-                                  />
-                                </TableCell>
-                                <TableCell className="p-2 align-top">
-                                  <input
-                                    className="w-full border px-2 py-1 rounded"
-                                    value={editValue}
-                                    onChange={(e) =>
-                                      setEditValue(e.target.value)
-                                    }
-                                  />
-                                </TableCell>
-                                <TableCell className="p-2 align-top flex gap-2 items-center">
-                                  <textarea
-                                    className="w-full border px-2 py-1 rounded"
-                                    rows={2}
-                                    value={editNotes}
-                                    onChange={(e) =>
-                                      setEditNotes(e.target.value)
-                                    }
-                                  />
-                                  <Tooltip title="Save">
-                                    <IconButton
-                                      color="success"
-                                      size="small"
-                                      onClick={() => updateLog(log.id)}
-                                    >
-                                      <FaEdit />
-                                    </IconButton>
-                                  </Tooltip>
-                                  <Tooltip title="Cancel">
-                                    <IconButton
-                                      color="default"
-                                      size="small"
-                                      onClick={cancelEdit}
-                                    >
-                                      ✕
-                                    </IconButton>
-                                  </Tooltip>
-                                </TableCell>
-                              </>
-                            ) : (
-                              <>
-                                <TableCell className="p-3 align-top">
-                                  {new Date(log.date).toLocaleString()}
-                                </TableCell>
-                                <TableCell className="p-3 align-top">
-                                  <Chip
-                                    label={log.label}
-                                    className="bg-purple-100 text-purple-700 font-semibold"
-                                  />
-                                </TableCell>
-                                <TableCell className="p-3 align-top">
-                                  {log.value}
-                                </TableCell>
-                                <TableCell className="p-3 align-top flex items-center gap-2">
-                                  <span>{log.notes || "-"}</span>
-                                  <Tooltip title="Edit">
-                                    <IconButton
-                                      color="primary"
-                                      size="small"
-                                      onClick={() => startEdit(log)}
-                                    >
-                                      <FaEdit />
-                                    </IconButton>
-                                  </Tooltip>
-                                  <Tooltip title="Delete">
-                                    <IconButton
-                                      color="error"
-                                      size="small"
-                                      onClick={() => deleteLog(log.id)}
-                                    >
-                                      <FaTrash />
-                                    </IconButton>
-                                  </Tooltip>
-                                </TableCell>
-                              </>
-                            )}
-                          </TableRow>
-                        ))
-                      )}
+                      ))}
                     </TableBody>
                   </Table>
                 </TableContainer>
-              </section>
-
-              <section>
-                <Typography
-                  variant="h6"
-                  className="text-2xl font-medium mt-16 mb-4"
-                >
-                  Heart Rate Data
-                </Typography>
-                <Typography variant="h6" className="text-lg font-semibold mb-2">
-                  RHR Summary
-                </Typography>
-                <Table className="min-w-full border border-gray-300 mb-6">
-                  <TableBody>
-                    <TableRow>
-                      <TableCell className="p-2 text-left">
-                        Lowest RHR (bpm)
-                      </TableCell>
-                      <TableCell className="p-2 text-left">
-                        Average RHR (bpm)
-                      </TableCell>
-                      <TableCell className="p-2 text-left">
-                        Time Asleep
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="p-2">
-                        {hrRawData.length > 0
-                          ? Math.min(...hrRawData.map((hr) => hr.bpm))
-                          : "-"}
-                      </TableCell>
-                      <TableCell className="p-2">
-                        {hrRawData.length > 0
-                          ? (
-                              hrRawData.reduce((sum, hr) => sum + hr.bpm, 0) /
-                              hrRawData.length
-                            ).toFixed(1)
-                          : "-"}
-                      </TableCell>
-                      <TableCell className="p-2">
-                        {hrRawData.length > 0 ? (
-                          <>
-                            {interval}
-                            {(() => {
-                              const sortedHR = [...hrRawData].sort(
-                                (a, b) =>
-                                  new Date(a.timestamp).getTime() -
-                                  new Date(b.timestamp).getTime()
-                              );
-                              const first = new Date(sortedHR[0].timestamp);
-                              const last = new Date(
-                                sortedHR[sortedHR.length - 1].timestamp
-                              );
-                              const diffMs = last.getTime() - first.getTime();
-                              const hours = Math.floor(
-                                diffMs / (1000 * 60 * 60)
-                              );
-                              const minutes = Math.floor(
-                                (diffMs % (1000 * 60 * 60)) / (1000 * 60)
-                              );
-                              return ` (${hours}h ${minutes}m)`;
-                            })()}
-                          </>
-                        ) : (
-                          "-"
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-                <Typography variant="h6" className="text-lg font-semibold mb-2">
-                  Raw Heart Rate Data
-                </Typography>
-                <Button
-                  onClick={() => setShowRawHR(!showRawHR)}
-                  className="mb-2 text-sm text-purple-600 hover:text-purple-800 underline"
-                >
-                  {showRawHR ? "▼ Hide" : "▶ Show"} raw heart rate data
-                </Button>
-                {showRawHR && (
-                  <Table className="min-w-full border border-gray-300">
-                    <TableBody>
-                      <TableRow>
-                        <TableCell className="p-2 text-left">
-                          Timestamp
-                        </TableCell>
-                        <TableCell className="p-2 text-left">BPM</TableCell>
-                      </TableRow>
-                      {hrRawData.length === 0 ? (
-                        <TableRow>
-                          <TableCell
-                            colSpan={2}
-                            className="p-4 text-center text-gray-500"
-                          >
-                            No HR data for this date
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        hrRawData
-                          .sort(
-                            (a, b) =>
-                              new Date(a.timestamp).getTime() -
-                              new Date(b.timestamp).getTime()
-                          )
-                          .map((hr: HRRawData, i: number) => (
-                            <TableRow key={i} className="border-t">
-                              <TableCell className="p-2">
-                                {new Date(hr.timestamp).toLocaleString()}
-                              </TableCell>
-                              <TableCell className="p-2">{hr.bpm}</TableCell>
-                            </TableRow>
-                          ))
-                      )}
-                    </TableBody>
-                  </Table>
-                )}
-              </section>
-            </>
-          )}
-        </Paper>
-      </Container>
-    </div>
+              </Box>
+            ) : (
+              <Typography variant="body2" className="text-text-secondary">
+                No logs found.
+              </Typography>
+            )}
+          </CardContent>
+        </Card>
+      </Box>
+    </Container>
   );
 }

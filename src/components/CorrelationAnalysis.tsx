@@ -22,6 +22,8 @@ import {
   TableRow,
   LinearProgress,
   Grid,
+  IconButton,
+  Collapse,
 } from "@mui/material";
 import { Scatter } from "react-chartjs-2";
 import {
@@ -38,6 +40,8 @@ import { format, parseISO, differenceInDays } from "date-fns";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TrendingDownIcon from "@mui/icons-material/TrendingDown";
 import AnalyticsIcon from "@mui/icons-material/Analytics";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 
 ChartJS.register(
   CategoryScale,
@@ -51,7 +55,7 @@ ChartJS.register(
 interface ManualLog {
   id: number;
   date: string;
-  variable: string;
+  variable_id: string;
   value: string;
   notes?: string;
   created_at: string;
@@ -79,6 +83,25 @@ export default function CorrelationAnalysis({
   const [timeRange, setTimeRange] = useState<string>("90");
   const [selectedVar1, setSelectedVar1] = useState<string>("");
   const [selectedVar2, setSelectedVar2] = useState<string>("");
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+  const [variables, setVariables] = useState<Record<string, string>>({}); // variable_id -> label
+
+  useEffect(() => {
+    // Fetch all variables for mapping
+    async function fetchVariables() {
+      const { data, error } = await supabase
+        .from("variables")
+        .select("id, label");
+      if (!error && data) {
+        const map: Record<string, string> = {};
+        data.forEach((v: any) => {
+          map[v.id] = v.label;
+        });
+        setVariables(map);
+      }
+    }
+    fetchVariables();
+  }, []);
 
   useEffect(() => {
     fetchManualLogs();
@@ -104,8 +127,8 @@ export default function CorrelationAnalysis({
       cutoffDate.setDate(cutoffDate.getDate() - daysBack);
 
       const { data, error } = await supabase
-        .from("daily_logs")
-        .select("id, date, variable, value, notes, created_at")
+        .from("logs")
+        .select("id, date, variable_id, value, notes, created_at")
         .eq("user_id", userId)
         .gte("date", cutoffDate.toISOString())
         .order("date", { ascending: true });
@@ -138,7 +161,7 @@ export default function CorrelationAnalysis({
 
   const getNumericVariables = () => {
     const variables = new Set(
-      logs.filter((log) => isNumeric(log.value)).map((log) => log.variable)
+      logs.filter((log) => isNumeric(log.value)).map((log) => log.variable_id)
     );
     return Array.from(variables).sort();
   };
@@ -183,10 +206,10 @@ export default function CorrelationAnalysis({
   // Get data points for two variables on the same dates
   const getMatchedDataPoints = (var1: string, var2: string) => {
     const var1Logs = logs.filter(
-      (log) => log.variable === var1 && isNumeric(log.value)
+      (log) => log.variable_id === var1 && isNumeric(log.value)
     );
     const var2Logs = logs.filter(
-      (log) => log.variable === var2 && isNumeric(log.value)
+      (log) => log.variable_id === var2 && isNumeric(log.value)
     );
 
     const matchedData: {
@@ -207,6 +230,71 @@ export default function CorrelationAnalysis({
     });
 
     return matchedData;
+  };
+
+  const handleRowToggle = (variable1: string, variable2: string) => {
+    const key = `${variable1}_${variable2}`;
+    setExpandedRows((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
+  // Function to generate chart data for any correlation pair
+  const getChartDataForCorrelation = (variable1: string, variable2: string) => {
+    const matchedData = getMatchedDataPoints(variable1, variable2);
+    if (matchedData.length < 3) return null;
+
+    const x = matchedData.map((d) => d.var1Value);
+    const y = matchedData.map((d) => d.var2Value);
+    const correlation = calculateCorrelation(x, y);
+
+    const chartData = {
+      datasets: [
+        {
+          label: `${variables[variable1] || variable1} vs ${
+            variables[variable2] || variable2
+          }`,
+          data: matchedData.map((d) => ({
+            x: d.var1Value,
+            y: d.var2Value,
+          })),
+          backgroundColor: getCorrelationColor(correlation),
+          borderColor: getCorrelationColor(correlation),
+          pointRadius: 5,
+          pointHoverRadius: 7,
+        },
+      ],
+    };
+
+    const chartOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: function (context: any) {
+              return `${variables[variable1] || variable1}: ${
+                context.parsed.x
+              }, ${variables[variable2] || variable2}: ${context.parsed.y}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          display: true,
+          title: { display: true, text: variables[variable1] || variable1 },
+        },
+        y: {
+          display: true,
+          title: { display: true, text: variables[variable2] || variable2 },
+        },
+      },
+    };
+
+    return { chartData, chartOptions, correlation, matchedData };
   };
 
   const allCorrelations = useMemo(() => {
@@ -266,7 +354,9 @@ export default function CorrelationAnalysis({
     return {
       datasets: [
         {
-          label: `${selectedVar1} vs ${selectedVar2}`,
+          label: `${variables[selectedVar1] || selectedVar1} vs ${
+            variables[selectedVar2] || selectedVar2
+          }`,
           data: selectedCorrelation.data.map((d) => ({
             x: d.var1Value,
             y: d.var2Value,
@@ -288,7 +378,9 @@ export default function CorrelationAnalysis({
       tooltip: {
         callbacks: {
           label: function (context: any) {
-            return `${selectedVar1}: ${context.parsed.x}, ${selectedVar2}: ${context.parsed.y}`;
+            return `${variables[selectedVar1] || selectedVar1}: ${
+              context.parsed.x
+            }, ${variables[selectedVar2] || selectedVar2}: ${context.parsed.y}`;
           },
         },
       },
@@ -296,11 +388,11 @@ export default function CorrelationAnalysis({
     scales: {
       x: {
         display: true,
-        title: { display: true, text: selectedVar1 },
+        title: { display: true, text: variables[selectedVar1] || selectedVar1 },
       },
       y: {
         display: true,
-        title: { display: true, text: selectedVar2 },
+        title: { display: true, text: variables[selectedVar2] || selectedVar2 },
       },
     },
   };
@@ -378,7 +470,7 @@ export default function CorrelationAnalysis({
             >
               {numericVariables.map((variable) => (
                 <MenuItem key={variable} value={variable}>
-                  {variable}
+                  {variables[variable] || variable}
                 </MenuItem>
               ))}
             </Select>
@@ -394,7 +486,7 @@ export default function CorrelationAnalysis({
                 .filter((v) => v !== selectedVar1)
                 .map((variable) => (
                   <MenuItem key={variable} value={variable}>
-                    {variable}
+                    {variables[variable] || variable}
                   </MenuItem>
                 ))}
             </Select>
@@ -416,7 +508,8 @@ export default function CorrelationAnalysis({
               <Card>
                 <CardContent>
                   <Typography variant="h6" component="h4" gutterBottom>
-                    {selectedVar1} vs {selectedVar2}
+                    {variables[selectedVar1] || selectedVar1} vs{" "}
+                    {variables[selectedVar2] || selectedVar2}
                   </Typography>
                   <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
                     <Chip
@@ -482,62 +575,214 @@ export default function CorrelationAnalysis({
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {allCorrelations.map((corr, index) => (
-                          <TableRow key={index} hover>
-                            <TableCell>
-                              <Typography variant="body2">
-                                {corr.variable1} × {corr.variable2}
-                              </Typography>
-                            </TableCell>
-                            <TableCell align="right">
-                              <Box
-                                sx={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "flex-end",
-                                  gap: 0.5,
-                                }}
-                              >
-                                {corr.direction === "positive" ? (
-                                  <TrendingUpIcon
-                                    fontSize="small"
-                                    color="success"
-                                  />
-                                ) : (
-                                  <TrendingDownIcon
-                                    fontSize="small"
-                                    color="error"
-                                  />
-                                )}
-                                <Typography
-                                  variant="body2"
-                                  sx={{ fontWeight: "bold" }}
+                        {allCorrelations.map((corr, index) => {
+                          const rowKey = `${corr.variable1}_${corr.variable2}`;
+                          const isExpanded = expandedRows[rowKey] || false;
+                          const chartData = isExpanded
+                            ? getChartDataForCorrelation(
+                                corr.variable1,
+                                corr.variable2
+                              )
+                            : null;
+
+                          return (
+                            <React.Fragment key={index}>
+                              <TableRow hover sx={{ cursor: "pointer" }}>
+                                <TableCell
+                                  onClick={() =>
+                                    handleRowToggle(
+                                      corr.variable1,
+                                      corr.variable2
+                                    )
+                                  }
                                 >
-                                  {corr.correlation}
-                                </Typography>
-                              </Box>
-                            </TableCell>
-                            <TableCell align="right">
-                              <Chip
-                                label={corr.strength}
-                                size="small"
-                                variant="outlined"
-                                sx={{
-                                  fontSize: "0.75rem",
-                                  color: getCorrelationColor(corr.correlation),
-                                  borderColor: getCorrelationColor(
-                                    corr.correlation
-                                  ),
-                                }}
-                              />
-                            </TableCell>
-                            <TableCell align="right">
-                              <Typography variant="body2">
-                                {corr.dataPoints}
-                              </Typography>
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                                  <Box
+                                    sx={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 1,
+                                    }}
+                                  >
+                                    <IconButton
+                                      size="small"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRowToggle(
+                                          corr.variable1,
+                                          corr.variable2
+                                        );
+                                      }}
+                                    >
+                                      {isExpanded ? (
+                                        <ExpandLessIcon />
+                                      ) : (
+                                        <ExpandMoreIcon />
+                                      )}
+                                    </IconButton>
+                                    <Typography variant="body2">
+                                      {variables[corr.variable1] ||
+                                        corr.variable1}{" "}
+                                      ×{" "}
+                                      {variables[corr.variable2] ||
+                                        corr.variable2}
+                                    </Typography>
+                                  </Box>
+                                </TableCell>
+                                <TableCell
+                                  align="right"
+                                  onClick={() =>
+                                    handleRowToggle(
+                                      corr.variable1,
+                                      corr.variable2
+                                    )
+                                  }
+                                >
+                                  <Box
+                                    sx={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "flex-end",
+                                      gap: 0.5,
+                                    }}
+                                  >
+                                    {corr.direction === "positive" ? (
+                                      <TrendingUpIcon
+                                        fontSize="small"
+                                        color="success"
+                                      />
+                                    ) : (
+                                      <TrendingDownIcon
+                                        fontSize="small"
+                                        color="error"
+                                      />
+                                    )}
+                                    <Typography
+                                      variant="body2"
+                                      sx={{ fontWeight: "bold" }}
+                                    >
+                                      {corr.correlation}
+                                    </Typography>
+                                  </Box>
+                                </TableCell>
+                                <TableCell
+                                  align="right"
+                                  onClick={() =>
+                                    handleRowToggle(
+                                      corr.variable1,
+                                      corr.variable2
+                                    )
+                                  }
+                                >
+                                  <Chip
+                                    label={corr.strength}
+                                    size="small"
+                                    variant="outlined"
+                                    sx={{
+                                      fontSize: "0.75rem",
+                                      color: getCorrelationColor(
+                                        corr.correlation
+                                      ),
+                                      borderColor: getCorrelationColor(
+                                        corr.correlation
+                                      ),
+                                    }}
+                                  />
+                                </TableCell>
+                                <TableCell
+                                  align="right"
+                                  onClick={() =>
+                                    handleRowToggle(
+                                      corr.variable1,
+                                      corr.variable2
+                                    )
+                                  }
+                                >
+                                  <Typography variant="body2">
+                                    {corr.dataPoints}
+                                  </Typography>
+                                </TableCell>
+                              </TableRow>
+                              <TableRow>
+                                <TableCell
+                                  colSpan={4}
+                                  sx={{ py: 0, border: 0 }}
+                                >
+                                  <Collapse
+                                    in={isExpanded}
+                                    timeout="auto"
+                                    unmountOnExit
+                                  >
+                                    <Box sx={{ p: 2, bgcolor: "action.hover" }}>
+                                      {chartData ? (
+                                        <Card elevation={1}>
+                                          <CardContent>
+                                            <Typography
+                                              variant="subtitle1"
+                                              gutterBottom
+                                            >
+                                              {variables[corr.variable1] ||
+                                                corr.variable1}{" "}
+                                              vs{" "}
+                                              {variables[corr.variable2] ||
+                                                corr.variable2}{" "}
+                                              Chart
+                                            </Typography>
+                                            <Box
+                                              sx={{
+                                                display: "flex",
+                                                gap: 1,
+                                                mb: 2,
+                                              }}
+                                            >
+                                              <Chip
+                                                label={`Correlation: ${chartData.correlation.toFixed(
+                                                  3
+                                                )}`}
+                                                size="small"
+                                                sx={{
+                                                  bgcolor: getCorrelationColor(
+                                                    chartData.correlation
+                                                  ),
+                                                  color: "white",
+                                                }}
+                                              />
+                                              <Chip
+                                                label={`${corr.strength} ${corr.direction}`}
+                                                size="small"
+                                                variant="outlined"
+                                              />
+                                              <Chip
+                                                label={`${chartData.matchedData.length} data points`}
+                                                size="small"
+                                                color="primary"
+                                              />
+                                            </Box>
+                                            <Box
+                                              sx={{
+                                                height: 300,
+                                                width: "100%",
+                                              }}
+                                            >
+                                              <Scatter
+                                                data={chartData.chartData}
+                                                options={chartData.chartOptions}
+                                              />
+                                            </Box>
+                                          </CardContent>
+                                        </Card>
+                                      ) : (
+                                        <Alert severity="info">
+                                          Not enough data points to display
+                                          chart for this correlation.
+                                        </Alert>
+                                      )}
+                                    </Box>
+                                  </Collapse>
+                                </TableCell>
+                              </TableRow>
+                            </React.Fragment>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </TableContainer>
@@ -567,7 +812,8 @@ export default function CorrelationAnalysis({
                         variant="body2"
                         sx={{ fontWeight: "bold", mb: 1 }}
                       >
-                        {corr.variable1} & {corr.variable2}
+                        {variables[corr.variable1] || corr.variable1} &{" "}
+                        {variables[corr.variable2] || corr.variable2}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
                         {corr.strength === "strong" &&

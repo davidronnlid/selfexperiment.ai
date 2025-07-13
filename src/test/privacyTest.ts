@@ -62,13 +62,21 @@ async function testVariableSharing() {
 
   try {
     // Test setting variable sharing
+    // First get the variable ID from the variable name
+    const { data: variable, error: varError } = await supabase
+      .from("variables")
+      .select("id")
+      .eq("label", "Stress")
+      .single();
+
+    if (varError) throw varError;
+
     const { error: setError } = await supabase
-      .from("app_variable_sharing_settings")
+      .from("user_variable_preferences")
       .upsert({
         user_id: testUsers.user1,
-        variable_name: "Stress",
+        variable_id: variable.id,
         is_shared: true,
-        variable_type: "predefined",
       });
 
     if (setError) throw setError;
@@ -79,10 +87,10 @@ async function testVariableSharing() {
 
     // Test updating sharing setting
     const { error: updateError } = await supabase
-      .from("app_variable_sharing_settings")
+      .from("user_variable_preferences")
       .update({ is_shared: false })
       .eq("user_id", testUsers.user1)
-      .eq("variable_name", "Stress");
+      .eq("variable_id", variable.id);
 
     if (updateError) throw updateError;
 
@@ -242,7 +250,7 @@ export async function createTestData() {
     // Create test variable sharing settings
     for (const variable of testVariables) {
       const { error } = await supabase
-        .from("app_variable_sharing_settings")
+        .from("user_variable_preferences")
         .upsert({
           user_id: testUsers.user1,
           variable_name: variable,
@@ -267,7 +275,7 @@ export async function cleanupTestData() {
     await supabase.from("daily_logs").delete().eq("user_id", testUsers.user1);
 
     await supabase
-      .from("app_variable_sharing_settings")
+      .from("user_variable_preferences")
       .delete()
       .eq("user_id", testUsers.user1);
 

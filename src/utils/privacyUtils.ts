@@ -28,7 +28,7 @@ export async function getSharedLogs(
     // If viewer is the same as target user, show all logs
     if (targetUserId === viewerUserId) {
       const { data: dailyLogs, error: dailyError } = await supabase
-        .from("daily_logs")
+        .from("logs")
         .select("id, label, value, date, user_id")
         .eq("user_id", targetUserId);
 
