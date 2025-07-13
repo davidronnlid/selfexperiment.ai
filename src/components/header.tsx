@@ -204,17 +204,15 @@ export default function Header() {
         <Toolbar className="flex justify-between min-h-16 px-4 lg:px-8">
           <Link
             href="/"
-            className="text-white font-bold tracking-tight cursor-pointer hover:text-gold transition-all duration-200"
+            className="text-white font-bold tracking-tight cursor-pointer hover:opacity-80 transition-all duration-200"
             aria-label="Modular Health home page"
           >
             <Box className="flex items-center gap-2 lg:gap-3">
-              <Typography
-                variant="h5"
-                component="h1"
-                className="font-extrabold bg-gradient-to-r from-gold to-gold-light bg-clip-text text-transparent text-lg lg:text-xl"
-              >
-                Modular Health
-              </Typography>
+              <img
+                src="/modular-health-logo.svg?v=2"
+                alt="Modular Health"
+                className="h-8 lg:h-10 w-auto"
+              />
               <span
                 className="bg-gradient-to-r from-blue-400 to-blue-600 text-white font-bold text-xs px-2 lg:px-3 py-1 rounded-full border border-blue-500 shadow-sm"
                 aria-label="Beta version"
@@ -437,9 +435,9 @@ export default function Header() {
             {mobileMenuItems.map((item) => (
               <ListItem
                 key={item.text}
-                button
+                component="div"
                 onClick={() => handleMobileNavClick(item.path)}
-                className="rounded-lg hover:bg-surface-light transition-all duration-200"
+                className="rounded-lg hover:bg-surface-light transition-all duration-200 cursor-pointer"
                 sx={{ minHeight: 48 }}
               >
                 <ListItemText
@@ -467,9 +465,9 @@ export default function Header() {
             {mobileLogItems.map((item) => (
               <ListItem
                 key={item.text}
-                button
+                component="div"
                 onClick={() => handleMobileNavClick(item.path)}
-                className="rounded-lg hover:bg-surface-light transition-all duration-200"
+                className="rounded-lg hover:bg-surface-light transition-all duration-200 cursor-pointer"
                 sx={{ minHeight: 48 }}
               >
                 <ListItemText
@@ -493,9 +491,9 @@ export default function Header() {
                   Account
                 </Typography>
                 <ListItem
-                  button
+                  component="div"
                   onClick={handleProfile}
-                  className="rounded-lg hover:bg-surface-light transition-all duration-200"
+                  className="rounded-lg hover:bg-surface-light transition-all duration-200 cursor-pointer"
                   sx={{ minHeight: 48 }}
                 >
                   <ListItemText
@@ -506,9 +504,9 @@ export default function Header() {
                   />
                 </ListItem>
                 <ListItem
-                  button
+                  component="div"
                   onClick={handleLogout}
-                  className="rounded-lg hover:bg-red-500/10 transition-all duration-200"
+                  className="rounded-lg hover:bg-red-500/10 transition-all duration-200 cursor-pointer"
                   sx={{ minHeight: 48 }}
                 >
                   <ListItemText

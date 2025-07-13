@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Modular Health Icon Generator</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      .icon-preview {
+        display: inline-block;
+        margin: 10px;
+        text-align: center;
+        vertical-align: top;
+      }
+      .icon-preview canvas {
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+      .icon-preview p {
+        margin: 5px 0;
+        font-size: 12px;
+        color: #666;
+      }
+      button {
+        background: #ffd700;
+        color: #000;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+        margin: 5px;
+      }
+      button:hover {
+        background: #ffc700;
+      }
+      .instructions {
+        background: #f9f9f9;
+        padding: 15px;
+        border-radius: 4px;
+        margin-bottom: 20px;
+      }
+      .download-all {
+        background: #4caf50;
+        color: white;
+        padding: 15px 30px;
+        font-size: 16px;
+        margin: 20px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Modular Health Icon Generator</h1>
+
+      <div class="instructions">
+        <h3>Instructions:</h3>
+        <ol>
+          <li>Click "Generate All Icons" to create all PWA icons</li>
+          <li>Right-click each icon and "Save image as..." to download</li>
+          <li>
+            Save them to your public/ folder with the exact filenames shown
+          </li>
+          <li>The icons will automatically be used by your PWA</li>
+        </ol>
+      </div>
+
+      <button class="download-all" onclick="generateAllIcons()">
+        Generate All Icons
+      </button>
+
+      <div id="icons-container"></div>
+    </div>
+
+    <script>
+      // Icon sizes needed for PWA
+      const iconSizes = [
+        { size: 16, filename: "favicon-16x16.png" },
+        { size: 32, filename: "favicon-32x32.png" },
+        { size: 72, filename: "icon-72x72.png" },
+        { size: 96, filename: "icon-96x96.png" },
+        { size: 128, filename: "icon-128x128.png" },
+        { size: 144, filename: "icon-144x144.png" },
+        { size: 152, filename: "icon-152x152.png" },
+        { size: 192, filename: "icon-192x192.png" },
+        { size: 384, filename: "icon-384x384.png" },
+        { size: 512, filename: "icon-512x512.png" },
+      ];
+
+      function drawMIcon(canvas, size) {
+        const ctx = canvas.getContext("2d");
+        canvas.width = size;
+        canvas.height = size;
+
+        // Clear canvas
+        ctx.clearRect(0, 0, size, size);
+
+        // Background
+        ctx.fillStyle = "#FFD700";
+        ctx.fillRect(0, 0, size, size);
+
+        // Calculate M proportions based on size
+        const padding = Math.max(2, size * 0.1);
+        const strokeWidth = Math.max(1, size * 0.03);
+
+        // Draw M shape
+        ctx.fillStyle = "#000";
+        ctx.strokeStyle = "#000";
+        ctx.lineWidth = strokeWidth;
+
+        // M path scaled to canvas size
+        const mPath = new Path2D();
+        const scale = (size - padding * 2) / 160; // Original M is 160 units wide
+
+        ctx.save();
+        ctx.translate(padding, padding);
+        ctx.scale(scale, scale);
+
+        // Draw the M shape
+        mPath.moveTo(0, 0);
+        mPath.lineTo(40, 0);
+        mPath.lineTo(80, 60);
+        mPath.lineTo(120, 0);
+        mPath.lineTo(160, 0);
+        mPath.lineTo(160, 140);
+        mPath.lineTo(120, 140);
+        mPath.lineTo(120, 60);
+        mPath.lineTo(80, 120);
+        mPath.lineTo(80, 60);
+        mPath.lineTo(40, 140);
+        mPath.lineTo(0, 140);
+        mPath.closePath();
+
+        ctx.fill(mPath);
+        ctx.stroke(mPath);
+
+        ctx.restore();
+      }
+
+      function generateAllIcons() {
+        const container = document.getElementById("icons-container");
+        container.innerHTML = "";
+
+        iconSizes.forEach((iconInfo) => {
+          const div = document.createElement("div");
+          div.className = "icon-preview";
+
+          const canvas = document.createElement("canvas");
+          drawMIcon(canvas, iconInfo.size);
+
+          const p = document.createElement("p");
+          p.textContent = `${iconInfo.size}x${iconInfo.size}`;
+
+          const filename = document.createElement("p");
+          filename.textContent = iconInfo.filename;
+          filename.style.fontWeight = "bold";
+
+          const downloadBtn = document.createElement("button");
+          downloadBtn.textContent = "Download";
+          downloadBtn.onclick = () => downloadIcon(canvas, iconInfo.filename);
+
+          div.appendChild(canvas);
+          div.appendChild(p);
+          div.appendChild(filename);
+          div.appendChild(downloadBtn);
+
+          container.appendChild(div);
+        });
+      }
+
+      function downloadIcon(canvas, filename) {
+        const link = document.createElement("a");
+        link.download = filename;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      }
+
+      // Auto-generate on page load
+      window.onload = () => {
+        generateAllIcons();
+      };
+    </script>
+  </body>
+</html>

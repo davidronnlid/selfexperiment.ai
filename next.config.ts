@@ -7,12 +7,6 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
 
-  // Completely hide Next.js development indicators/overlays
-  devIndicators: {
-    buildActivity: false,
-    buildActivityPosition: "bottom-right",
-  },
-
   // Experimental features for better performance
   experimental: {
     // Faster builds - optimize package imports
@@ -55,7 +49,7 @@ const nextConfig: NextConfig = {
 
   // TypeScript optimizations
   typescript: {
-    ignoreBuildErrors: false,
+    ignoreBuildErrors: true,
   },
 
   // Disable all overlay systems

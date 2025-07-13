@@ -3,6 +3,7 @@ import "@/styles/globals.css";
 import "./log-datepicker.css";
 import type { AppProps } from "next/app";
 import Header from "@/components/header";
+import InstallPrompt from "@/components/InstallPrompt";
 import {
   useEffect,
   useState,
@@ -546,6 +547,7 @@ export default function App({ Component, pageProps }: AppProps) {
             refreshUser,
           }}
         >
+          <InstallPrompt />
           <Box className="min-h-screen bg-background">
             <Header />
             <Box

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Simplified M for favicon -->
+  <rect width="32" height="32" fill="#FFD700"/>
+  <path d="M 4 4 L 8 4 L 16 16 L 24 4 L 28 4 L 28 28 L 24 28 L 24 12 L 16 24 L 16 12 L 8 28 L 4 28 Z" 
+        fill="#000" stroke="#000" stroke-width="1"/>
+</svg>

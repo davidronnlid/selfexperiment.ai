@@ -308,13 +308,16 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
               📊 Data Summary (Last 14 Days)
             </Typography>
 
-            <Grid container spacing={2}>
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
               {Object.entries(groupedData).map(([metric, metricData]) => {
                 const stats = getMetricStats(metricData);
                 const isExpanded = expandedMetrics.has(metric);
 
                 return (
-                  <Grid item xs={12} md={6} key={metric}>
+                  <Box
+                    key={metric}
+                    sx={{ width: { xs: "100%", md: "50%" }, p: 1 }}
+                  >
                     <Card variant="outlined">
                       <CardContent>
                         <Box
@@ -349,8 +352,8 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
 
                         <Collapse in={isExpanded}>
                           <Box sx={{ mt: 2 }}>
-                            <Grid container spacing={2} sx={{ mb: 2 }}>
-                              <Grid item xs={4}>
+                            <Box sx={{ display: "flex", gap: 2, mb: 2 }}>
+                              <Box sx={{ flex: 1, textAlign: "center" }}>
                                 <Typography
                                   variant="body2"
                                   color="textSecondary"
@@ -360,8 +363,8 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
                                 <Typography variant="body1">
                                   {formatValue(metric, stats.avg)}
                                 </Typography>
-                              </Grid>
-                              <Grid item xs={4}>
+                              </Box>
+                              <Box sx={{ flex: 1, textAlign: "center" }}>
                                 <Typography
                                   variant="body2"
                                   color="textSecondary"
@@ -371,8 +374,8 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
                                 <Typography variant="body1">
                                   {formatValue(metric, stats.min)}
                                 </Typography>
-                              </Grid>
-                              <Grid item xs={4}>
+                              </Box>
+                              <Box sx={{ flex: 1, textAlign: "center" }}>
                                 <Typography
                                   variant="body2"
                                   color="textSecondary"
@@ -382,8 +385,8 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
                                 <Typography variant="body1">
                                   {formatValue(metric, stats.max)}
                                 </Typography>
-                              </Grid>
-                            </Grid>
+                              </Box>
+                            </Box>
 
                             <Box sx={{ height: 200 }}>
                               <Line
@@ -423,10 +426,10 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
                         </Collapse>
                       </CardContent>
                     </Card>
-                  </Grid>
+                  </Box>
                 );
               })}
-            </Grid>
+            </Box>
 
             <Divider sx={{ my: 3 }} />
 

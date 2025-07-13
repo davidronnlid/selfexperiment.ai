@@ -389,8 +389,41 @@ export default function VariableCreationDialog({
     setError("");
 
     try {
+      // Import content moderation
+      const {
+        validateVariableName,
+        moderateContent,
+        checkRateLimit,
+        suggestVariableImprovements,
+      } = await import("@/utils/contentModeration");
+
+      // Check rate limiting
+      const rateLimitResult = checkRateLimit(user.id);
+      if (!rateLimitResult.isAllowed) {
+        setError(rateLimitResult.reason || "Rate limit exceeded");
+        setLoading(false);
+        return;
+      }
+
+      // Validate variable name
+      const nameValidation = validateVariableName(variableName);
+      if (!nameValidation.isAllowed) {
+        setError(nameValidation.reason || "Invalid variable name");
+        setLoading(false);
+        return;
+      }
+
+      // Check content for potential issues
+      const contentCheck = moderateContent(
+        variableName + " " + (description || "")
+      );
+      if (contentCheck.reason) {
+        // Show warning but don't block
+        console.warn("Content flagged:", contentCheck.reason);
+      }
+
       // Create the variable in the universal variables system
-      const slug = variableName.toLowerCase().replace(/\s+/g, "_");
+      const slug = variableName.toLowerCase().replace(/\s+/g, "-");
 
       const validationRules: any = {};
       if (constraints.min) validationRules.min = parseFloat(constraints.min);

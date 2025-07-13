@@ -145,7 +145,7 @@ export default function Auth() {
           >
             {isSignUp
               ? "Join us to start tracking your health and discovering insights about yourself."
-              : "Choose your preferred sign-in method to access your personalized health tracking dashboard."}
+              : "Choose your preferred sign-in method to access your personalized health tracking."}
           </Typography>
 
           <Box className="flex flex-col gap-4 w-full max-w-sm">

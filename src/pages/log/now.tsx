@@ -278,7 +278,6 @@ export default function LogPage() {
 
         // Set basic data
         setVariables(variablesRes.data || []);
-        setLogs(logsRes.data || []);
         setRoutines([]); // Empty for now since we removed the RPC call
         setActiveExperiments(experimentsRes.data || []);
         setLabelOptions(variablesRes.data || []);
@@ -301,11 +300,18 @@ export default function LogPage() {
           const todaysLogs = logsRes.data.filter(
             (log: any) => log.date && log.date.startsWith(today)
           );
+
+          // Set only today's logs for the Today's Logs section
+          setLogs(todaysLogs);
+
           const filtered = filterExperimentsNeedingLogs(
             experimentsRes.data,
             todaysLogs
           );
           setExperimentsNeedingLogs(filtered);
+        } else {
+          // If no logs data, set empty array
+          setLogs([]);
         }
 
         console.log("Data processing completed");
@@ -2596,11 +2602,25 @@ export default function LogPage() {
                               color: "#0d47a1",
                             },
                           }}
-                          onClick={() =>
+                          onClick={() => {
+                            // Find the variable to get its slug
+                            let variableSlug = log.variable;
+                            if (
+                              log.variable_id &&
+                              variables &&
+                              Array.isArray(variables)
+                            ) {
+                              const foundVar = variables.find(
+                                (v) => v.id === log.variable_id
+                              );
+                              if (foundVar) {
+                                variableSlug = foundVar.slug;
+                              }
+                            }
                             router.push(
-                              `/variable/${encodeURIComponent(log.variable)}`
-                            )
-                          }
+                              `/variable/${encodeURIComponent(variableSlug)}`
+                            );
+                          }}
                         >
                           {log.variable}
                         </Typography>

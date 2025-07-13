@@ -76,7 +76,10 @@ export default function ManualLogsTable({
   });
 
   // Add state for variables
-  const [variables, setVariables] = useState<Record<string, string>>({}); // variable_id -> label
+  const [variables, setVariables] = useState<Record<string, string>>({});
+  const [variableSlugs, setVariableSlugs] = useState<Record<string, string>>(
+    {}
+  );
 
   useEffect(() => {
     fetchManualLogs();
@@ -87,13 +90,16 @@ export default function ManualLogsTable({
     async function fetchVariables() {
       const { data, error } = await supabase
         .from("variables")
-        .select("id, label");
+        .select("id, label, slug");
       if (!error && data) {
-        const map: Record<string, string> = {};
+        const labelMap: Record<string, string> = {};
+        const slugMap: Record<string, string> = {};
         data.forEach((v: any) => {
-          map[v.id] = v.label;
+          labelMap[v.id] = v.label;
+          slugMap[v.id] = v.slug;
         });
-        setVariables(map);
+        setVariables(labelMap);
+        setVariableSlugs(slugMap);
       }
     }
     fetchVariables();
@@ -615,7 +621,27 @@ export default function ManualLogsTable({
                               ),
                             }}
                           />
-                          <Typography variant="body2" className="font-medium">
+                          <Typography
+                            variant="body2"
+                            className="font-medium cursor-pointer hover:text-blue-400 transition-colors"
+                            sx={{
+                              color: "var(--text-primary)",
+                              textDecoration: "none",
+                              "&:hover": {
+                                color: "#60a5fa",
+                                textDecoration: "underline",
+                              },
+                            }}
+                            onClick={() => {
+                              const variableSlug =
+                                variableSlugs[log.variable_id] ||
+                                variables[log.variable_id] ||
+                                log.variable_id;
+                              router.push(
+                                `/variable/${encodeURIComponent(variableSlug)}`
+                              );
+                            }}
+                          >
                             {variables[log.variable_id] || log.variable_id}
                           </Typography>
                         </Box>
