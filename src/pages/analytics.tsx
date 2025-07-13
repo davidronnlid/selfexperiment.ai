@@ -26,6 +26,8 @@ import {
 import { useRouter } from "next/router";
 import ManualLogsChart from "@/components/ManualLogsChart";
 import ManualLogsTable from "@/components/ManualLogsTable";
+import OuraIntegration from "@/components/OuraIntegration";
+import WithingsIntegration from "@/components/WithingsIntegration";
 
 ChartJS.register(
   CategoryScale,
@@ -69,8 +71,9 @@ export default function Analytics() {
   const [ouraLoading, setOuraLoading] = useState(false);
   const [ouraSyncing, setOuraSyncing] = useState(false);
 
-  // Show Oura success message if redirected from callback
+  // Show success messages if redirected from callbacks
   const showOuraSuccess = router.query.oura === "success";
+  const showWithingsSuccess = router.query.withings === "success";
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
@@ -374,9 +377,27 @@ export default function Analytics() {
 
           {user && (
             <Box sx={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {showOuraSuccess && (
+                <Alert severity="success" sx={{ mb: 2 }}>
+                  Oura Ring connected successfully! Your data is now being
+                  synchronized.
+                </Alert>
+              )}
+              {showWithingsSuccess && (
+                <Alert severity="success" sx={{ mb: 2 }}>
+                  Withings device connected successfully! Your data is now being
+                  synchronized.
+                </Alert>
+              )}
               <ManualLogsChart userId={user.id} />
               <Divider />
               <ManualLogsTable userId={user.id} />
+              <Divider />
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                🔗 Device Integrations
+              </Typography>
+              <OuraIntegration userId={user.id} />
+              <WithingsIntegration userId={user.id} />
             </Box>
           )}
         </Paper>

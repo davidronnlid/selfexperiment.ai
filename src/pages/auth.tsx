@@ -35,7 +35,7 @@ export default function Auth() {
         data: { user },
       } = await supabase.auth.getUser();
       if (user) {
-        router.push("/dashboard");
+        router.push("/log/now");
       }
     };
     checkUser();
@@ -45,7 +45,7 @@ export default function Auth() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/dashboard`,
+        redirectTo: `${window.location.origin}/log/now`,
       },
     });
     if (error) {
@@ -78,7 +78,7 @@ export default function Auth() {
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/dashboard`,
+            emailRedirectTo: `${window.location.origin}/log/now`,
           },
         });
         if (error) {
@@ -96,7 +96,7 @@ export default function Auth() {
         if (error) {
           setError(error.message);
         } else {
-          router.push("/dashboard");
+          router.push("/log/now");
         }
       }
     } catch (err) {
