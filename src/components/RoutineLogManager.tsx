@@ -162,10 +162,7 @@ export default function RoutineLogManager({
     const logTimestamp = today + "T" + logTime;
 
     if (log) {
-      await supabase
-        .from("logs")
-        .update({ value: value })
-        .eq("id", log.id);
+      await supabase.from("logs").update({ value: value }).eq("id", log.id);
     } else {
       await supabase.from("logs").insert({
         user_id: user.id,
@@ -368,7 +365,8 @@ export default function RoutineLogManager({
                 })}
               </Box>
             ))}
-        </Snackbar>
+          </Box>
+        ))}
       </>
     </Box>
   );

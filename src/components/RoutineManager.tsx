@@ -95,7 +95,6 @@ async function fetchPlannedLogsForRoutine(routineId: string, userId: string) {
 
 export default function RoutineManager() {
   const { user } = useUser();
-  if (!user) return null;
   const [routines, setRoutines] = useState<any[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRoutine, setEditingRoutine] = useState<any>(null);
@@ -103,7 +102,6 @@ export default function RoutineManager() {
   const [allVariables, setAllVariables] = useState<Variable[]>([]);
   const [message, setMessage] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [sortBy, setSortBy] = useState<"variables" | "time">("variables");
 
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string }>({
     open: false,
@@ -123,6 +121,8 @@ export default function RoutineManager() {
       setAllVariables(variables || [])
     );
   }, [user]);
+
+  if (!user) return null;
 
   async function loadRoutines() {
     if (!user?.id) return;
