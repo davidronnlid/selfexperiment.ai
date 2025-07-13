@@ -21,10 +21,10 @@ import {
   Popover,
   IconButton,
   Grid,
-  Autocomplete,
 } from "@mui/material";
 import { FaGlobe, FaLock, FaPlus, FaQuestion, FaSmile } from "react-icons/fa";
 import { supabase } from "@/utils/supaBase";
+import UnitInput from "./UnitInput";
 
 interface VariableCreationDialogProps {
   open: boolean;
@@ -343,7 +343,7 @@ export default function VariableCreationDialog({
     }
   }, [constraints.type, unit]);
 
-  const handleUnitChange = (selectedUnit: string | null) => {
+  const handleUnitChange = (selectedUnit: string) => {
     const unitValue = selectedUnit || "";
     setUnit(unitValue);
 
@@ -377,6 +377,36 @@ export default function VariableCreationDialog({
   const handleEmojiSelect = (emoji: string) => {
     setIcon(emoji);
     setEmojiAnchor(null);
+  };
+
+  // Helper function to get unit category
+  const getUnitCategory = (unitValue: string): string | null => {
+    if (!unitValue) return null;
+
+    // Check predefined units first
+    const availableUnits = getAvailableUnits(constraints.type);
+    const unitOption = availableUnits.find((opt) => opt.value === unitValue);
+    if (unitOption) {
+      return unitOption.category;
+    }
+
+    // Check custom units from localStorage
+    const customUnits = localStorage.getItem("customUnits");
+    if (customUnits) {
+      try {
+        const parsedCustomUnits = JSON.parse(customUnits);
+        const customUnit = parsedCustomUnits.find(
+          (u: any) => u.value === unitValue
+        );
+        if (customUnit) {
+          return customUnit.category;
+        }
+      } catch (error) {
+        console.error("Failed to parse custom units:", error);
+      }
+    }
+
+    return null;
   };
 
   const handleSubmit = async () => {
@@ -430,6 +460,9 @@ export default function VariableCreationDialog({
       if (constraints.max) validationRules.max = parseFloat(constraints.max);
       if (unit) validationRules.unit = unit;
 
+      // Get category based on unit selection
+      const unitCategory = getUnitCategory(unit);
+
       const variableData = {
         slug,
         label: variableName,
@@ -440,7 +473,7 @@ export default function VariableCreationDialog({
           Object.keys(validationRules).length > 0 ? validationRules : null,
         canonical_unit: unit || null,
         source_type: source,
-        category: null,
+        category: unitCategory,
         is_public: isShared,
         created_by: user.id,
         is_active: true,
@@ -636,33 +669,13 @@ export default function VariableCreationDialog({
                 </Select>
               </FormControl>
 
-              <Autocomplete
-                fullWidth
-                freeSolo
+              <UnitInput
                 value={unit}
-                onChange={(event, newValue) => handleUnitChange(newValue)}
-                options={getAvailableUnits(constraints.type).map(
-                  (option) => option.value
-                )}
-                groupBy={(option) => {
-                  const unitOption = getAvailableUnits(constraints.type).find(
-                    (u) => u.value === option
-                  );
-                  return unitOption ? unitOption.category : "Other";
-                }}
-                getOptionLabel={(option) => {
-                  const unitOption = getAvailableUnits(constraints.type).find(
-                    (u) => u.value === option
-                  );
-                  return unitOption ? unitOption.label : option;
-                }}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Unit"
-                    helperText="Choose from list or type custom unit"
-                  />
-                )}
+                onChange={handleUnitChange}
+                dataType={constraints.type}
+                label="Unit"
+                placeholder="Select or type a unit..."
+                fullWidth
               />
             </Box>
 

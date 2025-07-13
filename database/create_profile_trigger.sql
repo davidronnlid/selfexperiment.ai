@@ -12,7 +12,10 @@ BEGIN
     NULL, -- Will be filled in by user during profile completion
     NULL, -- Will be filled in by user during profile completion
     NULL, -- Optional field
-    NEW.raw_user_meta_data->>'avatar_url' -- Get avatar from OAuth if available
+    COALESCE(
+      NEW.raw_user_meta_data->>'picture', -- Google OAuth uses 'picture'
+      NEW.raw_user_meta_data->>'avatar_url' -- Other OAuth providers might use 'avatar_url'
+    )
   );
   
   RETURN NEW;
@@ -32,7 +35,10 @@ SELECT
   NULL,
   NULL,
   NULL,
-  au.raw_user_meta_data->>'avatar_url'
+  COALESCE(
+    au.raw_user_meta_data->>'picture', -- Google OAuth uses 'picture'
+    au.raw_user_meta_data->>'avatar_url' -- Other OAuth providers might use 'avatar_url'
+  )
 FROM auth.users au
 LEFT JOIN public.profiles p ON au.id = p.id
 WHERE p.id IS NULL; 

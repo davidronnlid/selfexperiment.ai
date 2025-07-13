@@ -1,1 +1,15 @@
- 
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background -->
+  <rect width="512" height="512" fill="#FFD700"/>
+  
+  <!-- M Logo scaled for high resolution -->
+  <g transform="translate(96, 96)">
+    <!-- Yellow M background -->
+    <path d="M 0 0 L 80 0 L 160 120 L 240 0 L 320 0 L 320 320 L 240 320 L 240 120 L 160 240 L 160 120 L 80 320 L 0 320 Z" 
+          fill="#FFD700" stroke="#000" stroke-width="8"/>
+    
+    <!-- Black M outline -->
+    <path d="M 0 0 L 80 0 L 160 120 L 240 0 L 320 0 L 320 320 L 240 320 L 240 120 L 160 240 L 160 120 L 80 320 L 0 320 Z" 
+          fill="none" stroke="#000" stroke-width="12"/>
+  </g>
+</svg> 

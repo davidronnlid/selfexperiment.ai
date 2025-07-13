@@ -7,16 +7,16 @@ export async function fetchUserVariablePreferences(userId: string) {
       .from("user_variable_preferences")
       .select(
         `
-        *,
-        variable:variables!user_variable_preferences_variable_id_fkey (
-          id,
+      *,
+      variable:variables!user_variable_preferences_variable_id_fkey (
+        id,
           slug,
-          label,
-          data_type,
-          category,
-          icon
-        )
-      `
+        label,
+        data_type,
+        category,
+        icon
+      )
+    `
       )
       .eq("user_id", userId);
 

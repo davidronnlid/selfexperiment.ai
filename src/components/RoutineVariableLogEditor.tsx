@@ -5,7 +5,10 @@ import RemoveIcon from "@mui/icons-material/Remove";
 import DeleteIcon from "@mui/icons-material/Delete";
 import SaveIcon from "@mui/icons-material/Check";
 import CancelIcon from "@mui/icons-material/Close";
-import { validateValue, getInputProps } from "@/utils/logLabels";
+import {
+  validateVariableValue,
+  getVariableInputProps,
+} from "@/utils/variableValidation";
 import { Variable } from "@/types/variables";
 
 interface RoutineVariableLogEditorProps {
@@ -37,13 +40,13 @@ const RoutineVariableLogEditor: React.FC<RoutineVariableLogEditorProps> = ({
   }, [value]);
 
   useEffect(() => {
-    const validation = validateValue(variable.label, localValue);
+    const validation = validateVariableValue(localValue, variable);
     setValidationError(
       validation.isValid ? "" : validation.error || "Invalid value"
     );
   }, [localValue, variable]);
 
-  const inputProps = getInputProps(variable.label);
+  const inputProps = getVariableInputProps(variable);
 
   const handleIncrement = () => {
     if (inputProps.type === "number") {

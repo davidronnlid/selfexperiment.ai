@@ -435,7 +435,7 @@ export default function ProfilePage() {
               {/* Profile Form */}
               <Box component="form" onSubmit={handleSave} className="space-y-4">
                 <Grid container spacing={3}>
-                  <Grid item xs={12} md={6}>
+                  <Grid xs={12} md={6}>
                     <TextField
                       fullWidth
                       label="Username"
@@ -458,7 +458,7 @@ export default function ProfilePage() {
                       className="mb-4"
                     />
                   </Grid>
-                  <Grid item xs={12} md={6}>
+                  <Grid xs={12} md={6}>
                     <TextField
                       fullWidth
                       label="Full Name"
@@ -469,7 +469,7 @@ export default function ProfilePage() {
                       className="mb-4"
                     />
                   </Grid>
-                  <Grid item xs={12} md={6}>
+                  <Grid xs={12} md={6}>
                     <TextField
                       fullWidth
                       label="Date of Birth"
@@ -540,12 +540,7 @@ export default function ProfilePage() {
                 Shared variables will be visible to other users.
               </Typography>
 
-              <VariableSharingManager
-                variableSettings={variableSettings}
-                onVariableSharingChange={handleVariableSharingChange}
-                loading={privacyLoading}
-                saving={privacySaving}
-              />
+              {user && <VariableSharingManager user={user} />}
 
               <Box className="mt-6">
                 <Typography
@@ -554,10 +549,7 @@ export default function ProfilePage() {
                 >
                   Privacy Analysis
                 </Typography>
-                <AnalyzePrivacySection
-                  variableSettings={variableSettings}
-                  sharedCount={getSharedVariablesCount()}
-                />
+                <AnalyzePrivacySection />
               </Box>
             </Box>
           </CardContent>

@@ -44,12 +44,24 @@ export default function CompleteProfilePage() {
             // Profile might not exist yet, that's okay
           }
 
+          // Get Google profile picture from OAuth data if available
+          const googleProfilePic =
+            user.user_metadata?.picture || user.user_metadata?.avatar_url;
+
           if (data) {
             setForm({
               username: data.username || "",
-              name: data.name || "",
+              name: data.name || user.user_metadata?.name || "", // Pre-populate name from Google
               date_of_birth: data.date_of_birth || "",
-              avatar_url: data.avatar_url || "",
+              avatar_url: data.avatar_url || googleProfilePic || "",
+            });
+          } else {
+            // No existing profile, populate with Google data
+            setForm({
+              username: "",
+              name: user.user_metadata?.name || "",
+              date_of_birth: "",
+              avatar_url: googleProfilePic || "",
             });
           }
         } catch (err) {
@@ -108,6 +120,22 @@ export default function CompleteProfilePage() {
       <Typography variant="h4" gutterBottom>
         Complete Your Profile
       </Typography>
+
+      {/* Show Google profile picture if available */}
+      {form.avatar_url && (
+        <Box sx={{ display: "flex", justifyContent: "center", mb: 3 }}>
+          <Avatar
+            src={form.avatar_url}
+            sx={{
+              width: 80,
+              height: 80,
+              border: "3px solid #FFD700",
+              boxShadow: 2,
+            }}
+          />
+        </Box>
+      )}
+
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
@@ -146,14 +174,12 @@ export default function CompleteProfilePage() {
           InputLabelProps={{ shrink: true }}
         />
         <TextField
-          label="Avatar URL"
+          label="Profile Picture URL"
           name="avatar_url"
           value={form.avatar_url}
           onChange={handleChange}
+          helperText="This will be automatically populated from your Google account"
         />
-        {form.avatar_url && (
-          <Avatar src={form.avatar_url} sx={{ width: 56, height: 56, mb: 1 }} />
-        )}
         <Button type="submit" variant="contained" color="primary">
           Save
         </Button>

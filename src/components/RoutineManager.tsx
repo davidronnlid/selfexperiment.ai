@@ -33,11 +33,13 @@ import {
   ContentCopy,
   ExpandMore,
   ExpandLess,
+  Sort,
 } from "@mui/icons-material";
 import { useUser } from "@/pages/_app";
 import { supabase } from "@/utils/supaBase";
 import { getVariables } from "@/utils/variableUtils";
 import { Variable } from "@/types/variables";
+import { validateVariableValue } from "@/utils/variableValidation";
 import { format } from "date-fns";
 import Autocomplete from "@mui/material/Autocomplete";
 import MuiAlert from "@mui/material/Alert";
@@ -66,31 +68,27 @@ function timeString(t: string) {
 }
 
 const defaultTime = () => {
-  const d = new Date();
-  d.setSeconds(0, 0);
-  return d.toTimeString().slice(0, 5);
+  const now = new Date();
+  const hours = now.getHours().toString().padStart(2, "0");
+  const minutes = now.getMinutes().toString().padStart(2, "0");
+  return `${hours}:${minutes}`;
 };
 
-// Add this helper at the top or in a utils file
 async function fetchPlannedLogsForRoutine(routineId: string, userId: string) {
   const today = new Date();
-  const start = today.toISOString().split("T")[0] + "T00:00:00Z";
-  const endDate = new Date(today);
-  endDate.setDate(today.getDate() + 13);
-  const end = endDate.toISOString().split("T")[0] + "T23:59:59Z";
+  const start = new Date(today);
+  start.setDate(today.getDate() - 14);
+  const end = new Date(today);
+  end.setDate(today.getDate() + 14);
 
-  const { data, error } = await supabase
-    .from("logs")
+  const { data } = await supabase
+    .from("planned_logs")
     .select("*")
+    .eq("routine_id", routineId)
     .eq("user_id", userId)
-    .eq("source", "planned")
-    .gte("created_at", start)
-    .lte("created_at", end)
-    .contains("context", { routine_id: routineId });
-
-  // Debug log
-  // eslint-disable-next-line no-console
-  console.log("fetchPlannedLogsForRoutine", { routineId, userId, data, error });
+    .gte("planned_date", start.toISOString().slice(0, 10))
+    .lte("planned_date", end.toISOString().slice(0, 10))
+    .order("planned_date", { ascending: true });
 
   return data || [];
 }
@@ -102,32 +100,19 @@ export default function RoutineManager() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRoutine, setEditingRoutine] = useState<any>(null);
   const [form, setForm] = useState<any>(null);
-  const [allVariables, setAllVariables] = useState<Variable[]>([]); // FIX: always array
+  const [allVariables, setAllVariables] = useState<Variable[]>([]);
   const [message, setMessage] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  // Add state for selected variable to add to all times
-  const [addAllVar, setAddAllVar] = useState<Variable | null>(null);
+  const [sortBy, setSortBy] = useState<"variables" | "time">("variables");
+
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string }>({
     open: false,
     message: "",
   });
-  const [plannedEdits, setPlannedEdits] = useState<
-    Record<
-      string,
-      Record<string, { default_value: string; default_unit: string }>
-    >
-  >({});
-  const [expandedPlanned, setExpandedPlanned] = useState<
-    Record<string, boolean>
-  >({});
-  const [logsByRoutineVarTime, setLogsByRoutineVarTime] = useState<
-    Record<string, Record<string, any[]>>
-  >({});
-  const [editLogValue, setEditLogValue] = useState<Record<string, string>>({});
-  const [editingLogId, setEditingLogId] = useState<string | null>(null);
-  // Add state for planned logs
-  const [plannedLogsByRoutine, setPlannedLogsByRoutine] = useState<
-    Record<string, any[]>
+
+  // Validation state for individual variables in the form
+  const [variableValidationErrors, setVariableValidationErrors] = useState<
+    Record<number, string>
   >({});
 
   // Load all routines
@@ -137,82 +122,7 @@ export default function RoutineManager() {
     getVariables(user?.id).then((variables) =>
       setAllVariables(variables || [])
     );
-    // Generate historical logs for existing routines that don't have them
-    if (user?.id) {
-      generateHistoricalLogsForExistingRoutines(user.id);
-    }
   }, [user]);
-
-  // Fetch planned logs for all routines when routines change
-  useEffect(() => {
-    async function loadPlannedLogs() {
-      if (!user || routines.length === 0) return;
-      const logsByRoutine: Record<string, any[]> = {};
-      for (const routine of routines) {
-        logsByRoutine[routine.id] = await fetchPlannedLogsForRoutine(
-          routine.id,
-          user.id
-        );
-      }
-      setPlannedLogsByRoutine(logsByRoutine);
-    }
-    loadPlannedLogs();
-  }, [user, routines]);
-
-  // Fetch logs for all routines/variables/times when expandedPlanned changes
-  useEffect(() => {
-    const fetchLogs = async () => {
-      if (!user) return;
-      let newLogs: Record<string, Record<string, any[]>> = {};
-      for (const routine of routines) {
-        newLogs[routine.id] = {};
-        for (const [timeIdx, time] of (routine.times || []).entries()) {
-          for (const v of time.variables || []) {
-            // Fetch logs for this variable/time
-            const today = new Date();
-            const start = new Date(today);
-            start.setDate(today.getDate() - 14);
-            const end = new Date(today);
-            end.setDate(today.getDate() + 14);
-            const startISO = start.toISOString().slice(0, 10) + "T00:00:00Z";
-            const endISO = end.toISOString().slice(0, 10) + "T23:59:59Z";
-
-            // Debug logging
-            console.log(
-              `Fetching logs for routine ${routine.id}, variable ${v.variable_id}, time ${timeIdx}`
-            );
-            console.log(`Date range: ${startISO} to ${endISO}`);
-
-            const { data, error } = await supabase
-              .from("logs")
-              .select("*")
-              .eq("user_id", user.id)
-              .eq("variable_id", v.variable_id)
-              .gte("created_at", startISO)
-              .lte("created_at", endISO)
-              .order("created_at", { ascending: false });
-
-            // Debug logging
-            console.log(
-              `Found ${data?.length || 0} logs for variable ${v.variable_id}`
-            );
-            if (error) {
-              console.error(
-                `Error fetching logs for variable ${v.variable_id}:`,
-                error
-              );
-            }
-
-            newLogs[routine.id][`${timeIdx}_${v.variable_id}`] = data || [];
-          }
-        }
-      }
-      console.log("Final logs object:", newLogs);
-      setLogsByRoutineVarTime(newLogs);
-    };
-    // Only fetch if any expanded
-    if (Object.values(expandedPlanned).some(Boolean)) fetchLogs();
-  }, [expandedPlanned, routines, user]);
 
   async function loadRoutines() {
     if (!user?.id) return;
@@ -222,67 +132,6 @@ export default function RoutineManager() {
     });
     setRoutines(data || []);
     setLoading(false);
-
-    // Fetch logs for all routines after they are loaded
-    if (data && data.length > 0) {
-      await fetchAllRoutineLogs(data);
-    }
-  }
-
-  async function fetchAllRoutineLogs(routinesToFetch: any[]) {
-    if (!user) return;
-    console.log("Fetching logs for routines:", routinesToFetch);
-    let newLogs: Record<string, Record<string, any[]>> = {};
-    for (const routine of routinesToFetch) {
-      console.log("Processing routine:", routine.id, routine.routine_name);
-      console.log("Routine times:", routine.times);
-      newLogs[routine.id] = {};
-      for (const [timeIdx, time] of (routine.times || []).entries()) {
-        console.log(`Processing time ${timeIdx}:`, time);
-        for (const v of time.variables || []) {
-          console.log(`Processing variable:`, v);
-          // Fetch logs for this variable/time
-          const today = new Date();
-          const start = new Date(today);
-          start.setDate(today.getDate() - 14);
-          const end = new Date(today);
-          end.setDate(today.getDate() + 14);
-          const startISO = start.toISOString().slice(0, 10) + "T00:00:00Z";
-          const endISO = end.toISOString().slice(0, 10) + "T23:59:59Z";
-
-          // Debug logging
-          console.log(
-            `Initial fetch: routine ${routine.id}, variable ${v.variable_id}, time ${timeIdx}`
-          );
-
-          const { data, error } = await supabase
-            .from("logs")
-            .select("*")
-            .eq("user_id", user.id)
-            .eq("variable_id", v.variable_id)
-            .gte("created_at", startISO)
-            .lte("created_at", endISO)
-            .order("created_at", { ascending: false });
-
-          // Debug logging
-          console.log(
-            `Initial fetch: Found ${data?.length || 0} logs for variable ${
-              v.variable_id
-            }`
-          );
-          if (error) {
-            console.error(
-              `Error fetching logs for variable ${v.variable_id}:`,
-              error
-            );
-          }
-
-          newLogs[routine.id][`${timeIdx}_${v.variable_id}`] = data || [];
-        }
-      }
-    }
-    console.log("Initial logs object:", newLogs);
-    setLogsByRoutineVarTime(newLogs);
   }
 
   function openCreateDialog() {
@@ -290,17 +139,9 @@ export default function RoutineManager() {
     setForm({
       routine_name: "",
       notes: "",
-      weekdays: [1, 2, 3, 4, 5, 6, 7],
-      times: [
-        {
-          time_of_day: defaultTime(),
-          time_name: "",
-          is_active: true,
-          display_order: 0,
-          variables: [],
-        },
-      ],
+      variables: [],
     });
+    setVariableValidationErrors({});
     setDialogOpen(true);
   }
 
@@ -309,20 +150,19 @@ export default function RoutineManager() {
     setForm({
       routine_name: routine.routine_name,
       notes: routine.notes || "",
-      weekdays: routine.weekdays,
-      times: (routine.times || []).map((t: any, i: number) => ({
-        time_of_day: t.time_of_day.slice(0, 5),
-        time_name: t.time_name || "",
-        is_active: t.is_active,
-        display_order: t.display_order,
-        variables: (t.variables || []).map((v: any) => ({
+      variables: (routine.variables || []).map((v: any) => {
+        const variableInfo = allVariables.find((vv) => vv.id === v.variable_id);
+        return {
           variable_id: v.variable_id,
           default_value: v.default_value,
-          default_unit: v.default_unit,
-          display_order: v.display_order,
-        })),
-      })),
+          default_unit:
+            v.default_unit || variableInfo?.default_display_unit || "",
+          weekdays: v.weekdays || [1, 2, 3, 4, 5, 6, 7],
+          times: v.times || [],
+        };
+      }),
     });
+    setVariableValidationErrors({});
     setDialogOpen(true);
   }
 
@@ -330,106 +170,39 @@ export default function RoutineManager() {
     setForm((prev: any) => ({ ...prev, [field]: value }));
   }
 
-  function handleTimeChange(idx: number, field: string, value: any) {
+  function handleVariableChange(idx: number, field: string, value: any) {
     setForm((prev: any) => {
-      const times = [...prev.times];
-      times[idx] = { ...times[idx], [field]: value };
-      return { ...prev, times };
+      const variables = [...prev.variables];
+      variables[idx] = { ...variables[idx], [field]: value };
+      return { ...prev, variables };
     });
-  }
 
-  function handleAddTime() {
-    setForm((prev: any) => ({
-      ...prev,
-      times: [
-        ...prev.times,
-        {
-          time_of_day: defaultTime(),
-          time_name: "",
-          is_active: true,
-          display_order: prev.times.length,
-          variables: [],
-        },
-      ],
-    }));
-  }
-
-  function handleRemoveTime(idx: number) {
-    setForm((prev: any) => {
-      const times = prev.times.filter((_: any, i: number) => i !== idx);
-      return { ...prev, times };
-    });
-  }
-
-  function handleAddVariableToTime(timeIdx: number, variable: Variable) {
-    setForm((prev: any) => {
-      const times = [...prev.times];
-      if (
-        !times[timeIdx].variables.find(
-          (v: any) => v.variable_id === variable.id
-        )
-      ) {
-        times[timeIdx].variables.push({
-          variable_id: variable.id,
-          default_value: "",
-          default_unit: variable.canonical_unit || "",
-          display_order: times[timeIdx].variables.length,
-        });
+    // Real-time validation for default_value changes
+    if (field === "default_value") {
+      const variable = allVariables.find(
+        (v) => v.id === form.variables[idx].variable_id
+      );
+      if (variable && value) {
+        const validation = validateVariableValue(value, variable);
+        setVariableValidationErrors((prev) => ({
+          ...prev,
+          [idx]: validation.isValid ? "" : validation.error || "Invalid value",
+        }));
+      } else {
+        setVariableValidationErrors((prev) => ({
+          ...prev,
+          [idx]: "",
+        }));
       }
-      return { ...prev, times };
-    });
-  }
-
-  function handleRemoveVariableFromTime(timeIdx: number, variableId: string) {
-    setForm((prev: any) => {
-      const times = [...prev.times];
-      times[timeIdx].variables = times[timeIdx].variables.filter(
-        (v: any) => v.variable_id !== variableId
-      );
-      return { ...prev, times };
-    });
-  }
-
-  function handleVariableValueChange(
-    timeIdx: number,
-    variableId: string,
-    field: string,
-    value: any
-  ) {
-    setForm((prev: any) => {
-      const times = [...prev.times];
-      times[timeIdx].variables = times[timeIdx].variables.map((v: any) =>
-        v.variable_id === variableId ? { ...v, [field]: value } : v
-      );
-      return { ...prev, times };
-    });
-  }
-
-  function handleAssignVariableToAllTimes(variable: Variable) {
-    setForm((prev: any) => {
-      const times = prev.times.map((t: any) => {
-        if (!t.variables.find((v: any) => v.variable_id === variable.id)) {
-          return {
-            ...t,
-            variables: [
-              ...t.variables,
-              {
-                variable_id: variable.id,
-                default_value: "",
-                default_unit: variable.canonical_unit || "",
-                display_order: t.variables.length,
-              },
-            ],
-          };
-        }
-        return t;
-      });
-      return { ...prev, times };
-    });
+    }
   }
 
   async function handleSave() {
-    if (!user) return;
+    if (!user) {
+      return;
+    }
+
+    // Validate routine name
     const trimmedName = (form.routine_name || "").trim();
     if (!trimmedName) {
       setMessage({
@@ -438,240 +211,249 @@ export default function RoutineManager() {
       });
       return;
     }
-    const payload = {
-      user_id: user.id,
-      routine_name: trimmedName,
-      notes: form.notes,
-      weekdays: `{${form.weekdays.join(",")}}`,
-      times: form.times.map((t: any, i: number) => ({
-        time_of_day: t.time_of_day,
-        time_name: t.time_name,
-        is_active: t.is_active,
-        display_order: i,
-        variables: t.variables.map((v: any, j: number) => ({
-          variable_id: v.variable_id,
-          default_value: v.default_value,
-          default_unit: v.default_unit,
-          display_order: j,
-        })),
-      })),
-    };
-    setLoading(true);
-    // Validate all variables before saving
-    for (const time of form.times) {
-      for (const v of time.variables) {
-        const variable = allVariables.find((vv) => vv.id === v.variable_id);
-        const rules = variable?.validation_rules;
-        const val = parseFloat(v.default_value);
-        if (rules) {
-          if (
-            (rules.min !== undefined && val < rules.min) ||
-            (rules.max !== undefined && val > rules.max) ||
-            (rules.scaleMin !== undefined && val < rules.scaleMin) ||
-            (rules.scaleMax !== undefined && val > rules.scaleMax)
-          ) {
-            setMessage({
-              type: "error",
-              text: `Default value for ${
-                variable?.label || v.variable_id
-              } is out of range.`,
-            });
-            setLoading(false);
-            return;
-          }
+
+    // Validate that at least one variable is added
+    if (!form.variables || form.variables.length === 0) {
+      setMessage({
+        type: "error",
+        text: "Please add at least one variable to your routine.",
+      });
+      return;
+    }
+
+    // Validate each variable
+    for (let i = 0; i < form.variables.length; i++) {
+      const v = form.variables[i];
+      const variable = allVariables.find((vv) => vv.id === v.variable_id);
+      const variableName = variable?.label || `Variable ${i + 1}`;
+
+      // Check if default value is provided
+      const defaultValueStr = String(v.default_value || "").trim();
+      if (!v.default_value || defaultValueStr === "") {
+        setMessage({
+          type: "error",
+          text: `${variableName}: Default value is required.`,
+        });
+        return;
+      }
+
+      // Validate the value using the comprehensive validation system
+      if (variable) {
+        const validation = validateVariableValue(defaultValueStr, variable);
+        if (!validation.isValid) {
+          setMessage({
+            type: "error",
+            text: `${variableName}: ${validation.error}`,
+          });
+          return;
+        }
+      }
+
+      // Check if weekdays are selected
+      if (!v.weekdays || v.weekdays.length === 0) {
+        setMessage({
+          type: "error",
+          text: `${variableName}: Please select at least one weekday.`,
+        });
+        return;
+      }
+
+      // Check if times are configured
+      if (!v.times || v.times.length === 0) {
+        setMessage({
+          type: "error",
+          text: `${variableName}: Please add at least one time. Click "Add Time" to configure when this variable should be logged.`,
+        });
+        return;
+      }
+
+      // Validate each time
+      for (let j = 0; j < v.times.length; j++) {
+        const timeObj = v.times[j];
+        if (!timeObj.time || timeObj.time.trim() === "") {
+          setMessage({
+            type: "error",
+            text: `${variableName}: Time ${
+              j + 1
+            } is not configured. Please set a time or remove this time slot.`,
+          });
+          return;
+        }
+
+        // Validate time format (HH:MM)
+        const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+        if (!timeRegex.test(timeObj.time)) {
+          setMessage({
+            type: "error",
+            text: `${variableName}: Time ${
+              j + 1
+            } has invalid format. Please use HH:MM format (e.g., 08:30).`,
+          });
+          return;
         }
       }
     }
-    const { error } = await supabase.rpc(
-      editingRoutine ? "update_routine" : "create_routine",
-      editingRoutine
-        ? { p_routine_id: editingRoutine.id, p_routine_data: payload }
-        : { p_routine_data: payload }
-    );
-    // If new routine, fetch it and generate planned logs
-    if (!editingRoutine && !error && user?.id) {
-      // Fetch the new routine with times/variables
-      const { data: routines } = await supabase.rpc("get_user_routines", {
-        p_user_id: user.id,
-      });
-      // Find the routine with the same name and notes (most recently created)
-      const newRoutine = (routines || []).find(
-        (r: any) =>
-          r.routine_name === form.routine_name && r.notes === form.notes
+
+    // If all validations pass, prepare the payload
+    const payload = {
+      user_id: user.id,
+      routine_name: trimmedName,
+      notes: form.notes || "",
+      variables: form.variables.map((v: any, variableIndex: number) => {
+        const variable = allVariables.find((vv) => vv.id === v.variable_id);
+        let defaultValue = v.default_value;
+
+        // Convert default_value to appropriate type based on variable data_type
+        if (variable?.data_type === "continuous") {
+          defaultValue = parseFloat(v.default_value);
+        } else if (variable?.data_type === "boolean") {
+          defaultValue = v.default_value === "true" || v.default_value === true;
+        } else if (
+          variable?.data_type === "categorical" ||
+          variable?.data_type === "text"
+        ) {
+          defaultValue = String(v.default_value);
+        } else if (variable?.data_type === "time") {
+          defaultValue = String(v.default_value);
+        } else {
+          const numValue = parseFloat(v.default_value);
+          defaultValue = isNaN(numValue) ? String(v.default_value) : numValue;
+        }
+
+        return {
+          variable_id: v.variable_id,
+          default_value: defaultValue,
+          default_unit: v.default_unit || "",
+          weekdays: v.weekdays || [1, 2, 3, 4, 5, 6, 7],
+          times: (v.times || []).map((timeObj: any) => ({
+            time: timeObj.time,
+            name: timeObj.name || "",
+          })),
+        };
+      }),
+    };
+
+    setLoading(true);
+
+    try {
+      const { error } = await supabase.rpc(
+        editingRoutine ? "update_routine" : "create_routine",
+        editingRoutine
+          ? { p_routine_id: editingRoutine.id, p_routine_data: payload }
+          : { p_routine_data: payload }
       );
-      if (newRoutine) {
-        await generateAllLogsForRoutine(
-          { ...form, id: newRoutine.id },
-          user.id
-        );
+
+      setLoading(false);
+
+      if (error) {
+        console.error("Database error:", error);
+        let errorMessage = "Failed to create routine. ";
+
+        // Provide specific error messages based on error type
+        if (error.message.includes("violates foreign key constraint")) {
+          errorMessage +=
+            "One or more selected variables may no longer exist. Please try removing and re-adding the variables.";
+        } else if (error.message.includes("violates unique constraint")) {
+          errorMessage +=
+            "A routine with this name already exists. Please choose a different name.";
+        } else if (error.message.includes("permission denied")) {
+          errorMessage +=
+            "You don't have permission to create routines. Please try logging out and back in.";
+        } else if (
+          error.message.includes("function") &&
+          error.message.includes("does not exist")
+        ) {
+          errorMessage +=
+            "Database functions are not properly configured. Please contact support.";
+        } else {
+          errorMessage += `Database error: ${error.message}`;
+        }
+
+        setMessage({ type: "error", text: errorMessage });
+      } else {
+        setMessage({
+          type: "success",
+          text: `Routine "${trimmedName}" ${
+            editingRoutine ? "updated" : "created"
+          } successfully! Variables will be logged at the configured times on selected weekdays.`,
+        });
+        setDialogOpen(false);
+        loadRoutines();
       }
-      setSnackbar({
-        open: true,
-        message: `Routine "${form.routine_name}" created successfully! Historical and planned logs for the past and next 2 weeks have been generated.`,
-      });
-    }
-    setLoading(false);
-    if (error) {
-      setMessage({ type: "error", text: error.message });
-    } else {
+    } catch (err) {
+      setLoading(false);
+      console.error("Unexpected error:", err);
       setMessage({
-        type: "success",
-        text: `Routine ${editingRoutine ? "updated" : "created"} successfully`,
+        type: "error",
+        text: "An unexpected error occurred. Please try again or contact support if the problem persists.",
       });
-      setDialogOpen(false);
-      loadRoutines();
     }
   }
 
   async function handleDeleteRoutine(routineId: string) {
-    if (!window.confirm("Delete this routine?")) return;
-    setLoading(true);
-    await supabase.rpc("delete_routine", { p_routine_id: routineId });
-    setLoading(false);
-    loadRoutines();
-  }
-
-  async function handleDuplicateRoutine(routine: any) {
-    if (!user) return;
-    // Deep copy the routine, remove IDs, and update name
-    const newRoutine = {
-      ...routine,
-      routine_name: `Copy of ${routine.routine_name}`,
-      // Remove id and any DB-specific fields
-      id: undefined,
-      times: (routine.times || []).map((t: any) => ({
-        ...t,
-        time_id: undefined,
-        variables: (t.variables || []).map((v: any) => ({ ...v })),
-      })),
-    };
-    // Prepare payload for create_routine
-    const payload = {
-      user_id: user.id,
-      routine_name: newRoutine.routine_name,
-      notes: newRoutine.notes || "",
-      weekdays: `{${newRoutine.weekdays.join(",")}}`,
-      times: newRoutine.times.map((t: any, i: number) => ({
-        time_of_day: t.time_of_day,
-        time_name: t.time_name,
-        is_active: t.is_active,
-        display_order: i,
-        variables: t.variables.map((v: any, j: number) => ({
-          variable_id: v.variable_id,
-          default_value: v.default_value,
-          default_unit: v.default_unit,
-          display_order: j,
-        })),
-      })),
-    };
-    setLoading(true);
-    const { error } = await supabase.rpc("create_routine", {
-      p_routine_data: payload,
-    });
-    // If routine created successfully, generate logs for it
-    if (!error && user?.id) {
-      // Fetch the new routine with times/variables
-      const { data: routines } = await supabase.rpc("get_user_routines", {
-        p_user_id: user.id,
+    if (confirm("Are you sure you want to delete this routine?")) {
+      const { error } = await supabase.rpc("delete_routine", {
+        p_routine_id: routineId,
       });
-      // Find the routine with the same name (most recently created)
-      const newRoutine = (routines || []).find(
-        (r: any) => r.routine_name === newRoutine.routine_name
-      );
-      if (newRoutine) {
-        await generateAllLogsForRoutine(
-          { ...newRoutine, times: newRoutine.times },
-          user.id
-        );
+      if (error) {
+        console.error("Error deleting routine:", error);
+      } else {
+        setSnackbar({ open: true, message: "Routine deleted successfully" });
+        await loadRoutines();
       }
     }
-    setLoading(false);
-    if (error) {
-      setMessage({ type: "error", text: error.message });
-    } else {
-      setMessage({ type: "success", text: "Routine duplicated successfully" });
-      loadRoutines();
-    }
   }
 
-  async function handleSavePlannedLog(
-    routineId: string,
-    timeIdx: number,
-    variableId: string
-  ) {
-    // Save the planned log edit for a variable in a routine/time
-    const routine = routines.find((r) => r.id === routineId);
-    if (!routine || !user) return;
-    const edit = plannedEdits[routineId]?.[`${timeIdx}_${variableId}`];
-    if (!edit) return;
-    // Update the routine in the DB
-    const updatedTimes = (routine.times || []).map((t: any, idx: number) => {
-      if (idx !== timeIdx) return t;
-      return {
-        ...t,
-        variables: (t.variables || []).map((v: any) =>
-          v.variable_id === variableId
-            ? {
-                ...v,
-                default_value: edit.default_value,
-                default_unit: edit.default_unit,
-              }
-            : v
-        ),
-      };
-    });
-    // Prepare payload
-    const payload = {
-      user_id: user.id,
-      routine_name: routine.routine_name,
-      notes: routine.notes,
-      weekdays: `{${routine.weekdays.join(",")}}`,
-      times: updatedTimes.map((t: any, i: number) => ({
-        time_of_day: t.time_of_day,
-        time_name: t.time_name,
-        is_active: t.is_active,
-        display_order: i,
-        variables: t.variables.map((v: any, j: number) => ({
-          variable_id: v.variable_id,
-          default_value: v.default_value,
-          default_unit: v.default_unit,
-          display_order: j,
-        })),
-      })),
-    };
-    setLoading(true);
-    const { error } = await supabase.rpc("update_routine", {
-      p_routine_id: routineId,
-      p_routine_data: payload,
-    });
-    setLoading(false);
-    if (error) {
-      setSnackbar({
-        open: true,
-        message: `Error saving planned log: ${error.message}`,
-      });
-    } else {
-      setSnackbar({
-        open: true,
-        message: `Planned log updated for ${routine.routine_name}`,
-      });
-      loadRoutines();
-    }
-  }
+  // Helper function to get the earliest time from a routine
+  const getEarliestTime = (routine: any): string | null => {
+    if (!routine.variables || routine.variables.length === 0) return null;
 
-  async function handleSaveLogEdit(logId: string, value: string) {
-    await supabase.from("logs").update({ value: value }).eq("id", logId);
-    setEditingLogId(null);
-    setEditLogValue((prev) => ({ ...prev, [logId]: "" }));
-    // Refetch logs
-    setExpandedPlanned((prev) => ({ ...prev })); // trigger useEffect
-  }
-  async function handleDeleteLog(logId: string) {
-    await supabase.from("logs").delete().eq("id", logId);
-    setEditingLogId(null);
-    setEditLogValue((prev) => ({ ...prev, [logId]: "" }));
-    setExpandedPlanned((prev) => ({ ...prev })); // trigger useEffect
-  }
+    let earliestTime: string | null = null;
+
+    for (const variable of routine.variables) {
+      if (variable.times && variable.times.length > 0) {
+        for (const timeObj of variable.times) {
+          if (timeObj.time) {
+            if (earliestTime === null || timeObj.time < earliestTime) {
+              earliestTime = timeObj.time;
+            }
+          }
+        }
+      }
+    }
+
+    return earliestTime;
+  };
+
+  // Sorting functions
+  const sortedRoutines = React.useMemo(() => {
+    if (!routines || routines.length === 0) return [];
+
+    const routinesCopy = [...routines];
+
+    if (sortBy === "variables") {
+      // Sort by number of variables (descending)
+      routinesCopy.sort((a, b) => {
+        const aVarCount = a.variables?.length || 0;
+        const bVarCount = b.variables?.length || 0;
+        return bVarCount - aVarCount;
+      });
+    } else if (sortBy === "time") {
+      // Sort by earliest time of day across all variables (ascending)
+      routinesCopy.sort((a, b) => {
+        const aEarliestTime = getEarliestTime(a);
+        const bEarliestTime = getEarliestTime(b);
+
+        if (aEarliestTime === null && bEarliestTime === null) return 0;
+        if (aEarliestTime === null) return 1; // routines without times go to the end
+        if (bEarliestTime === null) return -1;
+
+        return aEarliestTime.localeCompare(bEarliestTime);
+      });
+    }
+
+    return routinesCopy;
+  }, [routines, sortBy]);
 
   // UI
   return (
@@ -679,28 +461,48 @@ export default function RoutineManager() {
       <Typography variant="h5" sx={{ mb: 2 }}>
         Routines
       </Typography>
-      <Button
-        variant="contained"
-        color="primary"
-        onClick={openCreateDialog}
-        sx={{ mb: 2 }}
-      >
-        Add Routine
-      </Button>
-      {routines.map((routine) => (
+
+      <Box sx={{ display: "flex", gap: 2, mb: 2, alignItems: "center" }}>
+        <Button variant="contained" color="primary" onClick={openCreateDialog}>
+          Add Routine
+        </Button>
+
+        <FormControl sx={{ minWidth: 200 }}>
+          <InputLabel>Sort by</InputLabel>
+          <Select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as "variables" | "time")}
+            label="Sort by"
+            startAdornment={<Sort sx={{ mr: 1 }} />}
+          >
+            <MenuItem value="variables">Number of Variables</MenuItem>
+            <MenuItem value="time">Earliest Time</MenuItem>
+          </Select>
+        </FormControl>
+      </Box>
+
+      {sortedRoutines.map((routine) => (
         <Paper key={routine.id} sx={{ p: 2, mb: 3, background: "#222" }}>
           <Box
             display="flex"
             alignItems="center"
             justifyContent="space-between"
           >
-            <Typography variant="h6">{routine.routine_name}</Typography>
+            <Box>
+              <Typography variant="h6">{routine.routine_name}</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {routine.variables?.length || 0} variables
+                {sortBy === "time" && getEarliestTime(routine) && (
+                  <span>
+                    {" "}
+                    • Earliest: {timeString(getEarliestTime(routine) || "")}
+                  </span>
+                )}
+              </Typography>
+            </Box>
             <Box>
               <IconButton onClick={() => openEditDialog(routine)}>
                 <Edit />
-              </IconButton>
-              <IconButton onClick={() => handleDuplicateRoutine(routine)}>
-                <ContentCopy />
               </IconButton>
               <IconButton onClick={() => handleDeleteRoutine(routine.id)}>
                 <Delete />
@@ -710,369 +512,45 @@ export default function RoutineManager() {
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
             {routine.notes}
           </Typography>
-          <Typography variant="body2" sx={{ mb: 1 }}>
-            <b>Weekdays:</b>{" "}
-            {routine.weekdays
-              .map((d: number) => weekdays.find((w) => w.value === d)?.label)
-              .join(", ")}
-          </Typography>
-          <Divider sx={{ my: 1 }} />
-          <Box display="flex" alignItems="center" gap={1}>
-            <Typography variant="subtitle2" sx={{ mb: 1, flex: 1 }}>
-              Routine Logs (Historical & Future)
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>
-              {(() => {
-                const totalLogs = Object.values(
-                  logsByRoutineVarTime[routine.id] || {}
-                ).reduce((sum: number, logs: any[]) => sum + logs.length, 0);
-                return `${totalLogs} logs (past & future 2 weeks)`;
-              })()}
-            </Typography>
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={async () => {
-                if (user?.id) {
-                  console.log("Testing log generation for routine:", routine);
-                  await generateAllLogsForRoutine(routine, user.id);
-                  setMessage({
-                    type: "success",
-                    text: `Logs regenerated for routine "${routine.routine_name}"`,
-                  });
-                  // Refresh logs
-                  await fetchAllRoutineLogs([routine]);
-                }
-              }}
-              sx={{ mr: 1 }}
-            >
-              Test Generate Logs
-            </Button>
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={async () => {
-                if (user?.id) {
-                  await generateAllLogsForRoutine(routine, user.id);
-                  setMessage({
-                    type: "success",
-                    text: `Logs regenerated for routine "${routine.routine_name}"`,
-                  });
-                  // Refresh logs
-                  const fetchLogs = async () => {
-                    let newLogs: Record<string, Record<string, any[]>> = {};
-                    for (const [timeIdx, time] of (
-                      routine.times || []
-                    ).entries()) {
-                      for (const v of time.variables || []) {
-                        const today = new Date();
-                        const start = new Date(today);
-                        start.setDate(today.getDate() - 14);
-                        const end = new Date(today);
-                        end.setDate(today.getDate() + 14);
-                        const startISO =
-                          start.toISOString().slice(0, 10) + "T00:00:00Z";
-                        const endISO =
-                          end.toISOString().slice(0, 10) + "T23:59:59Z";
-                        const { data } = await supabase
-                          .from("logs")
-                          .select("*")
-                          .eq("user_id", user.id)
-                          .eq("variable_id", v.variable_id)
-                          .gte("created_at", startISO)
-                          .lte("created_at", endISO)
-                          .order("created_at", { ascending: false });
-                        newLogs[routine.id] = newLogs[routine.id] || {};
-                        newLogs[routine.id][`${timeIdx}_${v.variable_id}`] =
-                          data || [];
-                      }
-                    }
-                    setLogsByRoutineVarTime((prev) => ({
-                      ...prev,
-                      ...newLogs,
-                    }));
-                  };
-                  fetchLogs();
-                }
-              }}
-              sx={{ mr: 1 }}
-            >
-              Regenerate Logs
-            </Button>
-            <IconButton
-              onClick={() =>
-                setExpandedPlanned((prev) => ({
-                  ...prev,
-                  [routine.id]: !prev[routine.id],
-                }))
-              }
-              size="small"
-              aria-label={expandedPlanned[routine.id] ? "Collapse" : "Expand"}
-            >
-              {expandedPlanned[routine.id] ? <ExpandLess /> : <ExpandMore />}
-            </IconButton>
-          </Box>
-          {expandedPlanned[routine.id] && (
-            <>
-              {(routine.times || []).map((time: any, timeIdx: number) => (
-                <Box
-                  key={time.time_id || timeIdx}
-                  sx={{ mb: 2, background: "#181818", borderRadius: 2, p: 2 }}
-                >
-                  <Typography variant="body2" sx={{ fontWeight: 700, mb: 1 }}>
-                    {time.time_name || timeString(time.time_of_day)} (
-                    {timeString(time.time_of_day)})
-                  </Typography>
-                  {(time.variables || []).length === 0 ? (
-                    <Typography variant="body2" color="text.secondary">
-                      No variables assigned.
-                    </Typography>
-                  ) : (
-                    <Box
-                      sx={{ display: "flex", flexDirection: "column", gap: 1 }}
-                    >
-                      {(time.variables || []).map((v: any) => {
-                        const variable = allVariables.find(
-                          (vv) => vv.id === v.variable_id
-                        );
-                        const editKey = `${timeIdx}_${v.variable_id}`;
-                        const planned = plannedEdits[routine.id]?.[editKey] || {
-                          default_value: v.default_value,
-                          default_unit: v.default_unit,
-                        };
-                        const logs =
-                          logsByRoutineVarTime[routine.id]?.[editKey] || [];
-                        return (
-                          <Box
-                            key={v.variable_id}
-                            sx={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 2,
-                              background: "#232323",
-                              borderRadius: 1,
-                              p: 1,
-                            }}
-                          >
-                            <Typography sx={{ minWidth: 120 }}>
-                              {variable?.label || v.variable_id}
-                            </Typography>
-                            <TextField
-                              label="Default Value"
-                              value={planned.default_value}
-                              onChange={(e) =>
-                                setPlannedEdits((prev) => ({
-                                  ...prev,
-                                  [routine.id]: {
-                                    ...(prev[routine.id] || {}),
-                                    [editKey]: {
-                                      ...planned,
-                                      default_value: e.target.value,
-                                    },
-                                  },
-                                }))
-                              }
-                              sx={{ width: 100 }}
-                            />
-                            <TextField
-                              label="Unit"
-                              value={planned.default_unit}
-                              onChange={(e) =>
-                                setPlannedEdits((prev) => ({
-                                  ...prev,
-                                  [routine.id]: {
-                                    ...(prev[routine.id] || {}),
-                                    [editKey]: {
-                                      ...planned,
-                                      default_unit: e.target.value,
-                                    },
-                                  },
-                                }))
-                              }
-                              sx={{ width: 80 }}
-                            />
-                            <Button
-                              size="small"
-                              variant="contained"
-                              color="primary"
-                              onClick={() =>
-                                handleSavePlannedLog(
-                                  routine.id,
-                                  timeIdx,
-                                  v.variable_id
-                                )
-                              }
-                            >
-                              Save
-                            </Button>
-                            {/* Log history for this variable/time */}
-                            <Box sx={{ ml: 2 }}>
-                              <Typography
-                                variant="caption"
-                                sx={{ color: "#FFD600", fontWeight: 700 }}
-                              >
-                                Log History (Past & Future 2 Weeks)
-                              </Typography>
-                              {logs.length === 0 ? (
-                                <Typography
-                                  variant="body2"
-                                  color="text.secondary"
-                                >
-                                  No logs found for this variable/time.
-                                </Typography>
-                              ) : (
-                                <Box sx={{ maxHeight: 200, overflowY: "auto" }}>
-                                  {logs.map((log: any) => {
-                                    const logDate = new Date(log.created_at);
-                                    const today = new Date();
-                                    const isHistorical = logDate < today;
-                                    const isToday =
-                                      logDate.toDateString() ===
-                                      today.toDateString();
 
-                                    return (
-                                      <Box
-                                        key={log.id}
-                                        sx={{
-                                          display: "flex",
-                                          alignItems: "center",
-                                          gap: 1,
-                                          py: 0.5,
-                                          borderBottom: "1px solid #444",
-                                          background: isToday
-                                            ? "#2a2a2a"
-                                            : "transparent",
-                                          borderRadius: isToday ? 1 : 0,
-                                          px: isToday ? 1 : 0,
-                                        }}
-                                      >
-                                        <Typography
-                                          variant="body2"
-                                          sx={{
-                                            minWidth: 100,
-                                            color: isHistorical
-                                              ? "#888"
-                                              : "#FFD600",
-                                            fontWeight: isToday ? 700 : 400,
-                                          }}
-                                        >
-                                          {log.created_at.slice(0, 10)}
-                                          {isToday && " (Today)"}
-                                          {isHistorical && " (Past)"}
-                                        </Typography>
-                                        {editingLogId === log.id ? (
-                                          <>
-                                            <TextField
-                                              value={
-                                                editLogValue[log.id] ??
-                                                log.value
-                                              }
-                                              onChange={(e) =>
-                                                setEditLogValue((prev) => ({
-                                                  ...prev,
-                                                  [log.id]: e.target.value,
-                                                }))
-                                              }
-                                              sx={{ width: 80, mr: 1 }}
-                                            />
-                                            <Button
-                                              size="small"
-                                              onClick={() =>
-                                                handleSaveLogEdit(
-                                                  log.id,
-                                                  editLogValue[log.id] ??
-                                                    log.value
-                                                )
-                                              }
-                                            >
-                                              Save
-                                            </Button>
-                                            <Button
-                                              size="small"
-                                              onClick={() =>
-                                                setEditingLogId(null)
-                                              }
-                                            >
-                                              Cancel
-                                            </Button>
-                                          </>
-                                        ) : (
-                                          <>
-                                            <Typography
-                                              variant="body2"
-                                              sx={{ minWidth: 80 }}
-                                            >
-                                              {log.value}
-                                            </Typography>
-                                            <Button
-                                              size="small"
-                                              onClick={() => {
-                                                setEditingLogId(log.id);
-                                                setEditLogValue((prev) => ({
-                                                  ...prev,
-                                                  [log.id]: log.value,
-                                                }));
-                                              }}
-                                            >
-                                              Edit
-                                            </Button>
-                                          </>
-                                        )}
-                                        <Button
-                                          size="small"
-                                          color="error"
-                                          onClick={() =>
-                                            handleDeleteLog(log.id)
-                                          }
-                                        >
-                                          Delete
-                                        </Button>
-                                      </Box>
-                                    );
-                                  })}
-                                </Box>
-                              )}
-                            </Box>
-                          </Box>
-                        );
-                      })}
-                    </Box>
-                  )}
-                </Box>
-              ))}
-            </>
-          )}
-          {(routine.times || []).map((time: any, i: number) => (
-            <Box
-              key={time.time_id || i}
-              sx={{ mb: 2, p: 1, background: "#181818", borderRadius: 2 }}
-            >
-              <Box display="flex" alignItems="center" gap={1}>
-                <AccessTime fontSize="small" />
-                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                  {time.time_name || timeString(time.time_of_day)}
+          <Divider sx={{ my: 1 }} />
+
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>
+            Variables ({routine.variables?.length || 0})
+          </Typography>
+
+          {(routine.variables || []).map((variable: any) => (
+            <Box key={variable.id} sx={{ mb: 1, ml: 2 }}>
+              <Typography variant="body2">
+                <strong>{variable.variable_name}</strong> - Default:{" "}
+                {variable.default_value}
+                {variable.default_unit && ` ${variable.default_unit}`}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Weekdays:{" "}
+                {variable.weekdays
+                  ?.map(
+                    (d: number) => weekdays.find((w) => w.value === d)?.label
+                  )
+                  .join(", ")}
+              </Typography>
+              {variable.times?.length > 0 && (
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: 2, display: "block" }}
+                >
+                  Times:{" "}
+                  {variable.times
+                    .map((timeObj: any) => timeString(timeObj.time))
+                    .join(", ")}
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {timeString(time.time_of_day)}
-                </Typography>
-              </Box>
-              <Box sx={{ ml: 4 }}>
-                {(time.variables || []).length === 0 ? (
-                  <Typography variant="body2" color="text.secondary">
-                    No variables assigned.
-                  </Typography>
-                ) : (
-                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-                    {(time.variables || []).map((v: any) => (
-                      <Chip key={v.variable_id} label={v.variable_name} />
-                    ))}
-                  </Box>
-                )}
-              </Box>
+              )}
             </Box>
           ))}
         </Paper>
       ))}
+
       <Dialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
@@ -1102,294 +580,245 @@ export default function RoutineManager() {
             fullWidth
             sx={{ mb: 2 }}
           />
-          <FormControl fullWidth sx={{ mb: 2 }}>
-            <InputLabel>Weekdays</InputLabel>
-            <Select
-              multiple
-              value={form?.weekdays || []}
-              onChange={(e) => handleFormChange("weekdays", e.target.value)}
-              renderValue={(selected) =>
-                (selected as number[])
-                  .map((d) => weekdays.find((w) => w.value === d)?.label)
-                  .join(", ")
-              }
-            >
-              {weekdays.map((w) => (
-                <MenuItem key={w.value} value={w.value}>
-                  <Checkbox checked={form?.weekdays?.includes(w.value)} />
-                  <ListItemText primary={w.label} />
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+
           <Divider sx={{ my: 2 }} />
           <Typography variant="subtitle1" sx={{ mb: 1 }}>
-            Times of Day
+            Variables
           </Typography>
-          {form?.times?.map((time: any, idx: number) => (
-            <Paper key={idx} sx={{ p: 2, mb: 2, background: "#181818" }}>
-              <Box display="flex" alignItems="center" gap={2}>
-                <TextField
-                  label="Time"
-                  type="time"
-                  value={time.time_of_day}
-                  onChange={(e) =>
-                    handleTimeChange(idx, "time_of_day", e.target.value)
+
+          <Box display="flex" gap={1} alignItems="center" sx={{ mb: 2 }}>
+            <FormControl sx={{ minWidth: 200 }}>
+              <InputLabel>Add Variable</InputLabel>
+              <Select
+                value=""
+                label="Add Variable"
+                onChange={(e) => {
+                  const variable = allVariables.find(
+                    (v) => v.id === e.target.value
+                  );
+                  if (variable) {
+                    setForm((prev: any) => ({
+                      ...prev,
+                      variables: [
+                        ...prev.variables,
+                        {
+                          variable_id: variable.id,
+                          default_value: "",
+                          default_unit: variable.default_display_unit || "",
+                          weekdays: [1, 2, 3, 4, 5, 6, 7],
+                          times: [],
+                        },
+                      ],
+                    }));
                   }
-                  sx={{ width: 120 }}
-                  inputProps={{ step: 60 }}
-                />
-                <TextField
-                  label="Label (optional)"
-                  value={time.time_name}
-                  onChange={(e) =>
-                    handleTimeChange(idx, "time_name", e.target.value)
-                  }
-                  sx={{ width: 180 }}
-                />
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={time.is_active}
-                      onChange={(e) =>
-                        handleTimeChange(idx, "is_active", e.target.checked)
-                      }
-                    />
-                  }
-                  label="Active"
-                />
-                <IconButton onClick={() => handleRemoveTime(idx)}>
-                  <Delete />
-                </IconButton>
-              </Box>
-              <Divider sx={{ my: 1 }} />
-              <Typography variant="body2" sx={{ mb: 1 }}>
-                These values will be <b>autologged</b> for this time:
-              </Typography>
-              {(time.variables || []).length === 0 ? (
-                <Typography variant="body2" color="text.secondary">
-                  No variables assigned.
-                </Typography>
-              ) : (
-                <Box
-                  sx={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 1,
-                    mb: 1,
-                  }}
-                >
-                  {(time.variables || []).map((v: any) => {
-                    const variable = allVariables.find(
-                      (vv) => vv.id === v.variable_id
-                    );
-                    return (
-                      <Box
-                        key={v.variable_id}
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 2,
-                          background: "#222",
-                          borderRadius: 1,
-                          p: 1,
-                        }}
-                      >
-                        <Typography
-                          variant="body2"
-                          sx={{ fontWeight: 700, minWidth: 120 }}
-                        >
-                          {variable?.label || v.variable_id}
-                        </Typography>
-                        <TextField
-                          label="Default Value"
-                          value={v.default_value}
-                          onChange={(e) =>
-                            handleVariableValueChange(
-                              idx,
-                              v.variable_id,
-                              "default_value",
-                              e.target.value
-                            )
-                          }
-                          sx={{ width: 120 }}
-                          type={
-                            variable?.data_type === "continuous"
-                              ? "number"
-                              : "text"
-                          }
-                          inputProps={{
-                            min: variable?.validation_rules?.min,
-                            max: variable?.validation_rules?.max,
-                            required: variable?.validation_rules?.required,
-                            step:
-                              variable?.data_type === "continuous"
-                                ? "any"
-                                : undefined,
-                          }}
-                          error={(() => {
-                            const val = parseFloat(v.default_value);
-                            const rules = variable?.validation_rules;
-                            if (!v.default_value && rules?.required)
-                              return true;
-                            if (rules?.min !== undefined && val < rules.min)
-                              return true;
-                            if (rules?.max !== undefined && val > rules.max)
-                              return true;
-                            if (
-                              rules?.scaleMin !== undefined &&
-                              val < rules.scaleMin
-                            )
-                              return true;
-                            if (
-                              rules?.scaleMax !== undefined &&
-                              val > rules.scaleMax
-                            )
-                              return true;
-                            return false;
-                          })()}
-                          helperText={(() => {
-                            const val = parseFloat(v.default_value);
-                            const rules = variable?.validation_rules;
-                            if (!v.default_value && rules?.required)
-                              return "Required";
-                            if (rules?.min !== undefined && val < rules.min)
-                              return `Min: ${rules.min}`;
-                            if (rules?.max !== undefined && val > rules.max)
-                              return `Max: ${rules.max}`;
-                            if (
-                              rules?.scaleMin !== undefined &&
-                              val < rules.scaleMin
-                            )
-                              return `Min: ${rules.scaleMin}`;
-                            if (
-                              rules?.scaleMax !== undefined &&
-                              val > rules.scaleMax
-                            )
-                              return `Max: ${rules.scaleMax}`;
-                            if (rules?.required) return "Required";
-                            if (
-                              rules?.min !== undefined &&
-                              rules?.max !== undefined
-                            )
-                              return `Range: ${rules.min} - ${rules.max}`;
-                            return undefined;
-                          })()}
-                        />
-                        <TextField
-                          label="Unit"
-                          value={v.default_unit}
-                          onChange={(e) =>
-                            handleVariableValueChange(
-                              idx,
-                              v.variable_id,
-                              "default_unit",
-                              e.target.value
-                            )
-                          }
-                          sx={{ width: 80 }}
-                        />
-                        <IconButton
-                          onClick={() =>
-                            handleRemoveVariableFromTime(idx, v.variable_id)
-                          }
-                          size="small"
-                        >
-                          <Close />
-                        </IconButton>
-                      </Box>
-                    );
-                  })}
-                </Box>
-              )}
-              <Box display="flex" gap={1} alignItems="center" sx={{ mb: 1 }}>
-                <FormControl sx={{ minWidth: 200 }}>
-                  <InputLabel>Add Variable</InputLabel>
-                  <Select
-                    value=""
-                    label="Add Variable"
-                    onChange={(e) => {
-                      const variable = allVariables.find(
-                        (v) => v.id === e.target.value
-                      );
-                      if (variable) handleAddVariableToTime(idx, variable);
-                    }}
-                  >
-                    {(allVariables || [])
-                      .filter(
-                        (v) =>
-                          !(time.variables || []).find(
-                            (vv: any) => vv.variable_id === v.id
-                          )
+                }}
+              >
+                {(allVariables || [])
+                  .filter(
+                    (v) =>
+                      !(form?.variables || []).find(
+                        (vv: any) => vv.variable_id === v.id
                       )
-                      .map((v) => (
-                        <MenuItem key={v.id} value={v.id}>
-                          {v.label}
+                  )
+                  .map((v) => (
+                    <MenuItem key={v.id} value={v.id}>
+                      {v.label}
+                    </MenuItem>
+                  ))}
+              </Select>
+            </FormControl>
+          </Box>
+
+          {form?.variables?.map((variable: any, idx: number) => {
+            const variableInfo = allVariables.find(
+              (v) => v.id === variable.variable_id
+            );
+            return (
+              <Paper key={idx} sx={{ p: 2, mb: 2, background: "#181818" }}>
+                <Box display="flex" alignItems="center" gap={2} sx={{ mb: 2 }}>
+                  <Typography variant="h6">
+                    {variableInfo?.label || variable.variable_id}
+                  </Typography>
+                  <IconButton
+                    onClick={() => {
+                      setForm((prev: any) => ({
+                        ...prev,
+                        variables: prev.variables.filter(
+                          (_: any, i: number) => i !== idx
+                        ),
+                      }));
+                      // Clear validation errors for removed variable and reindex
+                      setVariableValidationErrors((prev) => {
+                        const newErrors: Record<number, string> = {};
+                        Object.keys(prev).forEach((key) => {
+                          const index = parseInt(key);
+                          if (index < idx) {
+                            newErrors[index] = prev[index];
+                          } else if (index > idx) {
+                            newErrors[index - 1] = prev[index];
+                          }
+                        });
+                        return newErrors;
+                      });
+                    }}
+                    color="error"
+                  >
+                    <Delete />
+                  </IconButton>
+                </Box>
+
+                <Box display="flex" gap={2} alignItems="center" sx={{ mb: 2 }}>
+                  <TextField
+                    label="Default Value"
+                    value={variable.default_value}
+                    onChange={(e) =>
+                      handleVariableChange(idx, "default_value", e.target.value)
+                    }
+                    sx={{ width: 120 }}
+                    error={!!variableValidationErrors[idx]}
+                    helperText={variableValidationErrors[idx]}
+                  />
+
+                  <FormControl sx={{ width: 120 }}>
+                    <InputLabel>Unit</InputLabel>
+                    <Select
+                      value={variable.default_unit || ""}
+                      onChange={(e) =>
+                        handleVariableChange(
+                          idx,
+                          "default_unit",
+                          e.target.value
+                        )
+                      }
+                      label="Unit"
+                    >
+                      <MenuItem value="">
+                        <em>No unit</em>
+                      </MenuItem>
+                      {(variableInfo?.convertible_units || []).map((unit) => (
+                        <MenuItem key={unit} value={unit}>
+                          {unit}
                         </MenuItem>
                       ))}
-                  </Select>
-                </FormControl>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  onClick={() => {
-                    (allVariables || [])
-                      .filter(
-                        (v) =>
-                          !(time.variables || []).find(
-                            (vv: any) => vv.variable_id === v.id
+                    </Select>
+                  </FormControl>
+
+                  <FormControl sx={{ width: 200 }}>
+                    <InputLabel>Weekdays</InputLabel>
+                    <Select
+                      multiple
+                      value={variable.weekdays || []}
+                      onChange={(e) =>
+                        handleVariableChange(idx, "weekdays", e.target.value)
+                      }
+                      renderValue={(selected) =>
+                        (selected as number[])
+                          .map(
+                            (d) => weekdays.find((w) => w.value === d)?.label
                           )
-                      )
-                      .forEach((v) => handleAddVariableToTime(idx, v));
-                  }}
-                >
-                  Add All
-                </Button>
-              </Box>
-            </Paper>
-          ))}
-          <Button
-            variant="outlined"
-            onClick={handleAddTime}
-            startIcon={<Add />}
-          >
-            Add Time
-          </Button>
-          <Divider sx={{ my: 2 }} />
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            Assign Variable to All Times
-          </Typography>
-          <Box display="flex" gap={1} alignItems="center" sx={{ mb: 2 }}>
-            <Autocomplete
-              sx={{ minWidth: 250 }}
-              options={(allVariables || []).filter((v) => {
-                // Only show variables not already assigned to all times
-                if (!form?.times?.length) return true;
-                return !form.times.every((t: any) =>
-                  (t.variables || []).some((vv: any) => vv.variable_id === v.id)
-                );
-              })}
-              getOptionLabel={(option) => option.label}
-              value={addAllVar}
-              onChange={(_, newValue) => setAddAllVar(newValue)}
-              renderInput={(params) => (
-                <TextField {...params} label="Select Variable" />
-              )}
-              isOptionEqualToValue={(option, value) => option.id === value.id}
-            />
-            <Button
-              variant="outlined"
-              disabled={!addAllVar}
-              onClick={() => {
-                if (addAllVar) {
-                  handleAssignVariableToAllTimes(addAllVar);
-                  setAddAllVar(null);
-                }
-              }}
-            >
-              Add to All Times
-            </Button>
-          </Box>
+                          .join(", ")
+                      }
+                    >
+                      {weekdays.map((day) => (
+                        <MenuItem key={day.value} value={day.value}>
+                          <Checkbox
+                            checked={
+                              (variable.weekdays || []).indexOf(day.value) > -1
+                            }
+                          />
+                          <ListItemText primary={day.label} />
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Box>
+
+                <Typography variant="body2" color="text.secondary">
+                  Times: {variable.times?.length || 0} configured
+                </Typography>
+
+                {/* Time Management UI */}
+                <Box sx={{ mt: 2 }}>
+                  <Box
+                    display="flex"
+                    alignItems="center"
+                    gap={2}
+                    sx={{ mb: 2 }}
+                  >
+                    <Typography variant="subtitle2">Times:</Typography>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => {
+                        const newTime = { time: defaultTime() };
+                        handleVariableChange(idx, "times", [
+                          ...(variable.times || []),
+                          newTime,
+                        ]);
+                      }}
+                      startIcon={<Add />}
+                    >
+                      Add Time
+                    </Button>
+                  </Box>
+
+                  {(variable.times || []).map(
+                    (timeObj: any, timeIdx: number) => (
+                      <Box
+                        key={timeIdx}
+                        display="flex"
+                        alignItems="center"
+                        gap={2}
+                        sx={{ mb: 1, ml: 2 }}
+                      >
+                        <TextField
+                          type="time"
+                          value={timeObj.time || ""}
+                          onChange={(e) => {
+                            const newTimes = [...(variable.times || [])];
+                            newTimes[timeIdx] = {
+                              ...newTimes[timeIdx],
+                              time: e.target.value,
+                            };
+                            handleVariableChange(idx, "times", newTimes);
+                          }}
+                          sx={{ width: 140 }}
+                          InputLabelProps={{
+                            shrink: true,
+                          }}
+                        />
+                        <Typography variant="body2" color="text.secondary">
+                          {timeObj.time ? timeString(timeObj.time) : ""}
+                        </Typography>
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            const newTimes = variable.times.filter(
+                              (_: any, i: number) => i !== timeIdx
+                            );
+                            handleVariableChange(idx, "times", newTimes);
+                          }}
+                          color="error"
+                        >
+                          <Delete />
+                        </IconButton>
+                      </Box>
+                    )
+                  )}
+
+                  {(!variable.times || variable.times.length === 0) && (
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ ml: 2 }}
+                    >
+                      No times configured
+                    </Typography>
+                  )}
+                </Box>
+              </Paper>
+            );
+          })}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)} color="secondary">
@@ -1405,6 +834,7 @@ export default function RoutineManager() {
           </Button>
         </DialogActions>
       </Dialog>
+
       <Snackbar
         open={!!message}
         autoHideDuration={4000}
@@ -1412,20 +842,6 @@ export default function RoutineManager() {
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
         {message && <Alert severity={message.type}>{message.text}</Alert>}
-      </Snackbar>
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={3000}
-        onClose={() => setSnackbar({ open: false, message: "" })}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      >
-        <MuiAlert
-          onClose={() => setSnackbar({ open: false, message: "" })}
-          severity="success"
-          sx={{ width: "100%" }}
-        >
-          {snackbar.message}
-        </MuiAlert>
       </Snackbar>
     </Box>
   );

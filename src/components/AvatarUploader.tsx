@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/utils/supaBase";
+import { useUser } from "@/pages/_app";
 import Avatar from "@mui/material/Avatar";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
@@ -13,17 +14,25 @@ interface Props {
 }
 
 export default function AvatarUploader({ currentAvatarUrl, onUpload }: Props) {
+  const { user } = useUser();
   const [uploading, setUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
 
+  // Get Google profile picture from OAuth data if available
+  const googleProfilePic =
+    user?.user_metadata?.picture || user?.user_metadata?.avatar_url;
+
   useEffect(() => {
     if (currentAvatarUrl) {
       getPublicUrl(currentAvatarUrl);
+    } else if (googleProfilePic) {
+      // If no custom avatar, use Google profile picture directly
+      setPreviewUrl(googleProfilePic);
     } else {
       setPreviewUrl(null);
     }
-  }, [currentAvatarUrl]);
+  }, [currentAvatarUrl, googleProfilePic]);
 
   const getPublicUrl = (path: string) => {
     const { data } = supabase.storage.from("avatars").getPublicUrl(path);
@@ -146,6 +155,13 @@ export default function AvatarUploader({ currentAvatarUrl, onUpload }: Props) {
         >
           Profile Picture
         </Typography>
+
+        {/* Show source info */}
+        {previewUrl && (
+          <Typography variant="caption" className="text-text-muted text-center">
+            {currentAvatarUrl ? "Custom upload" : "From Google account"}
+          </Typography>
+        )}
 
         <label className="cursor-pointer">
           <input
