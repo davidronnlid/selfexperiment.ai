@@ -42,8 +42,11 @@ export default function VariableSharingManager({
   const handleAccordionChange = async (_event: any, isExpanded: boolean) => {
     setExpanded(isExpanded);
     if (isExpanded && user?.id) {
+      console.log("🔄 Loading privacy settings...");
       await load();
       await loadVariables();
+      console.log("📊 Loaded preferences:", preferences.length);
+      console.log("📋 Loaded variables:", variables.length);
     }
   };
 
@@ -60,9 +63,21 @@ export default function VariableSharingManager({
   };
 
   const getVariableSharingStatus = (variableName: string) => {
+    // Try to find by variable_name first (should match variable.label)
     const pref = preferences.find(
-      (s: UserVariablePreference) => s.variable_name === variableName
+      (s: UserVariablePreference) =>
+        s.variable_name === variableName || s.label === variableName
     );
+
+    // Debug logging for specific variables
+    if (variableName === "Mood") {
+      console.log(`🔍 Checking sharing for ${variableName}:`, {
+        found: !!pref,
+        shared: pref?.is_shared,
+        allPrefs: preferences.map((p) => p.variable_name),
+      });
+    }
+
     return pref?.is_shared ?? false;
   };
 
@@ -83,6 +98,20 @@ export default function VariableSharingManager({
   const getTotalCount = () => {
     return preferences.length;
   };
+
+  // Debug effect to log preferences when they change
+  useEffect(() => {
+    if (preferences.length > 0) {
+      console.log(
+        "✅ Preferences loaded:",
+        preferences.map((p) => ({
+          name: p.variable_name,
+          label: p.label,
+          shared: p.is_shared,
+        }))
+      );
+    }
+  }, [preferences]);
 
   return (
     <Accordion
@@ -206,14 +235,18 @@ export default function VariableSharingManager({
                           control={
                             <Checkbox
                               checked={isShared}
-                              onChange={(e) =>
-                                update(
+                              onChange={async (e) => {
+                                console.log(
+                                  `🔄 Updating ${variable.label} to ${e.target.checked}`
+                                );
+                                await update(
                                   variable.label,
                                   e.target.checked,
                                   variable.data_type,
                                   category
-                                )
-                              }
+                                );
+                                console.log("✅ Update completed");
+                              }}
                               disabled={loading}
                               sx={{
                                 color: "var(--gold)",

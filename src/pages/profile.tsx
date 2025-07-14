@@ -22,7 +22,7 @@ import {
   Card,
   CardContent,
   CardHeader,
-  GridLegacy as Grid,
+  Grid,
 } from "@mui/material";
 import {
   FaShieldAlt,
