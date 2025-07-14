@@ -8,7 +8,6 @@ import {
   Alert,
   CircularProgress,
   Divider,
-  Grid,
   Chip,
   Table,
   TableBody,
@@ -20,6 +19,7 @@ import {
   IconButton,
   Collapse,
   LinearProgress,
+  Grid,
 } from "@mui/material";
 import { Line } from "react-chartjs-2";
 import { supabase } from "@/utils/supaBase";
@@ -394,7 +394,7 @@ export default function WithingsIntegration({
                 if (metricData.length === 0) return null;
 
                 return (
-                  <Grid item xs={12} md={6} key={metric}>
+                  <Grid size={{ xs: 12, md: 6 }} key={metric}>
                     <Card variant="outlined">
                       <CardContent>
                         <Box
@@ -430,7 +430,7 @@ export default function WithingsIntegration({
                         <Collapse in={isExpanded}>
                           <Box sx={{ mt: 2 }}>
                             <Grid container spacing={2} sx={{ mb: 2 }}>
-                              <Grid item xs={4}>
+                              <Grid size={4}>
                                 <Typography
                                   variant="body2"
                                   color="textSecondary"

@@ -113,6 +113,9 @@ export default function RoutineManager() {
     Record<number, string>
   >({});
 
+  // Sorting state
+  const [sortBy, setSortBy] = useState<"variables" | "time">("variables");
+
   // Load all routines
   useEffect(() => {
     if (!user) return;
