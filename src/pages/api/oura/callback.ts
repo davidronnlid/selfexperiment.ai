@@ -8,7 +8,11 @@ export default async function handler(
   const code = req.query.code as string;
   const clientId = process.env.OURA_CLIENT_ID!;
   const clientSecret = process.env.OURA_CLIENT_SECRET!;
-  const redirectUri = "http://localhost:3000/api/oura/callback";
+  const baseUrl =
+    process.env.NEXTAUTH_URL ||
+    process.env.VERCEL_URL ||
+    "http://localhost:3000";
+  const redirectUri = `${baseUrl}/api/oura/callback`;
 
   // Get user_id from state parameter
   const user_id = req.query.state as string;

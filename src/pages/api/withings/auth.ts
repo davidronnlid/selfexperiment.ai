@@ -41,7 +41,11 @@ export default async function handler(
   if (!user) return res.status(401).json({ error: "Not authenticated" });
 
   const clientId = process.env.WITHINGS_ClientID!;
-  const redirectUri = `http://localhost:3000/api/withings/callback`;
+  const baseUrl =
+    process.env.NEXTAUTH_URL ||
+    process.env.VERCEL_URL ||
+    "http://localhost:3000";
+  const redirectUri = `${baseUrl}/api/withings/callback`;
   const state = `withings_${user.id}_${Math.random().toString(36).slice(2)}`;
 
   const url = `https://account.withings.com/oauth2_user/authorize2?response_type=code&client_id=${clientId}&state=${state}&scope=user.metrics&redirect_uri=${encodeURIComponent(

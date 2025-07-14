@@ -149,7 +149,11 @@ export default async function handler(
 
   const clientId = process.env.WITHINGS_ClientID!;
   const clientSecret = process.env.WITHINGS_Secret!;
-  const redirectUri = `http://localhost:3000/api/withings/callback`;
+  const baseUrl =
+    process.env.NEXTAUTH_URL ||
+    process.env.VERCEL_URL ||
+    "http://localhost:3000";
+  const redirectUri = `${baseUrl}/api/withings/callback`;
 
   // Exchange code for tokens
   const tokenRes = await fetch("https://wbsapi.withings.net/v2/oauth2", {

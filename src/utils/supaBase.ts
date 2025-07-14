@@ -9,12 +9,14 @@ const supabaseAnonKey =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVjc3Rud3djcGxib2Zid2JoYmNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTExNzY5NjMsImV4cCI6MjA2Njc1Mjk2M30.iTZ65IW6iEKug6VMdg4zIADF7QF69LCaGpDxh4FORDc";
 
 // Debug environment variables
+console.log("🔍 PRODUCTION DEBUG:");
 console.log("Supabase URL:", supabaseUrl);
 console.log("Supabase URL configured:", !!supabaseUrl);
-console.log("Supabase Anon Key configured:", !!supabaseAnonKey);
+console.log("Supabase Key configured:", !!supabaseAnonKey);
+console.log("Environment:", process.env.NODE_ENV);
 console.log(
-  "Supabase Anon Key (first 20 chars):",
-  supabaseAnonKey.substring(0, 20) + "..."
+  "Base URL:",
+  process.env.NEXTAUTH_URL || process.env.VERCEL_URL || "localhost fallback"
 );
 
 export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);

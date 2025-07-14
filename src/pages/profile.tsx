@@ -41,6 +41,7 @@ import AnalyzePrivacySection from "../components/AnalyzePrivacySection";
 interface Profile {
   username: string;
   name: string;
+  email: string;
   date_of_birth: string;
   avatar_url?: string | null;
 }
@@ -118,6 +119,7 @@ export default function ProfilePage() {
   const [form, setForm] = useState<Profile>({
     username: "",
     name: "",
+    email: "",
     date_of_birth: "",
     avatar_url: null,
   });
@@ -154,8 +156,9 @@ export default function ProfilePage() {
         router.push("/complete-profile");
         return;
       } else {
-        setProfile(data);
-        setForm(data);
+        const profileWithEmail = { ...data, email: user.email || "" };
+        setProfile(profileWithEmail);
+        setForm(profileWithEmail);
       }
       setProfileLoading(false);
     };
@@ -229,6 +232,15 @@ export default function ProfilePage() {
     if (!user) return;
     setSaving(true);
     try {
+      // Update email in auth if it changed
+      if (form.email !== user.email) {
+        const { error: emailError } = await supabase.auth.updateUser({
+          email: form.email,
+        });
+        if (emailError) throw emailError;
+      }
+
+      // Update profile in database
       const { error } = await supabase.from("profiles").upsert({
         id: user.id,
         username: form.username,
@@ -455,6 +467,18 @@ export default function ProfilePage() {
                           ? "Checking availability..."
                           : ""
                       }
+                      className="mb-4"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      fullWidth
+                      label="Email"
+                      name="email"
+                      type="email"
+                      value={form.email}
+                      onChange={handleChange}
+                      disabled={!editMode}
                       className="mb-4"
                     />
                   </Grid>
