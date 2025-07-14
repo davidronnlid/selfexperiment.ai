@@ -59,6 +59,13 @@
         font-size: 16px;
         margin: 20px 0;
       }
+      .error {
+        color: red;
+        background: #ffe6e6;
+        padding: 10px;
+        border-radius: 4px;
+        margin: 10px 0;
+      }
     </style>
   </head>
   <body>
@@ -68,7 +75,10 @@
       <div class="instructions">
         <h3>Instructions:</h3>
         <ol>
-          <li>Click "Generate All Icons" to create all PWA icons</li>
+          <li>Make sure your favicon.svg is in the public/ folder</li>
+          <li>
+            Click "Generate All Icons" to create all PWA icons from your SVG
+          </li>
           <li>Right-click each icon and "Save image as..." to download</li>
           <li>
             Save them to your public/ folder with the exact filenames shown
@@ -77,8 +87,10 @@
         </ol>
       </div>
 
+      <div id="error-container"></div>
+
       <button class="download-all" onclick="generateAllIcons()">
-        Generate All Icons
+        Generate All Icons from SVG
       </button>
 
       <div id="icons-container"></div>
@@ -99,7 +111,29 @@
         { size: 512, filename: "icon-512x512.png" },
       ];
 
-      function drawMIcon(canvas, size) {
+      let svgImage = null;
+
+      // Load the SVG from favicon.svg
+      function loadSVG() {
+        return new Promise((resolve, reject) => {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.onload = () => {
+            svgImage = img;
+            resolve();
+          };
+          img.onerror = () => {
+            reject(new Error("Failed to load favicon.svg"));
+          };
+          img.src = "../public/favicon.svg";
+        });
+      }
+
+      function drawIconFromSVG(canvas, size) {
+        if (!svgImage) {
+          throw new Error("SVG not loaded");
+        }
+
         const ctx = canvas.getContext("2d");
         canvas.width = size;
         canvas.height = size;
@@ -107,77 +141,73 @@
         // Clear canvas
         ctx.clearRect(0, 0, size, size);
 
-        // Background
-        ctx.fillStyle = "#FFD700";
-        ctx.fillRect(0, 0, size, size);
-
-        // Calculate M proportions based on size
-        const padding = Math.max(2, size * 0.1);
-        const strokeWidth = Math.max(1, size * 0.03);
-
-        // Draw M shape
-        ctx.fillStyle = "#000";
-        ctx.strokeStyle = "#000";
-        ctx.lineWidth = strokeWidth;
-
-        // M path scaled to canvas size
-        const mPath = new Path2D();
-        const scale = (size - padding * 2) / 160; // Original M is 160 units wide
-
-        ctx.save();
-        ctx.translate(padding, padding);
-        ctx.scale(scale, scale);
-
-        // Draw the M shape
-        mPath.moveTo(0, 0);
-        mPath.lineTo(40, 0);
-        mPath.lineTo(80, 60);
-        mPath.lineTo(120, 0);
-        mPath.lineTo(160, 0);
-        mPath.lineTo(160, 140);
-        mPath.lineTo(120, 140);
-        mPath.lineTo(120, 60);
-        mPath.lineTo(80, 120);
-        mPath.lineTo(80, 60);
-        mPath.lineTo(40, 140);
-        mPath.lineTo(0, 140);
-        mPath.closePath();
-
-        ctx.fill(mPath);
-        ctx.stroke(mPath);
-
-        ctx.restore();
+        // Draw the SVG scaled to fit the canvas
+        ctx.drawImage(svgImage, 0, 0, size, size);
       }
 
-      function generateAllIcons() {
+      function showError(message) {
+        const errorContainer = document.getElementById("error-container");
+        errorContainer.innerHTML = `<div class="error">Error: ${message}</div>`;
+      }
+
+      function clearError() {
+        const errorContainer = document.getElementById("error-container");
+        errorContainer.innerHTML = "";
+      }
+
+      async function generateAllIcons() {
+        clearError();
         const container = document.getElementById("icons-container");
         container.innerHTML = "";
 
-        iconSizes.forEach((iconInfo) => {
-          const div = document.createElement("div");
-          div.className = "icon-preview";
+        try {
+          // Load the SVG first
+          await loadSVG();
 
-          const canvas = document.createElement("canvas");
-          drawMIcon(canvas, iconInfo.size);
+          iconSizes.forEach((iconInfo) => {
+            const div = document.createElement("div");
+            div.className = "icon-preview";
 
-          const p = document.createElement("p");
-          p.textContent = `${iconInfo.size}x${iconInfo.size}`;
+            const canvas = document.createElement("canvas");
 
-          const filename = document.createElement("p");
-          filename.textContent = iconInfo.filename;
-          filename.style.fontWeight = "bold";
+            try {
+              drawIconFromSVG(canvas, iconInfo.size);
+            } catch (error) {
+              console.error(
+                `Error drawing icon ${iconInfo.size}x${iconInfo.size}:`,
+                error
+              );
+              // Fallback to a simple colored square if SVG fails
+              const ctx = canvas.getContext("2d");
+              canvas.width = iconInfo.size;
+              canvas.height = iconInfo.size;
+              ctx.fillStyle = "#FFD700";
+              ctx.fillRect(0, 0, iconInfo.size, iconInfo.size);
+            }
 
-          const downloadBtn = document.createElement("button");
-          downloadBtn.textContent = "Download";
-          downloadBtn.onclick = () => downloadIcon(canvas, iconInfo.filename);
+            const p = document.createElement("p");
+            p.textContent = `${iconInfo.size}x${iconInfo.size}`;
 
-          div.appendChild(canvas);
-          div.appendChild(p);
-          div.appendChild(filename);
-          div.appendChild(downloadBtn);
+            const filename = document.createElement("p");
+            filename.textContent = iconInfo.filename;
+            filename.style.fontWeight = "bold";
 
-          container.appendChild(div);
-        });
+            const downloadBtn = document.createElement("button");
+            downloadBtn.textContent = "Download";
+            downloadBtn.onclick = () => downloadIcon(canvas, iconInfo.filename);
+
+            div.appendChild(canvas);
+            div.appendChild(p);
+            div.appendChild(filename);
+            div.appendChild(downloadBtn);
+
+            container.appendChild(div);
+          });
+        } catch (error) {
+          showError(
+            `Failed to load SVG: ${error.message}. Make sure favicon.svg exists in the public/ folder.`
+          );
+        }
       }
 
       function downloadIcon(canvas, filename) {

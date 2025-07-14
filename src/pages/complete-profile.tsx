@@ -10,7 +10,23 @@ import {
   Box,
   Avatar,
   Alert,
+  Autocomplete,
 } from "@mui/material";
+
+// Common timezone options for the autocomplete
+const COMMON_TIMEZONES = [
+  "Europe/Stockholm",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "America/New_York",
+  "America/Los_Angeles",
+  "America/Chicago",
+  "Asia/Tokyo",
+  "Asia/Shanghai",
+  "Australia/Sydney",
+  "UTC",
+];
 
 export default function CompleteProfilePage() {
   const { user, loading: userLoading } = useUser();
@@ -20,6 +36,7 @@ export default function CompleteProfilePage() {
     name: "",
     date_of_birth: "",
     avatar_url: "",
+    timezone: "",
   });
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
@@ -35,7 +52,7 @@ export default function CompleteProfilePage() {
         try {
           const { data, error } = await supabase
             .from("profiles")
-            .select("username, name, date_of_birth, avatar_url")
+            .select("username, name, date_of_birth, avatar_url, timezone")
             .eq("id", user.id)
             .single();
 
@@ -48,20 +65,26 @@ export default function CompleteProfilePage() {
           const googleProfilePic =
             user.user_metadata?.picture || user.user_metadata?.avatar_url;
 
+          // Auto-detect timezone
+          const detectedTimezone =
+            Intl.DateTimeFormat().resolvedOptions().timeZone;
+
           if (data) {
             setForm({
               username: data.username || "",
               name: data.name || user.user_metadata?.name || "", // Pre-populate name from Google
               date_of_birth: data.date_of_birth || "",
               avatar_url: data.avatar_url || googleProfilePic || "",
+              timezone: data.timezone || detectedTimezone,
             });
           } else {
-            // No existing profile, populate with Google data
+            // No existing profile, populate with Google data and detected timezone
             setForm({
               username: "",
               name: user.user_metadata?.name || "",
               date_of_birth: "",
               avatar_url: googleProfilePic || "",
+              timezone: detectedTimezone,
             });
           }
         } catch (err) {
@@ -77,6 +100,10 @@ export default function CompleteProfilePage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
+  };
+
+  const handleTimezoneChange = (event: any, newValue: string | null) => {
+    setForm({ ...form, timezone: newValue || "" });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -97,6 +124,7 @@ export default function CompleteProfilePage() {
         name: form.name,
         date_of_birth: form.date_of_birth,
         avatar_url: form.avatar_url,
+        timezone: form.timezone,
       })
       .eq("id", user.id);
     if (error) {
@@ -179,6 +207,20 @@ export default function CompleteProfilePage() {
           value={form.avatar_url}
           onChange={handleChange}
           helperText="This will be automatically populated from your Google account"
+        />
+        <Autocomplete
+          options={COMMON_TIMEZONES}
+          value={form.timezone}
+          onChange={handleTimezoneChange}
+          freeSolo
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="Timezone"
+              helperText="Auto-detected, but you can change it if needed"
+              required
+            />
+          )}
         />
         <Button type="submit" variant="contained" color="primary">
           Save

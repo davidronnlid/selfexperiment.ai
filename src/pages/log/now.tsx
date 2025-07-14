@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "@/utils/supaBase";
 import DatePicker from "react-datepicker";
 import Paper from "@mui/material/Paper";
@@ -60,7 +60,6 @@ import {
   CardContent,
   CardActions,
 } from "@mui/material";
-import { useState as useReactState } from "react";
 
 // Dynamic variable options will be loaded from the database
 
@@ -220,20 +219,96 @@ export default function LogPage() {
     message: string;
   }>({ open: false, message: "" });
 
-  const [logHistoryOpen, setLogHistoryOpen] = useReactState<{
+  const [logHistoryOpen, setLogHistoryOpen] = useState<{
     [key: string]: boolean;
   }>({});
-  const [logHistory, setLogHistory] = useReactState<{ [key: string]: any[] }>(
-    {}
-  );
+  const [logHistory, setLogHistory] = useState<{ [key: string]: any[] }>({});
   // Add state for editing log values in history
-  const [logHistoryEdit, setLogHistoryEdit] = useReactState<{
+  const [logHistoryEdit, setLogHistoryEdit] = useState<{
     [key: string]: { [logId: string]: string | null };
   }>({});
 
   const [todaysPlannedLogs, setTodaysPlannedLogs] = useState<any[]>([]);
   const [routines, setRoutines] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Fetch routine names for auto logs
+  const [routineNames, setRoutineNames] = useState<Record<string, string>>({});
+
+  // Enhanced grouping function that uses fetched routine names
+  const groupLogsBySourceWithNames = (logs: any[]) => {
+    const grouped: Record<string, any> = {
+      manual: {
+        sourceName: "Manual Logs",
+        logs: [],
+      },
+      auto: {
+        sourceName: "Auto Logs",
+        routines: {} as Record<string, any>,
+      },
+    };
+
+    logs.forEach((log) => {
+      const source =
+        log.source && Array.isArray(log.source) ? log.source[0] : log.source;
+
+      if (source === "routine" || source === "auto") {
+        // This is an auto log - group by routine
+        const routineId = log.routine_id || log.context?.routine_id;
+        const routineName =
+          routineNames[routineId] ||
+          log.context?.routine_name ||
+          `Routine ${routineId}`;
+
+        console.log("Processing auto log:", {
+          logId: log.id,
+          routineId,
+          routineName,
+          routineNames,
+          logContext: log.context,
+          logRoutineId: log.routine_id,
+          fullLog: log,
+        });
+
+        if (routineId) {
+          if (!grouped.auto.routines[routineId]) {
+            grouped.auto.routines[routineId] = {
+              routineName: routineName,
+              routineId: routineId,
+              logs: [],
+            };
+          }
+          grouped.auto.routines[routineId].logs.push(log);
+        } else {
+          // Auto log without routine ID - put in general auto
+          grouped.auto.logs = grouped.auto.logs || [];
+          grouped.auto.logs.push(log);
+        }
+      } else {
+        // Manual log
+        grouped.manual.logs.push(log);
+      }
+    });
+
+    return grouped;
+  };
+
+  // Merge manual and planned logs for display
+  const allLogs = useMemo(() => {
+    return [
+      ...logs.map((log) => ({ ...log, _source: "manual" })),
+      ...todaysPlannedLogs.map((log) => ({ ...log, _source: "planned" })),
+    ].sort((a, b) => {
+      // Use logged_at or date for sorting
+      const aDate = new Date(a.date);
+      const bDate = new Date(b.date);
+      return bDate.getTime() - aDate.getTime();
+    });
+  }, [logs, todaysPlannedLogs]);
+
+  const groupedLogs = useMemo(() => {
+    return groupLogsBySourceWithNames(allLogs);
+  }, [allLogs, routineNames]);
 
   useEffect(() => {
     if (!user) return;
@@ -244,15 +319,20 @@ export default function LogPage() {
         console.log("Starting data fetch for log page...");
 
         // Parallelize all database calls
-        const [variablesRes, logsRes, experimentsRes] = await Promise.all([
-          supabase.from("variables").select("*").eq("is_active", true),
-          supabase.from("logs").select("*").eq("user_id", user.id),
-          supabase
-            .from("experiments")
-            .select("*")
-            .eq("user_id", user.id)
-            .gte("end_date", new Date().toISOString().split("T")[0]),
-        ]);
+        const [variablesRes, logsRes, experimentsRes, routinesRes] =
+          await Promise.all([
+            supabase.from("variables").select("*").eq("is_active", true),
+            supabase.from("logs").select("*").eq("user_id", user.id),
+            supabase
+              .from("experiments")
+              .select("*")
+              .eq("user_id", user.id)
+              .gte("end_date", new Date().toISOString().split("T")[0]),
+            supabase
+              .from("daily_routines")
+              .select("id, routine_name")
+              .eq("user_id", user.id),
+          ]);
 
         console.log("Data fetch completed, processing results...");
 
@@ -281,6 +361,14 @@ export default function LogPage() {
         setRoutines([]); // Empty for now since we removed the RPC call
         setActiveExperiments(experimentsRes.data || []);
         setLabelOptions(variablesRes.data || []);
+
+        // Process routine names
+        const routineNameMap: Record<string, string> = {};
+        (routinesRes.data || []).forEach((routine: any) => {
+          routineNameMap[routine.id] = routine.routine_name;
+        });
+        console.log("Routine names map:", routineNameMap);
+        setRoutineNames(routineNameMap);
 
         console.log(
           "Variables state set, count:",
@@ -1105,17 +1193,6 @@ export default function LogPage() {
       setExpError("Failed to delete log. Please try again.");
     }
   };
-
-  // Merge manual and planned logs for display
-  const allLogs = [
-    ...logs.map((log) => ({ ...log, _source: "manual" })),
-    ...todaysPlannedLogs.map((log) => ({ ...log, _source: "planned" })),
-  ].sort((a, b) => {
-    // Use logged_at or date for sorting
-    const aDate = new Date(a.date);
-    const bDate = new Date(b.date);
-    return bDate.getTime() - aDate.getTime();
-  });
 
   if (userLoading || variablesLoading) {
     return (
@@ -2255,516 +2332,1113 @@ export default function LogPage() {
             sx={{
               display: "flex",
               flexDirection: "column",
-              gap: { xs: 2, sm: 2.5 },
+              gap: { xs: 3, sm: 4 },
             }}
           >
-            {allLogs.map((log) => (
+            {/* Manual Logs Section */}
+            {groupedLogs.manual && groupedLogs.manual.logs.length > 0 && (
               <Box
-                key={log.id}
                 sx={{
-                  p: { xs: 2.5, sm: 3 },
                   border: "2px solid #FFD700",
                   borderRadius: 3,
-                  backgroundColor: "#222", // white -> dark for contrast
-                  color: "#fff", // ensure text is white
-                  boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
-                  transition: "all 0.3s ease",
-                  "&:hover": {
-                    boxShadow: "0 8px 25px rgba(255,215,0,0.3)",
-                    transform: "translateY(-2px)",
-                    borderColor: "#FFEA70",
-                  },
+                  backgroundColor: "#222",
+                  overflow: "hidden",
                 }}
               >
-                {editingLogId === log.id ? (
-                  // Edit mode (only allow for manual logs)
-                  log._source === "manual" ? (
-                    <Box>
+                {/* Manual Logs Header */}
+                <Box
+                  sx={{
+                    p: { xs: 2, sm: 2.5 },
+                    backgroundColor: "#FFD700",
+                    color: "#000",
+                    borderBottom: "2px solid #FFD700",
+                  }}
+                >
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      fontWeight: "bold",
+                      fontSize: { xs: "1.1rem", sm: "1.2rem" },
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1,
+                    }}
+                  >
+                    ✍️ Manual Logs
+                  </Typography>
+                </Box>
+
+                {/* Manual Logs */}
+                <Box sx={{ p: { xs: 2, sm: 2.5 } }}>
+                  <Box
+                    sx={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: { xs: 2, sm: 2.5 },
+                    }}
+                  >
+                    {groupedLogs.manual.logs.map((log: any) => (
                       <Box
+                        key={log.id}
                         sx={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          mb: 3,
-                          pb: 2,
-                          borderBottom: "2px solid #e3f2fd",
+                          p: { xs: 2.5, sm: 3 },
+                          border: "2px solid #FFD700",
+                          borderRadius: 3,
+                          backgroundColor: "#222", // white -> dark for contrast
+                          color: "#fff", // ensure text is white
+                          boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
+                          transition: "all 0.3s ease",
+                          "&:hover": {
+                            boxShadow: "0 8px 25px rgba(255,215,0,0.3)",
+                            transform: "translateY(-2px)",
+                            borderColor: "#FFEA70",
+                          },
                         }}
                       >
+                        {editingLogId === log.id ? (
+                          // Edit mode (only allow for manual logs)
+                          log._source === "manual" ? (
+                            <Box>
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  mb: 3,
+                                  pb: 2,
+                                  borderBottom: "2px solid #e3f2fd",
+                                }}
+                              >
+                                <Typography
+                                  variant="subtitle1"
+                                  fontWeight="bold"
+                                  sx={{
+                                    color: "#1976d2",
+                                    fontSize: { xs: "1.1rem", sm: "1.2rem" },
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 1,
+                                  }}
+                                >
+                                  <FaEdit style={{ fontSize: "1rem" }} />
+                                  Editing: {getVariableIconFromLog(log)}{" "}
+                                  {getVariableNameFromLog(log)}
+                                </Typography>
+                                <Box sx={{ display: "flex", gap: 1 }}>
+                                  <IconButton
+                                    onClick={handleSaveEdit}
+                                    disabled={
+                                      !editingIsValid || !editingValue.trim()
+                                    }
+                                    size="small"
+                                    sx={{
+                                      color: "#fff",
+                                      backgroundColor:
+                                        editingIsValid && editingValue.trim()
+                                          ? "#4caf50"
+                                          : "#999",
+                                      borderRadius: "8px",
+                                      padding: "8px",
+                                      "&:hover": {
+                                        backgroundColor:
+                                          editingIsValid && editingValue.trim()
+                                            ? "#45a049"
+                                            : "#999",
+                                        transform:
+                                          editingIsValid && editingValue.trim()
+                                            ? "scale(1.05)"
+                                            : "none",
+                                      },
+                                      "&:disabled": {
+                                        backgroundColor: "#999",
+                                        color: "#666",
+                                      },
+                                      transition: "all 0.2s ease",
+                                    }}
+                                  >
+                                    <FaCheck />
+                                  </IconButton>
+                                  <IconButton
+                                    onClick={handleCancelEdit}
+                                    size="small"
+                                    sx={{
+                                      color: "#fff",
+                                      backgroundColor: "#f44336",
+                                      borderRadius: "8px",
+                                      padding: "8px",
+                                      "&:hover": {
+                                        backgroundColor: "#d32f2f",
+                                        transform: "scale(1.05)",
+                                      },
+                                      transition: "all 0.2s ease",
+                                    }}
+                                  >
+                                    <FaTimes />
+                                  </IconButton>
+                                </Box>
+                              </Box>
+
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: 3,
+                                }}
+                              >
+                                {/* Date Field */}
+                                <Box>
+                                  <Typography
+                                    variant="body2"
+                                    sx={{
+                                      mb: 1.5,
+                                      color: "#333",
+                                      fontSize: "0.875rem",
+                                      fontWeight: 600,
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 1,
+                                    }}
+                                  >
+                                    📅 Date
+                                  </Typography>
+                                  <Box
+                                    sx={{
+                                      position: "relative",
+                                      "& .datepicker-wrapper": {
+                                        width: "100%",
+                                      },
+                                      "& .custom-datepicker": {
+                                        width: "100%",
+                                        padding: "12px 16px",
+                                        fontSize: "14px",
+                                        border: "2px solid #e0e0e0",
+                                        borderRadius: "12px",
+                                        backgroundColor: "#fff",
+                                        color: "#333", // Add dark text color for better contrast
+                                        fontFamily: "inherit",
+                                        fontWeight: "500", // Make text slightly bolder
+                                        transition: "all 0.3s ease",
+                                        boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                                        "&:focus": {
+                                          outline: "none",
+                                          borderColor: "#1976d2",
+                                          boxShadow:
+                                            "0 4px 12px rgba(25,118,210,0.2)",
+                                          color: "#1976d2", // Blue text when focused
+                                        },
+                                        "&:hover": {
+                                          borderColor: "#1976d2",
+                                          boxShadow:
+                                            "0 4px 12px rgba(0,0,0,0.15)",
+                                          color: "#1976d2", // Blue text on hover
+                                        },
+                                        "&::placeholder": {
+                                          color: "#999", // Placeholder text color
+                                          opacity: 1,
+                                        },
+                                      },
+                                    }}
+                                  >
+                                    <DatePicker
+                                      selected={editingDate}
+                                      onChange={(date: Date | null) =>
+                                        date && setEditingDate(date)
+                                      }
+                                      dateFormat="yyyy-MM-dd"
+                                      className="custom-datepicker"
+                                      wrapperClassName="datepicker-wrapper"
+                                    />
+                                  </Box>
+                                </Box>
+
+                                {/* Value Field */}
+                                <TextField
+                                  fullWidth
+                                  label={`Value for ${getVariableNameFromLog(
+                                    log
+                                  )}`}
+                                  value={editingValue}
+                                  onChange={(e) => {
+                                    const newValue = e.target.value;
+                                    setEditingValue(newValue);
+
+                                    // Real-time validation
+                                    if (newValue.trim()) {
+                                      const validation = validateEditValue(
+                                        newValue,
+                                        log
+                                      );
+                                      setEditingValidationError(
+                                        validation.error || ""
+                                      );
+                                      setEditingIsValid(validation.isValid);
+                                    } else {
+                                      setEditingValidationError("");
+                                      setEditingIsValid(true);
+                                    }
+                                  }}
+                                  error={!editingIsValid}
+                                  helperText={editingValidationError}
+                                  sx={{
+                                    "& .MuiInputLabel-root": {
+                                      color: "#666",
+                                      fontWeight: 500,
+                                    },
+                                    "& .MuiInputLabel-root.Mui-focused": {
+                                      color: editingIsValid
+                                        ? "#1976d2"
+                                        : "#d32f2f",
+                                    },
+                                    "& .MuiInputLabel-root.Mui-error": {
+                                      color: "#d32f2f",
+                                    },
+                                    "& .MuiOutlinedInput-root": {
+                                      borderRadius: "12px",
+                                      backgroundColor: "#fff",
+                                      boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                                      "& fieldset": {
+                                        borderColor: editingIsValid
+                                          ? "#e0e0e0"
+                                          : "#d32f2f",
+                                        borderWidth: "2px",
+                                      },
+                                      "&:hover fieldset": {
+                                        borderColor: editingIsValid
+                                          ? "#1976d2"
+                                          : "#d32f2f",
+                                      },
+                                      "&.Mui-focused fieldset": {
+                                        borderColor: editingIsValid
+                                          ? "#1976d2"
+                                          : "#d32f2f",
+                                        boxShadow: editingIsValid
+                                          ? "0 4px 12px rgba(25,118,210,0.2)"
+                                          : "0 4px 12px rgba(211,47,47,0.2)",
+                                      },
+                                      "&.Mui-error fieldset": {
+                                        borderColor: "#d32f2f",
+                                      },
+                                    },
+                                    "& .MuiInputBase-input": {
+                                      padding: "12px 16px",
+                                      fontSize: "14px",
+                                    },
+                                    "& .MuiFormHelperText-root": {
+                                      fontSize: "0.75rem",
+                                      marginTop: "8px",
+                                      marginLeft: "14px",
+                                    },
+                                    "& .MuiFormHelperText-root.Mui-error": {
+                                      color: "#d32f2f",
+                                    },
+                                  }}
+                                  InputProps={{
+                                    startAdornment: (
+                                      <InputAdornment position="start">
+                                        <span style={{ fontSize: "1.1rem" }}>
+                                          {getVariableIconFromLog(log)}
+                                        </span>
+                                      </InputAdornment>
+                                    ),
+                                  }}
+                                />
+
+                                {/* Notes Field */}
+                                <TextField
+                                  fullWidth
+                                  label="Notes (Optional)"
+                                  value={editingNotes}
+                                  onChange={(e) =>
+                                    setEditingNotes(e.target.value)
+                                  }
+                                  multiline
+                                  rows={3}
+                                  sx={{
+                                    "& .MuiInputLabel-root": {
+                                      color: "#666",
+                                      fontWeight: 500,
+                                    },
+                                    "& .MuiInputLabel-root.Mui-focused": {
+                                      color: "#1976d2",
+                                    },
+                                    "& .MuiOutlinedInput-root": {
+                                      borderRadius: "12px",
+                                      backgroundColor: "#fff",
+                                      boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                                      "& fieldset": {
+                                        borderColor: "#e0e0e0",
+                                        borderWidth: "2px",
+                                      },
+                                      "&:hover fieldset": {
+                                        borderColor: "#1976d2",
+                                      },
+                                      "&.Mui-focused fieldset": {
+                                        borderColor: "#1976d2",
+                                        boxShadow:
+                                          "0 4px 12px rgba(25,118,210,0.2)",
+                                      },
+                                    },
+                                    "& .MuiInputBase-input": {
+                                      padding: "12px 16px",
+                                      fontSize: "14px",
+                                    },
+                                  }}
+                                  InputProps={{
+                                    startAdornment: (
+                                      <InputAdornment
+                                        position="start"
+                                        sx={{ alignSelf: "flex-start", mt: 1 }}
+                                      >
+                                        <span style={{ fontSize: "1.1rem" }}>
+                                          💭
+                                        </span>
+                                      </InputAdornment>
+                                    ),
+                                  }}
+                                />
+                              </Box>
+                            </Box>
+                          ) : (
+                            <Box>
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                              >
+                                Planned logs cannot be edited here.
+                              </Typography>
+                            </Box>
+                          )
+                        ) : (
+                          // Display mode
+                          <Box>
+                            <Box
+                              sx={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                mb: 1.5,
+                              }}
+                            >
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 2,
+                                  flex: 1,
+                                }}
+                              >
+                                <Typography
+                                  variant="subtitle1"
+                                  fontWeight="bold"
+                                  sx={{
+                                    color: "#1976d2",
+                                    fontSize: { xs: "1rem", sm: "1.1rem" },
+                                    cursor: "pointer",
+                                    textDecoration: "underline",
+                                    "&:hover": {
+                                      color: "#0d47a1",
+                                    },
+                                  }}
+                                  onClick={() => {
+                                    // Find the variable to get its slug
+                                    let variableSlug = log.variable;
+                                    if (
+                                      log.variable_id &&
+                                      variables &&
+                                      Array.isArray(variables)
+                                    ) {
+                                      const foundVar = variables.find(
+                                        (v) => v.id === log.variable_id
+                                      );
+                                      if (foundVar) {
+                                        variableSlug = foundVar.slug;
+                                      }
+                                    }
+                                    router.push(
+                                      `/variable/${encodeURIComponent(
+                                        variableSlug
+                                      )}`
+                                    );
+                                  }}
+                                >
+                                  {log.variable}
+                                </Typography>
+                                <Typography
+                                  variant="h5"
+                                  sx={{
+                                    color: "#00E676",
+                                    fontWeight: "bold",
+                                    fontSize: { xs: "1.3rem", sm: "1.5rem" },
+                                    textShadow: "0 1px 2px rgba(0,0,0,0.1)",
+                                  }}
+                                >
+                                  {log.value}
+                                </Typography>
+                                {log._source === "planned" && (
+                                  <Box
+                                    sx={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 1,
+                                      flexWrap: "wrap",
+                                    }}
+                                  >
+                                    <Typography
+                                      variant="caption"
+                                      sx={{
+                                        ml: 0,
+                                        color: "#FFD700",
+                                        fontWeight: 600,
+                                        fontSize: {
+                                          xs: "0.75rem",
+                                          sm: "0.8rem",
+                                        },
+                                        backgroundColor:
+                                          "rgba(255, 215, 0, 0.18)",
+                                        px: 1,
+                                        borderRadius: 1,
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: 0.5,
+                                      }}
+                                    >
+                                      ⏰ Planned
+                                    </Typography>
+                                    <VariableNameLink
+                                      log={log}
+                                      variables={variables}
+                                    />
+                                    {log.context && log.context.routine_id && (
+                                      <>
+                                        <span
+                                          style={{
+                                            color: "#FFD700",
+                                            fontWeight: 500,
+                                            fontSize: "0.85em",
+                                            margin: "0 2px",
+                                          }}
+                                        >
+                                          •
+                                        </span>
+                                        <Link
+                                          href="/log/routines"
+                                          passHref
+                                          legacyBehavior
+                                        >
+                                          <a
+                                            style={{
+                                              color: "#FFD700",
+                                              textDecoration: "underline",
+                                              fontWeight: 500,
+                                              fontSize: "0.85em",
+                                            }}
+                                            title={`View routine`}
+                                          >
+                                            {log.context.routine_name ||
+                                              log.context.name}
+                                          </a>
+                                        </Link>
+                                      </>
+                                    )}
+                                  </Box>
+                                )}
+                                {log._source !== "planned" && (
+                                  <VariableNameLink
+                                    log={log}
+                                    variables={variables}
+                                  />
+                                )}
+                              </Box>
+                              {log._source === "manual" && (
+                                <Box>
+                                  <IconButton
+                                    onClick={() => handleEditLog(log)}
+                                    size="small"
+                                    sx={{
+                                      color: "#1976d2",
+                                      mr: 1,
+                                      "&:hover": {
+                                        backgroundColor:
+                                          "rgba(25, 118, 210, 0.1)",
+                                        transform: "scale(1.1)",
+                                      },
+                                    }}
+                                  >
+                                    <FaEdit />
+                                  </IconButton>
+                                  <IconButton
+                                    onClick={() => handleDeleteLog(log.id)}
+                                    size="small"
+                                    sx={{
+                                      color: "#d32f2f",
+                                      "&:hover": {
+                                        backgroundColor:
+                                          "rgba(211, 47, 47, 0.1)",
+                                        transform: "scale(1.1)",
+                                      },
+                                    }}
+                                  >
+                                    <FaTrash />
+                                  </IconButton>
+                                </Box>
+                              )}
+                            </Box>
+                            {log.notes && (
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  mb: 1,
+                                  fontSize: { xs: "0.9rem", sm: "0.95rem" },
+                                  color: "#fff",
+                                  backgroundColor: "#333",
+                                  padding: "8px 12px",
+                                  borderRadius: 2,
+                                  borderLeft: "4px solid #FFD700",
+                                }}
+                              >
+                                💬 {log.notes}
+                              </Typography>
+                            )}
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                fontStyle: "italic",
+                                fontSize: { xs: "0.75rem", sm: "0.8rem" },
+                                color: "#BBB",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 0.5,
+                              }}
+                            >
+                              🕐{" "}
+                              {new Date(
+                                log.date || log.created_at
+                              ).toLocaleString()}
+                            </Typography>
+                          </Box>
+                        )}
+                      </Box>
+                    ))}
+                  </Box>
+                </Box>
+              </Box>
+            )}
+
+            {/* Auto Logs Section */}
+            {groupedLogs.auto &&
+              Object.keys(groupedLogs.auto.routines).length > 0 && (
+                <Box
+                  sx={{
+                    border: "2px solid #FFD700",
+                    borderRadius: 3,
+                    backgroundColor: "#222",
+                    overflow: "hidden",
+                  }}
+                >
+                  {/* Auto Logs Header */}
+                  <Box
+                    sx={{
+                      p: { xs: 2, sm: 2.5 },
+                      backgroundColor: "#FFD700",
+                      color: "#000",
+                      borderBottom: "2px solid #FFD700",
+                    }}
+                  >
+                    <Typography
+                      variant="h6"
+                      sx={{
+                        fontWeight: "bold",
+                        fontSize: { xs: "1.1rem", sm: "1.2rem" },
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 1,
+                      }}
+                    >
+                      🤖 Auto Logs
+                    </Typography>
+                  </Box>
+
+                  {/* Auto Logs by Routine */}
+                  {Object.entries(groupedLogs.auto.routines).map(
+                    ([routineId, routineData]) => (
+                      <Box key={routineId} sx={{ p: { xs: 2, sm: 2.5 } }}>
+                        {/* Routine Header */}
                         <Typography
-                          variant="subtitle1"
-                          fontWeight="bold"
+                          variant="subtitle2"
                           sx={{
-                            color: "#1976d2",
-                            fontSize: { xs: "1.1rem", sm: "1.2rem" },
+                            mb: 2,
+                            color: "#FFD700",
+                            fontWeight: 600,
+                            fontSize: { xs: "0.9rem", sm: "1rem" },
                             display: "flex",
                             alignItems: "center",
                             gap: 1,
                           }}
                         >
-                          <FaEdit style={{ fontSize: "1rem" }} />
-                          Editing: {getVariableIconFromLog(log)}{" "}
-                          {getVariableNameFromLog(log)}
+                          📋 {(routineData as any).routineName}
                         </Typography>
-                        <Box sx={{ display: "flex", gap: 1 }}>
-                          <IconButton
-                            onClick={handleSaveEdit}
-                            disabled={!editingIsValid || !editingValue.trim()}
-                            size="small"
-                            sx={{
-                              color: "#fff",
-                              backgroundColor:
-                                editingIsValid && editingValue.trim()
-                                  ? "#4caf50"
-                                  : "#999",
-                              borderRadius: "8px",
-                              padding: "8px",
-                              "&:hover": {
-                                backgroundColor:
-                                  editingIsValid && editingValue.trim()
-                                    ? "#45a049"
-                                    : "#999",
-                                transform:
-                                  editingIsValid && editingValue.trim()
-                                    ? "scale(1.05)"
-                                    : "none",
-                              },
-                              "&:disabled": {
-                                backgroundColor: "#999",
-                                color: "#666",
-                              },
-                              transition: "all 0.2s ease",
-                            }}
-                          >
-                            <FaCheck />
-                          </IconButton>
-                          <IconButton
-                            onClick={handleCancelEdit}
-                            size="small"
-                            sx={{
-                              color: "#fff",
-                              backgroundColor: "#f44336",
-                              borderRadius: "8px",
-                              padding: "8px",
-                              "&:hover": {
-                                backgroundColor: "#d32f2f",
-                                transform: "scale(1.05)",
-                              },
-                              transition: "all 0.2s ease",
-                            }}
-                          >
-                            <FaTimes />
-                          </IconButton>
-                        </Box>
-                      </Box>
 
-                      <Box
-                        sx={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 3,
-                        }}
-                      >
-                        {/* Date Field */}
-                        <Box>
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              mb: 1.5,
-                              color: "#333",
-                              fontSize: "0.875rem",
-                              fontWeight: 600,
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 1,
-                            }}
-                          >
-                            📅 Date
-                          </Typography>
-                          <Box
-                            sx={{
-                              position: "relative",
-                              "& .datepicker-wrapper": {
-                                width: "100%",
-                              },
-                              "& .custom-datepicker": {
-                                width: "100%",
-                                padding: "12px 16px",
-                                fontSize: "14px",
-                                border: "2px solid #e0e0e0",
-                                borderRadius: "12px",
-                                backgroundColor: "#fff",
-                                color: "#333", // Add dark text color for better contrast
-                                fontFamily: "inherit",
-                                fontWeight: "500", // Make text slightly bolder
-                                transition: "all 0.3s ease",
-                                boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                                "&:focus": {
-                                  outline: "none",
-                                  borderColor: "#1976d2",
-                                  boxShadow: "0 4px 12px rgba(25,118,210,0.2)",
-                                  color: "#1976d2", // Blue text when focused
-                                },
-                                "&:hover": {
-                                  borderColor: "#1976d2",
-                                  boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-                                  color: "#1976d2", // Blue text on hover
-                                },
-                                "&::placeholder": {
-                                  color: "#999", // Placeholder text color
-                                  opacity: 1,
-                                },
-                              },
-                            }}
-                          >
-                            <DatePicker
-                              selected={editingDate}
-                              onChange={(date: Date | null) =>
-                                date && setEditingDate(date)
-                              }
-                              dateFormat="yyyy-MM-dd"
-                              className="custom-datepicker"
-                              wrapperClassName="datepicker-wrapper"
-                            />
-                          </Box>
-                        </Box>
-
-                        {/* Value Field */}
-                        <TextField
-                          fullWidth
-                          label={`Value for ${getVariableNameFromLog(log)}`}
-                          value={editingValue}
-                          onChange={(e) => {
-                            const newValue = e.target.value;
-                            setEditingValue(newValue);
-
-                            // Real-time validation
-                            if (newValue.trim()) {
-                              const validation = validateEditValue(
-                                newValue,
-                                log
-                              );
-                              setEditingValidationError(validation.error || "");
-                              setEditingIsValid(validation.isValid);
-                            } else {
-                              setEditingValidationError("");
-                              setEditingIsValid(true);
-                            }
-                          }}
-                          error={!editingIsValid}
-                          helperText={editingValidationError}
+                        {/* Logs for this routine */}
+                        <Box
                           sx={{
-                            "& .MuiInputLabel-root": {
-                              color: "#666",
-                              fontWeight: 500,
-                            },
-                            "& .MuiInputLabel-root.Mui-focused": {
-                              color: editingIsValid ? "#1976d2" : "#d32f2f",
-                            },
-                            "& .MuiInputLabel-root.Mui-error": {
-                              color: "#d32f2f",
-                            },
-                            "& .MuiOutlinedInput-root": {
-                              borderRadius: "12px",
-                              backgroundColor: "#fff",
-                              boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                              "& fieldset": {
-                                borderColor: editingIsValid
-                                  ? "#e0e0e0"
-                                  : "#d32f2f",
-                                borderWidth: "2px",
-                              },
-                              "&:hover fieldset": {
-                                borderColor: editingIsValid
-                                  ? "#1976d2"
-                                  : "#d32f2f",
-                              },
-                              "&.Mui-focused fieldset": {
-                                borderColor: editingIsValid
-                                  ? "#1976d2"
-                                  : "#d32f2f",
-                                boxShadow: editingIsValid
-                                  ? "0 4px 12px rgba(25,118,210,0.2)"
-                                  : "0 4px 12px rgba(211,47,47,0.2)",
-                              },
-                              "&.Mui-error fieldset": {
-                                borderColor: "#d32f2f",
-                              },
-                            },
-                            "& .MuiInputBase-input": {
-                              padding: "12px 16px",
-                              fontSize: "14px",
-                            },
-                            "& .MuiFormHelperText-root": {
-                              fontSize: "0.75rem",
-                              marginTop: "8px",
-                              marginLeft: "14px",
-                            },
-                            "& .MuiFormHelperText-root.Mui-error": {
-                              color: "#d32f2f",
-                            },
-                          }}
-                          InputProps={{
-                            startAdornment: (
-                              <InputAdornment position="start">
-                                <span style={{ fontSize: "1.1rem" }}>
-                                  {getVariableIconFromLog(log)}
-                                </span>
-                              </InputAdornment>
-                            ),
-                          }}
-                        />
-
-                        {/* Notes Field */}
-                        <TextField
-                          fullWidth
-                          label="Notes (Optional)"
-                          value={editingNotes}
-                          onChange={(e) => setEditingNotes(e.target.value)}
-                          multiline
-                          rows={3}
-                          sx={{
-                            "& .MuiInputLabel-root": {
-                              color: "#666",
-                              fontWeight: 500,
-                            },
-                            "& .MuiInputLabel-root.Mui-focused": {
-                              color: "#1976d2",
-                            },
-                            "& .MuiOutlinedInput-root": {
-                              borderRadius: "12px",
-                              backgroundColor: "#fff",
-                              boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                              "& fieldset": {
-                                borderColor: "#e0e0e0",
-                                borderWidth: "2px",
-                              },
-                              "&:hover fieldset": {
-                                borderColor: "#1976d2",
-                              },
-                              "&.Mui-focused fieldset": {
-                                borderColor: "#1976d2",
-                                boxShadow: "0 4px 12px rgba(25,118,210,0.2)",
-                              },
-                            },
-                            "& .MuiInputBase-input": {
-                              padding: "12px 16px",
-                              fontSize: "14px",
-                            },
-                          }}
-                          InputProps={{
-                            startAdornment: (
-                              <InputAdornment
-                                position="start"
-                                sx={{ alignSelf: "flex-start", mt: 1 }}
-                              >
-                                <span style={{ fontSize: "1.1rem" }}>💭</span>
-                              </InputAdornment>
-                            ),
-                          }}
-                        />
-                      </Box>
-                    </Box>
-                  ) : (
-                    <Box>
-                      <Typography variant="body2" color="text.secondary">
-                        Planned logs cannot be edited here.
-                      </Typography>
-                    </Box>
-                  )
-                ) : (
-                  // Display mode
-                  <Box>
-                    <Box
-                      sx={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        mb: 1.5,
-                      }}
-                    >
-                      <Box
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 2,
-                          flex: 1,
-                        }}
-                      >
-                        <Typography
-                          variant="subtitle1"
-                          fontWeight="bold"
-                          sx={{
-                            color: "#1976d2",
-                            fontSize: { xs: "1rem", sm: "1.1rem" },
-                            cursor: "pointer",
-                            textDecoration: "underline",
-                            "&:hover": {
-                              color: "#0d47a1",
-                            },
-                          }}
-                          onClick={() => {
-                            // Find the variable to get its slug
-                            let variableSlug = log.variable;
-                            if (
-                              log.variable_id &&
-                              variables &&
-                              Array.isArray(variables)
-                            ) {
-                              const foundVar = variables.find(
-                                (v) => v.id === log.variable_id
-                              );
-                              if (foundVar) {
-                                variableSlug = foundVar.slug;
-                              }
-                            }
-                            router.push(
-                              `/variable/${encodeURIComponent(variableSlug)}`
-                            );
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: { xs: 2, sm: 2.5 },
                           }}
                         >
-                          {log.variable}
-                        </Typography>
-                        <Typography
-                          variant="h5"
-                          sx={{
-                            color: "#00E676",
-                            fontWeight: "bold",
-                            fontSize: { xs: "1.3rem", sm: "1.5rem" },
-                            textShadow: "0 1px 2px rgba(0,0,0,0.1)",
-                          }}
-                        >
-                          {log.value}
-                        </Typography>
-                        {log._source === "planned" && (
-                          <Box
-                            sx={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 1,
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            <Typography
-                              variant="caption"
+                          {(routineData as any).logs.map((log: any) => (
+                            <Box
+                              key={log.id}
                               sx={{
-                                ml: 0,
-                                color: "#FFD700",
-                                fontWeight: 600,
-                                fontSize: { xs: "0.75rem", sm: "0.8rem" },
-                                backgroundColor: "rgba(255, 215, 0, 0.18)",
-                                px: 1,
-                                borderRadius: 1,
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 0.5,
+                                p: { xs: 2.5, sm: 3 },
+                                border: "2px solid #FFD700",
+                                borderRadius: 3,
+                                backgroundColor: "#222",
+                                color: "#fff",
+                                boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
+                                transition: "all 0.3s ease",
+                                "&:hover": {
+                                  boxShadow: "0 8px 25px rgba(255,215,0,0.3)",
+                                  transform: "translateY(-2px)",
+                                  borderColor: "#FFEA70",
+                                },
                               }}
                             >
-                              ⏰ Planned
-                            </Typography>
-                            <VariableNameLink log={log} variables={variables} />
-                            {log.context && log.context.routine_id && (
-                              <>
-                                <span
-                                  style={{
-                                    color: "#FFD700",
-                                    fontWeight: 500,
-                                    fontSize: "0.85em",
-                                    margin: "0 2px",
-                                  }}
-                                >
-                                  •
-                                </span>
-                                <Link
-                                  href="/log/routines"
-                                  passHref
-                                  legacyBehavior
-                                >
-                                  <a
-                                    style={{
-                                      color: "#FFD700",
-                                      textDecoration: "underline",
-                                      fontWeight: 500,
-                                      fontSize: "0.85em",
+                              {editingLogId === log.id ? (
+                                // Edit mode for auto logs (same as manual logs)
+                                <Box>
+                                  <Box
+                                    sx={{
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      alignItems: "center",
+                                      mb: 3,
                                     }}
-                                    title={`View routine`}
                                   >
-                                    {log.context.routine_name ||
-                                      log.context.name}
-                                  </a>
-                                </Link>
-                              </>
-                            )}
-                          </Box>
-                        )}
-                        {log._source !== "planned" && (
-                          <VariableNameLink log={log} variables={variables} />
-                        )}
-                      </Box>
-                      {log._source === "manual" && (
-                        <Box>
-                          <IconButton
-                            onClick={() => handleEditLog(log)}
-                            size="small"
-                            sx={{
-                              color: "#1976d2",
-                              mr: 1,
-                              "&:hover": {
-                                backgroundColor: "rgba(25, 118, 210, 0.1)",
-                                transform: "scale(1.1)",
-                              },
-                            }}
-                          >
-                            <FaEdit />
-                          </IconButton>
-                          <IconButton
-                            onClick={() => handleDeleteLog(log.id)}
-                            size="small"
-                            sx={{
-                              color: "#d32f2f",
-                              "&:hover": {
-                                backgroundColor: "rgba(211, 47, 47, 0.1)",
-                                transform: "scale(1.1)",
-                              },
-                            }}
-                          >
-                            <FaTrash />
-                          </IconButton>
+                                    <Typography
+                                      variant="subtitle1"
+                                      fontWeight="bold"
+                                      sx={{
+                                        color: "#1976d2",
+                                        fontSize: { xs: "1rem", sm: "1.1rem" },
+                                      }}
+                                    >
+                                      ✏️ Editing: 🤖{" "}
+                                      {getVariableNameFromLog(log)}
+                                    </Typography>
+                                    <Box sx={{ display: "flex", gap: 1 }}>
+                                      <IconButton
+                                        onClick={handleSaveEdit}
+                                        disabled={
+                                          !editingIsValid ||
+                                          !editingValue.trim()
+                                        }
+                                        size="small"
+                                        sx={{
+                                          color: "#00E676",
+                                          "&:hover": {
+                                            backgroundColor:
+                                              "rgba(0, 230, 118, 0.1)",
+                                          },
+                                        }}
+                                      >
+                                        <FaCheck />
+                                      </IconButton>
+                                      <IconButton
+                                        onClick={handleCancelEdit}
+                                        size="small"
+                                        sx={{
+                                          color: "#d32f2f",
+                                          "&:hover": {
+                                            backgroundColor:
+                                              "rgba(211, 47, 47, 0.1)",
+                                          },
+                                        }}
+                                      >
+                                        <FaTimes />
+                                      </IconButton>
+                                    </Box>
+                                  </Box>
+
+                                  <Box
+                                    sx={{
+                                      display: "flex",
+                                      flexDirection: "column",
+                                      gap: 3,
+                                    }}
+                                  >
+                                    {/* Date Field */}
+                                    <Box>
+                                      <Typography
+                                        variant="subtitle2"
+                                        gutterBottom
+                                        sx={{
+                                          color: "#FFD700",
+                                          fontWeight: 600,
+                                          fontSize: {
+                                            xs: "0.9rem",
+                                            sm: "0.875rem",
+                                          },
+                                        }}
+                                      >
+                                        📅 Date
+                                      </Typography>
+                                      <Box
+                                        sx={{
+                                          position: "relative",
+                                          "& .datepicker-wrapper": {
+                                            width: "100%",
+                                          },
+                                          "& .custom-datepicker": {
+                                            width: "100%",
+                                            padding: "12px 16px",
+                                            fontSize: "14px",
+                                            border: "2px solid #e0e0e0",
+                                            borderRadius: "12px",
+                                            backgroundColor: "#fff",
+                                            color: "#333",
+                                            fontFamily: "inherit",
+                                            fontWeight: "500",
+                                            transition: "all 0.3s ease",
+                                            boxShadow:
+                                              "0 2px 8px rgba(0,0,0,0.1)",
+                                            "&:focus": {
+                                              outline: "none",
+                                              borderColor: "#1976d2",
+                                              boxShadow:
+                                                "0 4px 12px rgba(25,118,210,0.2)",
+                                              color: "#1976d2",
+                                            },
+                                            "&:hover": {
+                                              borderColor: "#1976d2",
+                                              boxShadow:
+                                                "0 4px 12px rgba(0,0,0,0.15)",
+                                              color: "#1976d2",
+                                            },
+                                            "&::placeholder": {
+                                              color: "#999",
+                                              opacity: 1,
+                                            },
+                                          },
+                                        }}
+                                      >
+                                        <DatePicker
+                                          selected={editingDate}
+                                          onChange={(date: Date | null) =>
+                                            date && setEditingDate(date)
+                                          }
+                                          showTimeSelect
+                                          timeFormat="HH:mm"
+                                          timeIntervals={15}
+                                          dateFormat="yyyy-MM-dd HH:mm"
+                                          className="custom-datepicker"
+                                          wrapperClassName="datepicker-wrapper"
+                                        />
+                                      </Box>
+                                    </Box>
+
+                                    {/* Value Field */}
+                                    <TextField
+                                      fullWidth
+                                      label={`Value for ${getVariableNameFromLog(
+                                        log
+                                      )}`}
+                                      value={editingValue}
+                                      onChange={(e) => {
+                                        const newValue = e.target.value;
+                                        setEditingValue(newValue);
+
+                                        // Real-time validation
+                                        if (newValue.trim()) {
+                                          const validation = validateEditValue(
+                                            newValue,
+                                            log
+                                          );
+                                          setEditingValidationError(
+                                            validation.error || ""
+                                          );
+                                          setEditingIsValid(validation.isValid);
+                                        } else {
+                                          setEditingValidationError("");
+                                          setEditingIsValid(true);
+                                        }
+                                      }}
+                                      error={!editingIsValid}
+                                      helperText={editingValidationError}
+                                      sx={{
+                                        "& .MuiInputLabel-root": {
+                                          color: "#666",
+                                          fontWeight: 500,
+                                        },
+                                        "& .MuiInputLabel-root.Mui-focused": {
+                                          color: editingIsValid
+                                            ? "#1976d2"
+                                            : "#d32f2f",
+                                        },
+                                        "& .MuiInputLabel-root.Mui-error": {
+                                          color: "#d32f2f",
+                                        },
+                                        "& .MuiOutlinedInput-root": {
+                                          borderRadius: "12px",
+                                          backgroundColor: "#fff",
+                                          boxShadow:
+                                            "0 2px 8px rgba(0,0,0,0.1)",
+                                          "& fieldset": {
+                                            borderColor: editingIsValid
+                                              ? "#e0e0e0"
+                                              : "#d32f2f",
+                                            borderWidth: "2px",
+                                          },
+                                          "&:hover fieldset": {
+                                            borderColor: editingIsValid
+                                              ? "#1976d2"
+                                              : "#d32f2f",
+                                          },
+                                          "&.Mui-focused fieldset": {
+                                            borderColor: editingIsValid
+                                              ? "#1976d2"
+                                              : "#d32f2f",
+                                            boxShadow: editingIsValid
+                                              ? "0 4px 12px rgba(25,118,210,0.2)"
+                                              : "0 4px 12px rgba(211,47,47,0.2)",
+                                          },
+                                          "&.Mui-error fieldset": {
+                                            borderColor: "#d32f2f",
+                                          },
+                                        },
+                                        "& .MuiInputBase-input": {
+                                          padding: "12px 16px",
+                                          fontSize: "14px",
+                                        },
+                                        "& .MuiFormHelperText-root": {
+                                          fontSize: "0.75rem",
+                                          marginTop: "8px",
+                                          marginLeft: "14px",
+                                        },
+                                        "& .MuiFormHelperText-root.Mui-error": {
+                                          color: "#d32f2f",
+                                        },
+                                      }}
+                                      InputProps={{
+                                        startAdornment: (
+                                          <InputAdornment position="start">
+                                            <span
+                                              style={{ fontSize: "1.1rem" }}
+                                            >
+                                              {getVariableIconFromLog(log)}
+                                            </span>
+                                          </InputAdornment>
+                                        ),
+                                      }}
+                                    />
+
+                                    {/* Notes Field */}
+                                    <TextField
+                                      fullWidth
+                                      label="Notes (Optional)"
+                                      value={editingNotes}
+                                      onChange={(e) =>
+                                        setEditingNotes(e.target.value)
+                                      }
+                                      multiline
+                                      rows={3}
+                                      sx={{
+                                        "& .MuiInputLabel-root": {
+                                          color: "#666",
+                                          fontWeight: 500,
+                                        },
+                                        "& .MuiInputLabel-root.Mui-focused": {
+                                          color: "#1976d2",
+                                        },
+                                        "& .MuiOutlinedInput-root": {
+                                          borderRadius: "12px",
+                                          backgroundColor: "#fff",
+                                          boxShadow:
+                                            "0 2px 8px rgba(0,0,0,0.1)",
+                                          "& fieldset": {
+                                            borderColor: "#e0e0e0",
+                                            borderWidth: "2px",
+                                          },
+                                          "&:hover fieldset": {
+                                            borderColor: "#1976d2",
+                                          },
+                                          "&.Mui-focused fieldset": {
+                                            borderColor: "#1976d2",
+                                            boxShadow:
+                                              "0 4px 12px rgba(25,118,210,0.2)",
+                                          },
+                                        },
+                                        "& .MuiInputBase-input": {
+                                          padding: "12px 16px",
+                                          fontSize: "14px",
+                                        },
+                                      }}
+                                      InputProps={{
+                                        startAdornment: (
+                                          <InputAdornment
+                                            position="start"
+                                            sx={{
+                                              alignSelf: "flex-start",
+                                              mt: 1,
+                                            }}
+                                          >
+                                            <span
+                                              style={{ fontSize: "1.1rem" }}
+                                            >
+                                              💭
+                                            </span>
+                                          </InputAdornment>
+                                        ),
+                                      }}
+                                    />
+                                  </Box>
+                                </Box>
+                              ) : (
+                                // Display mode for auto logs
+                                <Box>
+                                  <Box
+                                    sx={{
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      alignItems: "center",
+                                      mb: 1.5,
+                                    }}
+                                  >
+                                    <Box
+                                      sx={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 2,
+                                        flex: 1,
+                                      }}
+                                    >
+                                      <Typography
+                                        variant="subtitle1"
+                                        fontWeight="bold"
+                                        sx={{
+                                          color: "#1976d2",
+                                          fontSize: {
+                                            xs: "1rem",
+                                            sm: "1.1rem",
+                                          },
+                                        }}
+                                      >
+                                        {getVariableNameFromLog(log)}
+                                      </Typography>
+                                      <Typography
+                                        variant="h5"
+                                        sx={{
+                                          color: "#00E676",
+                                          fontWeight: "bold",
+                                          fontSize: {
+                                            xs: "1.3rem",
+                                            sm: "1.5rem",
+                                          },
+                                          textShadow:
+                                            "0 1px 2px rgba(0,0,0,0.1)",
+                                        }}
+                                      >
+                                        {log.value}
+                                      </Typography>
+                                      <Typography
+                                        variant="caption"
+                                        sx={{
+                                          ml: 0,
+                                          color: "#FFD700",
+                                          fontWeight: 600,
+                                          fontSize: {
+                                            xs: "0.75rem",
+                                            sm: "0.8rem",
+                                          },
+                                          backgroundColor:
+                                            "rgba(255, 215, 0, 0.18)",
+                                          px: 1,
+                                          borderRadius: 1,
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: 0.5,
+                                        }}
+                                      >
+                                        🤖 Auto
+                                      </Typography>
+                                    </Box>
+                                    <Box sx={{ display: "flex", gap: 1 }}>
+                                      <IconButton
+                                        onClick={() => handleEditLog(log)}
+                                        size="small"
+                                        sx={{
+                                          color: "#1976d2",
+                                          mr: 1,
+                                          "&:hover": {
+                                            backgroundColor:
+                                              "rgba(25, 118, 210, 0.1)",
+                                            transform: "scale(1.1)",
+                                          },
+                                        }}
+                                      >
+                                        <FaEdit />
+                                      </IconButton>
+                                      <IconButton
+                                        onClick={() => handleDeleteLog(log.id)}
+                                        size="small"
+                                        sx={{
+                                          color: "#d32f2f",
+                                          "&:hover": {
+                                            backgroundColor:
+                                              "rgba(211, 47, 47, 0.1)",
+                                            transform: "scale(1.1)",
+                                          },
+                                        }}
+                                      >
+                                        <FaTrash />
+                                      </IconButton>
+                                    </Box>
+                                  </Box>
+                                  {log.notes && (
+                                    <Typography
+                                      variant="body2"
+                                      sx={{
+                                        mb: 1,
+                                        fontSize: {
+                                          xs: "0.9rem",
+                                          sm: "0.95rem",
+                                        },
+                                        color: "#fff",
+                                        backgroundColor: "#333",
+                                        padding: "8px 12px",
+                                        borderRadius: 2,
+                                        borderLeft: "4px solid #FFD700",
+                                      }}
+                                    >
+                                      💬 {log.notes}
+                                    </Typography>
+                                  )}
+                                  <Typography
+                                    variant="caption"
+                                    sx={{
+                                      fontStyle: "italic",
+                                      fontSize: { xs: "0.75rem", sm: "0.8rem" },
+                                      color: "#BBB",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 0.5,
+                                    }}
+                                  >
+                                    🕐{" "}
+                                    {new Date(
+                                      log.date || log.created_at
+                                    ).toLocaleString()}
+                                  </Typography>
+                                </Box>
+                              )}
+                            </Box>
+                          ))}
                         </Box>
-                      )}
-                    </Box>
-                    {log.notes && (
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          mb: 1,
-                          fontSize: { xs: "0.9rem", sm: "0.95rem" },
-                          color: "#fff",
-                          backgroundColor: "#333",
-                          padding: "8px 12px",
-                          borderRadius: 2,
-                          borderLeft: "4px solid #FFD700",
-                        }}
-                      >
-                        💬 {log.notes}
-                      </Typography>
-                    )}
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        fontStyle: "italic",
-                        fontSize: { xs: "0.75rem", sm: "0.8rem" },
-                        color: "#BBB",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 0.5,
-                      }}
-                    >
-                      🕐 {new Date(log.date || log.created_at).toLocaleString()}
-                    </Typography>
-                  </Box>
-                )}
-              </Box>
-            ))}
+                      </Box>
+                    )
+                  )}
+                </Box>
+              )}
           </Box>
         </Paper>
       )}

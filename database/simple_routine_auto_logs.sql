@@ -1,4 +1,4 @@
--- Simple routine auto-logging function for the actual database structure
+-- Simple routine auto-logging function with minute-based duplicate prevention and debugging
 -- Works with routine_variables table that has times as a jsonb[] column
 
 CREATE OR REPLACE FUNCTION create_simple_routine_auto_logs(
@@ -15,7 +15,7 @@ RETURNS TABLE(
 DECLARE
     routine_var_record RECORD;
     time_entry JSONB;
-    log_exists BOOLEAN;
+    minute_log_exists BOOLEAN;
     target_weekday INTEGER;
     curr_time TIME;
     routine_time TIME;
@@ -23,6 +23,8 @@ DECLARE
     i INTEGER;
     times_array_length INTEGER;
     target_datetime TIMESTAMP;
+    minute_start TIMESTAMP;
+    minute_end TIMESTAMP;
 BEGIN
     -- Validate that user_id is provided
     IF p_user_id IS NULL THEN
@@ -53,10 +55,15 @@ BEGIN
         JOIN routines r ON rv.routine_id = r.id
         WHERE r.user_id = p_user_id
         AND r.is_active = true
-        AND target_weekday = ANY(rv.weekdays) -- Check if today matches allowed weekdays
+        AND target_weekday = ANY(rv.weekdays)
     LOOP
         -- Get the length of the times array (jsonb[])
         times_array_length := array_length(routine_var_record.times, 1);
+        
+        -- Skip if no times array
+        IF times_array_length IS NULL THEN
+            CONTINUE;
+        END IF;
         
         -- Loop through each time in the times array
         FOR i IN 1..times_array_length LOOP
@@ -64,7 +71,6 @@ BEGIN
             time_entry := routine_var_record.times[i];
             
             -- Extract time from the JSONB entry
-            -- Handle both direct string format and object format
             IF jsonb_typeof(time_entry) = 'string' THEN
                 routine_time := (time_entry #>> '{}')::TIME;
             ELSE
@@ -79,51 +85,67 @@ BEGIN
                 -- Create target datetime for this specific time
                 target_datetime := target_date::timestamp + routine_time;
                 
-                -- Check if log already exists for this specific time (same minute)
+                -- Define the minute window (same minute only)
+                minute_start := date_trunc('minute', target_datetime);
+                minute_end := minute_start + INTERVAL '1 minute';
+                
+                -- Check if routine log already exists for this specific minute
                 SELECT EXISTS(
                     SELECT 1 FROM logs l
                     WHERE l.user_id = p_user_id 
                     AND l.variable_id = routine_var_record.variable_id
-                    AND l.created_at >= target_datetime - INTERVAL '1 minute'
-                    AND l.created_at <= target_datetime + INTERVAL '1 minute'
+                    AND l.created_at >= minute_start
+                    AND l.created_at < minute_end
                     AND 'routine' = ANY(l.source)
-                ) INTO log_exists;
+                ) INTO minute_log_exists;
                 
-                -- If no log exists for this specific time, create auto-log
-                IF NOT log_exists THEN
-                    -- Insert auto-log into logs table
-                    INSERT INTO logs (
-                        user_id,
-                        variable_id,
-                        routine_id,
-                        value,
-                        date,
-                        source,
-                        created_at
-                    ) VALUES (
-                        p_user_id,
-                        routine_var_record.variable_id,
-                        routine_var_record.routine_id,
-                        routine_var_record.default_value::TEXT,
-                        target_date::TEXT,
-                        ARRAY['routine'],
-                        target_datetime
-                    );
-                    
-                    -- Return success
-                    variable_id := routine_var_record.variable_id;
-                    variable_name := routine_var_record.variable_name;
-                    routine_time := routine_time::TEXT;
-                    auto_logged := true;
-                    error_message := NULL;
-                    RETURN NEXT;
+                -- If no log exists for this minute, create auto-log
+                IF NOT minute_log_exists THEN
+                    BEGIN
+                        RAISE NOTICE 'Attempting to insert log: user_id=%, variable_id=%, routine_id=%, value=%, date=%, source=%, created_at=%',
+                            p_user_id, routine_var_record.variable_id, routine_var_record.routine_id,
+                            routine_var_record.default_value::TEXT, target_date::TEXT, ARRAY['routine'], target_datetime;
+                        -- Insert auto-log into logs table
+                        INSERT INTO logs (
+                            user_id,
+                            variable_id,
+                            routine_id,
+                            value,
+                            date,
+                            source,
+                            created_at
+                        ) VALUES (
+                            p_user_id,
+                            routine_var_record.variable_id,
+                            routine_var_record.routine_id,
+                            routine_var_record.default_value::TEXT,
+                            target_date::TEXT,
+                            ARRAY['routine'],
+                            target_datetime
+                        );
+                        RAISE NOTICE 'Insert completed';
+                        -- Return success
+                        variable_id := routine_var_record.variable_id;
+                        variable_name := routine_var_record.variable_name;
+                        routine_time := routine_time::TEXT;
+                        auto_logged := true;
+                        error_message := NULL;
+                        RETURN NEXT;
+                    EXCEPTION WHEN OTHERS THEN
+                        variable_id := routine_var_record.variable_id;
+                        variable_name := routine_var_record.variable_name;
+                        routine_time := routine_time::TEXT;
+                        auto_logged := false;
+                        error_message := 'Insert failed: ' || SQLERRM;
+                        RETURN NEXT;
+                    END;
                 ELSE
-                    -- Return skipped info
+                    -- Return skipped info (minute already logged)
                     variable_id := routine_var_record.variable_id;
                     variable_name := routine_var_record.variable_name;
                     routine_time := routine_time::TEXT;
                     auto_logged := false;
-                    error_message := 'Log already exists for this specific time';
+                    error_message := 'Already logged for this minute';
                     RETURN NEXT;
                 END IF;
             END IF;

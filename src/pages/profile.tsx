@@ -22,6 +22,7 @@ import {
   Card,
   CardContent,
   CardHeader,
+  Autocomplete,
 } from "@mui/material";
 import Grid from "@mui/material/Grid";
 import {
@@ -38,12 +39,28 @@ import { LOG_LABELS } from "@/utils/logLabels";
 import VariableSharingManager from "../components/VariableSharingManager";
 import AnalyzePrivacySection from "../components/AnalyzePrivacySection";
 
+// Common timezone options for the autocomplete
+const COMMON_TIMEZONES = [
+  "Europe/Stockholm",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "America/New_York",
+  "America/Los_Angeles",
+  "America/Chicago",
+  "Asia/Tokyo",
+  "Asia/Shanghai",
+  "Australia/Sydney",
+  "UTC",
+];
+
 interface Profile {
   username: string;
   name: string;
   email: string;
   date_of_birth: string;
   avatar_url?: string | null;
+  timezone: string;
 }
 
 function SharedVariablesViewer({ username }: { username: string }) {
@@ -122,6 +139,7 @@ export default function ProfilePage() {
     email: "",
     date_of_birth: "",
     avatar_url: null,
+    timezone: "",
   });
   const [saving, setSaving] = useState(false);
   const [usernameAvailable, setUsernameAvailable] = useState(true);
@@ -145,7 +163,7 @@ export default function ProfilePage() {
       setError("");
       const { data, error } = await supabase
         .from("profiles")
-        .select("username, name, date_of_birth, avatar_url")
+        .select("username, name, date_of_birth, avatar_url, timezone")
         .eq("id", user.id)
         .single();
       if (error) {
@@ -156,7 +174,12 @@ export default function ProfilePage() {
         router.push("/complete-profile");
         return;
       } else {
-        const profileWithEmail = { ...data, email: user.email || "" };
+        const profileWithEmail = {
+          ...data,
+          email: user.email || "",
+          timezone:
+            data.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+        };
         setProfile(profileWithEmail);
         setForm(profileWithEmail);
       }
@@ -227,6 +250,10 @@ export default function ProfilePage() {
     }
   };
 
+  const handleTimezoneChange = (event: any, newValue: string | null) => {
+    setForm((f) => ({ ...f, timezone: newValue || "" }));
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -246,6 +273,7 @@ export default function ProfilePage() {
         username: form.username,
         name: form.name,
         date_of_birth: form.date_of_birth,
+        timezone: form.timezone,
       });
       if (error) throw error;
       setProfile(form);
@@ -492,6 +520,23 @@ export default function ProfilePage() {
                       disabled={!editMode}
                       InputLabelProps={{ shrink: true }}
                       className="mb-4"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Autocomplete
+                      options={COMMON_TIMEZONES}
+                      value={form.timezone}
+                      onChange={handleTimezoneChange}
+                      freeSolo
+                      disabled={!editMode}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="Timezone"
+                          helperText="Your timezone for accurate logging times"
+                          className="mb-4"
+                        />
+                      )}
                     />
                   </Grid>
                 </Grid>

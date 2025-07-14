@@ -17,7 +17,6 @@ import { useRouter } from "next/router";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { CssBaseline, Container, Box, Snackbar, Alert } from "@mui/material";
-import { useRoutineAutoLogger } from "@/hooks/useRoutineAutoLogger";
 
 // User context
 export const UserContext = createContext<{
@@ -370,33 +369,6 @@ export default function App({ Component, pageProps }: AppProps) {
     severity: "success",
   });
   const router = useRouter();
-
-  // Initialize auto-logger for routine logging
-  const autoLogger = useRoutineAutoLogger({
-    userId: user?.id || "",
-    enabled: !!user && !loading, // Only enable when user is authenticated
-    checkIntervalMs: 60000, // Check every minute
-    onAutoLogCreated: (summary) => {
-      console.log("Auto-logs created:", summary);
-      if (summary.auto_logs_created > 0) {
-        setAutoLogNotification({
-          open: true,
-          message: `${summary.auto_logs_created} routine log${
-            summary.auto_logs_created > 1 ? "s" : ""
-          } automatically created`,
-          severity: "success",
-        });
-      }
-    },
-    onError: (error) => {
-      console.error("Auto-logger error:", error);
-      setAutoLogNotification({
-        open: true,
-        message: "Failed to create automatic routine logs",
-        severity: "error",
-      });
-    },
-  });
 
   // Function to fetch user profile
   const fetchUserProfile = useCallback(async (userId: string) => {

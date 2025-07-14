@@ -45,3 +45,7 @@ SELECT
 FROM auth.users au
 LEFT JOIN public.profiles p ON au.id = p.id
 ORDER BY au.created_at DESC; 
+
+-- Add timezone column to profiles table
+ALTER TABLE profiles
+ADD COLUMN timezone text DEFAULT 'Europe/Stockholm'; 

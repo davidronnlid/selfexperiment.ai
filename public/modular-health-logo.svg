@@ -1,26 +1,33 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 120" width="500" height="120">
-  <!-- White background -->
-  <rect width="500" height="120" fill="#ffffff"/>
+<svg width="400" height="200" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Dark background -->
+  <rect width="400" height="200" fill="#2a2a2a"/>
   
-  <!-- M Logo - matching the user's design -->
-  <g transform="translate(20, 15)">
-    <!-- Yellow M background -->
-    <path d="M 0 0 L 30 0 L 60 45 L 90 0 L 120 0 L 120 90 L 90 90 L 90 35 L 60 80 L 60 35 L 30 90 L 0 90 Z" 
-          fill="#FFD700"/>
-    
-    <!-- Black M outline -->
-    <path d="M 0 0 L 30 0 L 60 45 L 90 0 L 120 0 L 120 90 L 90 90 L 90 35 L 60 80 L 60 35 L 30 90 L 0 90 Z" 
-          fill="none" stroke="#000000" stroke-width="4"/>
-  </g>
+  <!-- Left M pillar -->
+  <rect x="40" y="30" width="80" height="140" fill="#2a2a2a" stroke="#000" stroke-width="6" rx="8"/>
   
-  <!-- Modular text - black -->
-  <text x="170" y="50" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#000000">
-    Modular
-  </text>
+  <!-- Right M pillar -->
+  <rect x="280" y="30" width="80" height="140" fill="#2a2a2a" stroke="#000" stroke-width="6" rx="8"/>
   
-  <!-- Health text - yellow -->
-  <text x="170" y="85" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#FFD700">
-    Health
-  </text>
+  <!-- Gold rectangles in left pillar -->
+  <rect x="50" y="50" width="25" height="25" fill="#FFD700" rx="3"/>
+  <rect x="85" y="50" width="25" height="25" fill="#FFD700" rx="3"/>
+  <rect x="50" y="135" width="25" height="25" fill="#FFD700" rx="3"/>
+  <rect x="85" y="135" width="25" height="25" fill="#FFD700" rx="3"/>
+  
+  <!-- Gold rectangles in right pillar -->
+  <rect x="290" y="50" width="25" height="25" fill="#FFD700" rx="3"/>
+  <rect x="325" y="50" width="25" height="25" fill="#FFD700" rx="3"/>
+  <rect x="290" y="135" width="25" height="25" fill="#FFD700" rx="3"/>
+  <rect x="325" y="135" width="25" height="25" fill="#FFD700" rx="3"/>
+  
+  <!-- Central chevron/arrow pointing down -->
+  <path d="M 160 50 L 200 120 L 240 50 L 200 90 Z" fill="#FFD700" stroke="#000" stroke-width="4" stroke-linejoin="round"/>
+  
+  <!-- M connecting lines -->
+  <path d="M 120 30 L 160 50" stroke="#000" stroke-width="6" stroke-linecap="round"/>
+  <path d="M 240 50 L 280 30" stroke="#000" stroke-width="6" stroke-linecap="round"/>
+  
+  <!-- Additional structural lines for the M -->
+  <path d="M 80 60 L 120 100 L 160 60" stroke="#000" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M 240 60 L 280 100 L 320 60" stroke="#000" stroke-width="4" fill="none" stroke-linecap="round"/>
 </svg> 

@@ -1,6 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <!-- Simplified M for favicon -->
-  <rect width="32" height="32" fill="#FFD700"/>
-  <path d="M 4 4 L 8 4 L 16 16 L 24 4 L 28 4 L 28 28 L 24 28 L 24 12 L 16 24 L 16 12 L 8 28 L 4 28 Z" 
-        fill="#000" stroke="#000" stroke-width="1"/>
-</svg>
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- Dark background -->
+  <rect width="32" height="32" fill="#2a2a2a"/>
+  
+  <!-- Left M pillar -->
+  <rect x="3" y="4" width="8" height="24" fill="#2a2a2a" stroke="#000" stroke-width="1"/>
+  
+  <!-- Right M pillar -->
+  <rect x="21" y="4" width="8" height="24" fill="#2a2a2a" stroke="#000" stroke-width="1"/>
+  
+  <!-- Gold rectangles in left pillar -->
+  <rect x="4" y="6" width="2" height="2" fill="#FFD700"/>
+  <rect x="8" y="6" width="2" height="2" fill="#FFD700"/>
+  <rect x="4" y="24" width="2" height="2" fill="#FFD700"/>
+  <rect x="8" y="24" width="2" height="2" fill="#FFD700"/>
+  
+  <!-- Gold rectangles in right pillar -->
+  <rect x="22" y="6" width="2" height="2" fill="#FFD700"/>
+  <rect x="26" y="6" width="2" height="2" fill="#FFD700"/>
+  <rect x="22" y="24" width="2" height="2" fill="#FFD700"/>
+  <rect x="26" y="24" width="2" height="2" fill="#FFD700"/>
+  
+  <!-- Central chevron/arrow pointing down -->
+  <path d="M 12 8 L 16 16 L 20 8 L 16 12 Z" fill="#FFD700" stroke="#000" stroke-width="1"/>
+  
+  <!-- M connecting lines -->
+  <path d="M 11 4 L 12 8" stroke="#000" stroke-width="1"/>
+  <path d="M 20 8 L 21 4" stroke="#000" stroke-width="1"/>
+</svg> 
