@@ -1,87 +1,132 @@
 const fs = require("fs");
 const path = require("path");
+const { createCanvas, loadImage } = require("canvas");
 
-// Create a simple HTML file to render the SVG and capture it
-const createIconHtml = (size) => `
-<!DOCTYPE html>
-<html>
-<head>
-  <style>
-    body { margin: 0; padding: 0; background: white; }
-    .icon { width: ${size}px; height: ${size}px; }
-  </style>
-</head>
-<body>
-  <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 140">
-    <!-- Yellow M background -->
-    <path d="M 0 0 L 40 0 L 80 60 L 120 0 L 160 0 L 160 140 L 120 140 L 120 60 L 80 120 L 80 60 L 40 140 L 0 140 Z" 
-          fill="#FFD700" stroke="#000" stroke-width="4"/>
-    
-    <!-- Black M outline -->
-    <path d="M 0 0 L 40 0 L 80 60 L 120 0 L 160 0 L 160 140 L 120 140 L 120 60 L 80 120 L 80 60 L 40 140 L 0 140 Z" 
-          fill="none" stroke="#000" stroke-width="6"/>
-  </svg>
-</body>
-</html>
-`;
+// Function to draw the logo on canvas
+function drawLogo(ctx, size) {
+  // Scale factor based on size
+  const scale = size / 100;
 
-// Create favicon SVG optimized for small sizes
-const faviconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <!-- Simplified M for favicon -->
-  <rect width="32" height="32" fill="#FFD700"/>
-  <path d="M 4 4 L 8 4 L 16 16 L 24 4 L 28 4 L 28 28 L 24 28 L 24 12 L 16 24 L 16 12 L 8 28 L 4 28 Z" 
-        fill="#000" stroke="#000" stroke-width="1"/>
-</svg>`;
+  // Clear canvas with dark background
+  ctx.fillStyle = "#2a2a2a";
+  ctx.fillRect(0, 0, size, size);
 
-// Write the favicon SVG
-fs.writeFileSync(path.join(__dirname, "../public/favicon.svg"), faviconSvg);
+  // Draw left M pillar
+  ctx.fillStyle = "#2a2a2a";
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 3 * scale;
+  ctx.fillRect(10 * scale, 15 * scale, 20 * scale, 70 * scale);
+  ctx.strokeRect(10 * scale, 15 * scale, 20 * scale, 70 * scale);
 
-// Create different sized HTML files for manual conversion
+  // Draw right M pillar
+  ctx.fillRect(70 * scale, 15 * scale, 20 * scale, 70 * scale);
+  ctx.strokeRect(70 * scale, 15 * scale, 20 * scale, 70 * scale);
+
+  // Draw gold rectangles in left pillar
+  ctx.fillStyle = "#FFD700";
+  ctx.fillRect(13 * scale, 20 * scale, 6 * scale, 6 * scale);
+  ctx.fillRect(21 * scale, 20 * scale, 6 * scale, 6 * scale);
+  ctx.fillRect(13 * scale, 70 * scale, 6 * scale, 6 * scale);
+  ctx.fillRect(21 * scale, 70 * scale, 6 * scale, 6 * scale);
+
+  // Draw gold rectangles in right pillar
+  ctx.fillRect(73 * scale, 20 * scale, 6 * scale, 6 * scale);
+  ctx.fillRect(81 * scale, 20 * scale, 6 * scale, 6 * scale);
+  ctx.fillRect(73 * scale, 70 * scale, 6 * scale, 6 * scale);
+  ctx.fillRect(81 * scale, 70 * scale, 6 * scale, 6 * scale);
+
+  // Draw central chevron/arrow
+  ctx.fillStyle = "#FFD700";
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 2 * scale;
+  ctx.beginPath();
+  ctx.moveTo(40 * scale, 25 * scale);
+  ctx.lineTo(50 * scale, 45 * scale);
+  ctx.lineTo(60 * scale, 25 * scale);
+  ctx.lineTo(50 * scale, 35 * scale);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Draw M connecting lines
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 3 * scale;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(30 * scale, 15 * scale);
+  ctx.lineTo(40 * scale, 25 * scale);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(60 * scale, 25 * scale);
+  ctx.lineTo(70 * scale, 15 * scale);
+  ctx.stroke();
+
+  // Draw additional structural lines
+  ctx.lineWidth = 2 * scale;
+  ctx.beginPath();
+  ctx.moveTo(20 * scale, 30 * scale);
+  ctx.lineTo(30 * scale, 40 * scale);
+  ctx.lineTo(40 * scale, 30 * scale);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(60 * scale, 30 * scale);
+  ctx.lineTo(70 * scale, 40 * scale);
+  ctx.lineTo(80 * scale, 30 * scale);
+  ctx.stroke();
+}
+
+// Generate icons for different sizes
 const sizes = [16, 32, 48, 72, 96, 128, 144, 152, 192, 384, 512];
 
-sizes.forEach((size) => {
-  const html = createIconHtml(size);
+async function generateIcons() {
+  console.log("Generating PNG icons with new logo design...");
+
+  for (const size of sizes) {
+    console.log(`Creating icon-${size}x${size}.png...`);
+
+    // Create canvas
+    const canvas = createCanvas(size, size);
+    const ctx = canvas.getContext("2d");
+
+    // Draw logo
+    drawLogo(ctx, size);
+
+    // Save PNG
+    const buffer = canvas.toBuffer("image/png");
+    fs.writeFileSync(
+      path.join(__dirname, `../public/icon-${size}x${size}.png`),
+      buffer
+    );
+  }
+
+  // Generate favicon sizes
+  console.log("Creating favicon-16x16.png...");
+  const favicon16 = createCanvas(16, 16);
+  const ctx16 = favicon16.getContext("2d");
+  drawLogo(ctx16, 16);
   fs.writeFileSync(
-    path.join(__dirname, `../public/icon-${size}x${size}.html`),
-    html
+    path.join(__dirname, "../public/favicon-16x16.png"),
+    favicon16.toBuffer("image/png")
   );
-});
 
-console.log("Icon HTML files generated. You can:");
-console.log("1. Open each HTML file in a browser");
-console.log("2. Take screenshots at the exact size");
-console.log("3. Or use a tool like Puppeteer to automate this");
-console.log("");
-console.log("For now, I'll create a simple ICO file manually...");
+  console.log("Creating favicon-32x32.png...");
+  const favicon32 = createCanvas(32, 32);
+  const ctx32 = favicon32.getContext("2d");
+  drawLogo(ctx32, 32);
+  fs.writeFileSync(
+    path.join(__dirname, "../public/favicon-32x32.png"),
+    favicon32.toBuffer("image/png")
+  );
 
-// Create a simple favicon.ico content (this is a basic placeholder)
-// In a real implementation, you'd use a proper ICO generation library
-const icoHeader = Buffer.from([
-  0x00,
-  0x00, // Reserved
-  0x01,
-  0x00, // ICO type
-  0x01,
-  0x00, // Number of images
-  0x10,
-  0x10, // Width, Height (16x16)
-  0x00,
-  0x00, // Colors, Reserved
-  0x01,
-  0x00, // Planes
-  0x20,
-  0x00, // Bits per pixel
-  0x00,
-  0x00,
-  0x00,
-  0x00, // Size of image data
-  0x16,
-  0x00,
-  0x00,
-  0x00, // Offset to image data
-]);
+  console.log("✅ All icons generated successfully!");
+  console.log("Generated files:");
+  sizes.forEach((size) => {
+    console.log(`  - icon-${size}x${size}.png`);
+  });
+  console.log("  - favicon-16x16.png");
+  console.log("  - favicon-32x32.png");
+}
 
-console.log("Basic favicon structure created.");
-console.log(
-  "For proper favicon generation, consider using online tools or proper libraries."
-);
+generateIcons().catch(console.error);

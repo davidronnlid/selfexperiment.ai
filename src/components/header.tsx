@@ -209,7 +209,7 @@ export default function Header() {
           >
             <Box className="flex items-center gap-2 lg:gap-3">
               <img
-                src="/modular-health-logo.svg?v=3"
+                src="/modular-health-logo.svg?v=4"
                 alt="Modular Health"
                 className="h-8 lg:h-10 w-auto"
               />

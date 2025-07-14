@@ -13,67 +13,38 @@ export default async function handler(
     const { targetDate, userId } = req.body;
     const dateToProcess = targetDate || new Date().toISOString().split("T")[0];
 
-    // If userId is provided, create a user-specific version
-    if (userId) {
-      // Call the user-specific auto-logging function
-      const { data, error } = await supabase.rpc(
-        "create_user_routine_auto_logs",
-        {
-          p_user_id: userId,
-          target_date: dateToProcess,
-        }
-      );
+    console.log(
+      `[Auto-Logs API] Processing for user: ${userId}, date: ${dateToProcess}`
+    );
 
-      if (error) {
-        console.error("Error creating user-specific auto-logs:", error);
-        return res.status(500).json({
-          error: "Failed to create user-specific auto-logs",
-          details: error.message,
-        });
-      }
-
-      // Process and summarize the results
-      const results = data || [];
-      const successCount = results.filter(
-        (result: any) => result.auto_logged
-      ).length;
-      const skippedCount = results.filter(
-        (result: any) => !result.auto_logged
-      ).length;
-      const errors = results.filter(
-        (result: any) =>
-          result.error_message &&
-          result.error_message !== "Manual log exists - skipped" &&
-          result.error_message !== "Auto-log already exists"
-      );
-
-      return res.status(200).json({
-        success: true,
-        summary: {
-          total_routines_processed: results.length,
-          auto_logs_created: successCount,
-          skipped: skippedCount,
-          errors: errors.length,
-        },
-        details: results,
-        message: `Successfully created ${successCount} auto-logs for user${
-          skippedCount > 0 ? `, skipped ${skippedCount}` : ""
-        }${errors.length > 0 ? `, with ${errors.length} errors` : ""}`,
+    // Always use the simplified user-specific function
+    if (!userId) {
+      console.error("[Auto-Logs API] No user ID provided");
+      return res.status(400).json({
+        error: "User ID is required for auto-logging",
       });
     }
 
-    // Fallback to original system-wide function if no userId provided
-    const { data, error } = await supabase.rpc("create_routine_auto_logs", {
-      target_date: dateToProcess,
-    });
+    // Call the simplified auto-logging function
+    console.log(`[Auto-Logs API] Calling create_simple_routine_auto_logs...`);
+    const { data, error } = await supabase.rpc(
+      "create_simple_routine_auto_logs",
+      {
+        p_user_id: userId,
+        target_date: dateToProcess,
+      }
+    );
 
     if (error) {
-      console.error("Error creating auto-logs:", error);
+      console.error("[Auto-Logs API] Database error:", error);
       return res.status(500).json({
         error: "Failed to create auto-logs",
         details: error.message,
+        code: error.code,
       });
     }
+
+    console.log(`[Auto-Logs API] Database response:`, data);
 
     // Process and summarize the results
     const results = data || [];
@@ -83,28 +54,26 @@ export default async function handler(
     const skippedCount = results.filter(
       (result: any) => !result.auto_logged
     ).length;
-    const errors = results.filter(
-      (result: any) =>
-        result.error_message &&
-        result.error_message !== "Manual log exists - skipped" &&
-        result.error_message !== "Auto-log already exists"
+
+    console.log(
+      `[Auto-Logs API] Results: ${successCount} created, ${skippedCount} skipped`
     );
 
     return res.status(200).json({
       success: true,
       summary: {
-        total_routines_processed: results.length,
+        total_variables_processed: results.length,
         auto_logs_created: successCount,
         skipped: skippedCount,
-        errors: errors.length,
+        errors: 0,
       },
       details: results,
       message: `Successfully created ${successCount} auto-logs${
         skippedCount > 0 ? `, skipped ${skippedCount}` : ""
-      }${errors.length > 0 ? `, with ${errors.length} errors` : ""}`,
+      }`,
     });
   } catch (error) {
-    console.error("API Error creating auto-logs:", error);
+    console.error("[Auto-Logs API] API Error:", error);
     return res.status(500).json({
       error: "Internal server error",
       details: error instanceof Error ? error.message : "Unknown error",

@@ -23,7 +23,7 @@ import {
   CardContent,
   CardHeader,
 } from "@mui/material";
-import Grid from "@mui/system/Grid";
+import Grid from "@mui/material/Grid";
 import {
   FaShieldAlt,
   FaEye,
@@ -447,7 +447,7 @@ export default function ProfilePage() {
               {/* Profile Form */}
               <Box component="form" onSubmit={handleSave} className="space-y-4">
                 <Grid container spacing={3}>
-                  <Grid xs={12} md={6}>
+                  <Grid size={{ xs: 12, md: 6 }}>
                     <TextField
                       fullWidth
                       label="Username"
@@ -470,7 +470,7 @@ export default function ProfilePage() {
                       className="mb-4"
                     />
                   </Grid>
-                  <Grid xs={12} md={6}>
+                  <Grid size={{ xs: 12, md: 6 }}>
                     <TextField
                       fullWidth
                       label="Full Name"
@@ -481,7 +481,7 @@ export default function ProfilePage() {
                       className="mb-4"
                     />
                   </Grid>
-                  <Grid xs={12} md={6}>
+                  <Grid size={{ xs: 12, md: 6 }}>
                     <TextField
                       fullWidth
                       label="Date of Birth"

@@ -441,7 +441,7 @@ export default function WithingsIntegration({
                                   {formatValue(metric, stats.avg)}
                                 </Typography>
                               </Grid>
-                              <Grid item xs={4}>
+                              <Grid size={4}>
                                 <Typography
                                   variant="body2"
                                   color="textSecondary"
@@ -452,7 +452,7 @@ export default function WithingsIntegration({
                                   {formatValue(metric, stats.min)}
                                 </Typography>
                               </Grid>
-                              <Grid item xs={4}>
+                              <Grid size={4}>
                                 <Typography
                                   variant="body2"
                                   color="textSecondary"
