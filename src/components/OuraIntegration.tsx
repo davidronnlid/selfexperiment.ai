@@ -503,54 +503,77 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
                               </Box>
                             </Box>
 
-                            <Box sx={{ height: 200 }}>
-                              <Line
-                                data={{
-                                  labels: metricData
-                                    .filter(
-                                      (d) =>
-                                        d.value !== null &&
-                                        d.value !== undefined &&
-                                        !isNaN(d.value)
-                                    )
-                                    .map((d) =>
-                                      format(parseISO(d.date), "MMM dd")
-                                    ),
-                                  datasets: [
-                                    {
-                                      label: METRIC_LABELS[metric] || metric,
-                                      data: metricData
-                                        .filter(
-                                          (d) =>
-                                            d.value !== null &&
-                                            d.value !== undefined &&
-                                            !isNaN(d.value)
-                                        )
-                                        .map((d) => d.value),
-                                      borderColor:
-                                        METRIC_COLORS[metric] || "#3b82f6",
-                                      backgroundColor: `${
-                                        METRIC_COLORS[metric] || "#3b82f6"
-                                      }20`,
-                                      fill: false,
-                                      tension: 0.2,
+                            {metricData.filter(
+                              (d) =>
+                                d.value !== null &&
+                                d.value !== undefined &&
+                                !isNaN(d.value)
+                            ).length > 0 ? (
+                              <Box sx={{ height: 200 }}>
+                                <Line
+                                  data={{
+                                    labels: metricData
+                                      .filter(
+                                        (d) =>
+                                          d.value !== null &&
+                                          d.value !== undefined &&
+                                          !isNaN(d.value)
+                                      )
+                                      .map((d) =>
+                                        format(parseISO(d.date), "MMM dd")
+                                      ),
+                                    datasets: [
+                                      {
+                                        label: METRIC_LABELS[metric] || metric,
+                                        data: metricData
+                                          .filter(
+                                            (d) =>
+                                              d.value !== null &&
+                                              d.value !== undefined &&
+                                              !isNaN(d.value)
+                                          )
+                                          .map((d) => d.value),
+                                        borderColor:
+                                          METRIC_COLORS[metric] || "#3b82f6",
+                                        backgroundColor: `${
+                                          METRIC_COLORS[metric] || "#3b82f6"
+                                        }20`,
+                                        fill: false,
+                                        tension: 0.2,
+                                      },
+                                    ],
+                                  }}
+                                  options={{
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: {
+                                      legend: { display: false },
                                     },
-                                  ],
-                                }}
-                                options={{
-                                  responsive: true,
-                                  maintainAspectRatio: false,
-                                  plugins: {
-                                    legend: { display: false },
-                                  },
-                                  scales: {
-                                    y: {
-                                      beginAtZero: false,
+                                    scales: {
+                                      y: {
+                                        beginAtZero: false,
+                                      },
                                     },
-                                  },
+                                  }}
+                                />
+                              </Box>
+                            ) : (
+                              <Box
+                                sx={{
+                                  height: 200,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
                                 }}
-                              />
-                            </Box>
+                              >
+                                <Typography
+                                  variant="body2"
+                                  color="textSecondary"
+                                >
+                                  No valid data available for chart
+                                </Typography>
+                              </Box>
+                            )}
                           </Box>
                         </Collapse>
                       </CardContent>
