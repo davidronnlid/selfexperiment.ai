@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Box,
   Button,
@@ -16,8 +16,12 @@ import {
   TableHead,
   TableRow,
   Paper,
-  IconButton,
-  Collapse,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  SelectChangeEvent,
+  Tooltip,
 } from "@mui/material";
 import { Line } from "react-chartjs-2";
 import {
@@ -35,12 +39,15 @@ import { supabase } from "@/utils/supaBase";
 import { format, parseISO } from "date-fns";
 import {
   Sync as SyncIcon,
-  ExpandMore as ExpandMoreIcon,
-  ExpandLess as ExpandLessIcon,
   TrendingUp as TrendingUpIcon,
+  TrendingDown as TrendingDownIcon,
+  TrendingFlat as TrendingFlatIcon,
   Bedtime as BedtimeIcon,
   FitnessCenter as FitnessIcon,
   Thermostat as ThermostatIcon,
+  Timeline as TimelineIcon,
+  LocalFireDepartment as LocalFireDepartmentIcon,
+  BarChart as BarChartIcon,
 } from "@mui/icons-material";
 
 // Register Chart.js components
@@ -67,6 +74,17 @@ interface OuraData {
 
 interface OuraIntegrationProps {
   userId: string;
+}
+
+interface VariableStats {
+  average: number;
+  min: number;
+  max: number;
+  latest: number;
+  trend: "up" | "down" | "stable";
+  changePercentage: number;
+  streak: number;
+  totalLogs: number;
 }
 
 const METRIC_LABELS: { [key: string]: string } = {
@@ -97,52 +115,224 @@ const METRIC_COLORS: { [key: string]: string } = {
   hr_average_true: "#16a34a",
 };
 
-const METRIC_ICONS: { [key: string]: React.ReactNode } = {
-  readiness_score: <FitnessIcon />,
-  sleep_score: <BedtimeIcon />,
-  total_sleep_duration: <BedtimeIcon />,
-  rem_sleep_duration: <BedtimeIcon />,
-  deep_sleep_duration: <BedtimeIcon />,
-  efficiency: <TrendingUpIcon />,
-  sleep_latency: <BedtimeIcon />,
-  temperature_deviation: <ThermostatIcon />,
-  temperature_trend_deviation: <ThermostatIcon />,
-  hr_lowest_true: <FitnessIcon />,
-  hr_average_true: <FitnessIcon />,
-};
-
 export default function OuraIntegration({ userId }: OuraIntegrationProps) {
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [data, setData] = useState<OuraData[]>([]);
-  const [expandedMetrics, setExpandedMetrics] = useState<Set<string>>(
-    new Set()
-  );
+  const [timeRange, setTimeRange] = useState<string>("30");
+  const [selectedVariable, setSelectedVariable] = useState<string>("");
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Utility functions
+  const formatDate = (dateString: string) => {
+    try {
+      return format(parseISO(dateString), "MMM dd");
+    } catch {
+      return dateString;
+    }
+  };
+
+  const getVariableColor = (variable: string) => {
+    return METRIC_COLORS[variable] || "#3b82f6";
+  };
+
+  // Memoize unique variables
+  const uniqueVariables = useMemo(() => {
+    const variables = new Set(data.map((item) => item.variable_id));
+    return Array.from(variables).sort();
+  }, [data]);
+
+  // Calculate variable statistics
+  const calculateStats = useCallback(
+    (variableData: OuraData[]): VariableStats => {
+      const values = variableData
+        .map((d) => d.value)
+        .filter((v) => v !== null && v !== undefined && !isNaN(v));
+
+      if (values.length === 0) {
+        return {
+          average: 0,
+          min: 0,
+          max: 0,
+          latest: 0,
+          trend: "stable",
+          changePercentage: 0,
+          streak: 0,
+          totalLogs: 0,
+        };
+      }
+
+      const average = values.reduce((sum, val) => sum + val, 0) / values.length;
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const latest = values[values.length - 1];
+
+      // Calculate trend (compare first half vs second half)
+      const midpoint = Math.floor(values.length / 2);
+      const firstHalf = values.slice(0, midpoint);
+      const secondHalf = values.slice(midpoint);
+
+      const firstHalfAvg =
+        firstHalf.reduce((sum, val) => sum + val, 0) / firstHalf.length;
+      const secondHalfAvg =
+        secondHalf.reduce((sum, val) => sum + val, 0) / secondHalf.length;
+
+      const changePercentage = firstHalfAvg
+        ? ((secondHalfAvg - firstHalfAvg) / firstHalfAvg) * 100
+        : 0;
+
+      let trend: "up" | "down" | "stable" = "stable";
+      if (Math.abs(changePercentage) > 5) {
+        trend = changePercentage > 0 ? "up" : "down";
+      }
+
+      // Calculate streak (consecutive days with data)
+      let streak = 0;
+      const sortedData = [...variableData].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+
+      if (sortedData.length > 0) {
+        let lastDate = new Date();
+        for (const item of sortedData) {
+          const itemDate = new Date(item.date);
+          const daysDiff =
+            Math.abs(lastDate.getTime() - itemDate.getTime()) /
+            (1000 * 60 * 60 * 24);
+          if (daysDiff <= 1.5) {
+            streak++;
+            lastDate = itemDate;
+          } else {
+            break;
+          }
+        }
+      }
+
+      return {
+        average: Math.round(average * 100) / 100,
+        min: Math.round(min * 100) / 100,
+        max: Math.round(max * 100) / 100,
+        latest: Math.round(latest * 100) / 100,
+        trend,
+        changePercentage: Math.round(changePercentage * 100) / 100,
+        streak,
+        totalLogs: values.length,
+      };
+    },
+    []
+  );
+
+  // Memoize selected variable data
+  const selectedVariableData = useMemo(() => {
+    return data.filter((item) => item.variable_id === selectedVariable);
+  }, [data, selectedVariable]);
+
+  // Memoize chart data
+  const chartData = useMemo(() => {
+    if (!selectedVariable || selectedVariableData.length === 0) {
+      return null;
+    }
+
+    const sortedData = selectedVariableData
+      .filter(
+        (d) => d.value !== null && d.value !== undefined && !isNaN(d.value)
+      )
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    return {
+      labels: sortedData.map((item) => formatDate(item.date)),
+      datasets: [
+        {
+          label: METRIC_LABELS[selectedVariable] || selectedVariable,
+          data: sortedData.map((item) => item.value),
+          borderColor: getVariableColor(selectedVariable),
+          backgroundColor: getVariableColor(selectedVariable) + "20",
+          fill: false,
+          tension: 0.1,
+        },
+      ],
+    };
+  }, [selectedVariable, selectedVariableData]);
+
+  // Memoize stats calculation
+  const variableStats = useMemo(() => {
+    return calculateStats(selectedVariableData);
+  }, [selectedVariableData, calculateStats]);
+
+  const formatValue = (metric: string, value: number) => {
+    if (value === null || value === undefined || isNaN(value)) {
+      return "N/A";
+    }
+
+    if (metric.includes("duration")) {
+      return `${Math.round(value / 60)} min`;
+    }
+    if (metric.includes("temperature")) {
+      return `${value.toFixed(2)}°C`;
+    }
+    if (metric.includes("hr_")) {
+      return `${value} bpm`;
+    }
+    if (metric === "efficiency") {
+      return `${value}%`;
+    }
+    return value.toString();
+  };
+
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        mode: "index" as const,
+        intersect: false,
+      },
+    },
+    scales: {
+      x: {
+        grid: { display: false },
+      },
+      y: {
+        beginAtZero: false,
+        grid: { color: "rgba(255, 255, 255, 0.1)" },
+      },
+    },
+    elements: {
+      point: {
+        radius: 4,
+        hoverRadius: 6,
+      },
+    },
+  };
+
+  // Event handlers
+  const handleTimeRangeChange = useCallback((event: SelectChangeEvent) => {
+    setTimeRange(event.target.value);
+  }, []);
+
+  const handleVariableChange = useCallback((event: SelectChangeEvent) => {
+    setSelectedVariable(event.target.value);
+  }, []);
 
   // Check connection status
   const checkConnection = useCallback(async () => {
     try {
-      // Get current user session first
       const {
         data: { session },
       } = await supabase.auth.getSession();
       if (!session?.user?.id) {
-        console.log("[Oura Integration] No authenticated user");
         setConnected(false);
         setLoading(false);
         return;
       }
 
-      const actualUserId = session.user.id;
-      console.log("[Oura Integration] Checking tokens for user:", actualUserId);
-
       const { data: tokens, error } = await supabase
         .from("oura_tokens")
         .select("access_token, created_at")
-        .eq("user_id", actualUserId)
+        .eq("user_id", session.user.id)
         .order("created_at", { ascending: false })
         .limit(1);
 
@@ -153,7 +343,6 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
         return;
       }
 
-      console.log("[Oura Integration] Found tokens:", tokens?.length || 0);
       const hasValidToken =
         tokens && tokens.length > 0 && tokens[0].access_token;
       setConnected(!!hasValidToken);
@@ -176,14 +365,15 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
 
     try {
       setLoading(true);
-      const twoWeeksAgo = new Date();
-      twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+      const daysBack = parseInt(timeRange);
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysBack);
 
       const { data: ouraData, error } = await supabase
         .from("oura_variable_logs")
         .select("id, source, variable_id, date, value, raw, created_at")
         .eq("user_id", userId)
-        .gte("date", twoWeeksAgo.toISOString().split("T")[0])
+        .gte("date", cutoffDate.toISOString().split("T")[0])
         .order("date", { ascending: true });
 
       if (error) throw error;
@@ -193,7 +383,7 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
     } finally {
       setLoading(false);
     }
-  }, [userId, connected]);
+  }, [userId, connected, timeRange]);
 
   // Sync Oura data
   const syncData = async () => {
@@ -201,8 +391,6 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
 
     try {
       setSyncing(true);
-
-      // Get the current session token
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -236,8 +424,6 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
   const handleConnect = async () => {
     try {
       setError(null);
-
-      // Get current user session
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -246,20 +432,14 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
         return;
       }
 
-      const actualUserId = session.user.id;
-      console.log("[Oura Integration] Connecting Oura for user:", actualUserId);
-
       const response = await fetch("/api/oura/auth", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ userId: actualUserId }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: session.user.id }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        console.error("Failed to generate Oura auth URL:", errorData);
         setError(
           errorData.error || "Failed to connect to Oura. Please try again."
         );
@@ -286,60 +466,12 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
     }
   }, [connected, fetchData]);
 
-  const toggleMetricExpansion = (metric: string) => {
-    const newExpanded = new Set(expandedMetrics);
-    if (newExpanded.has(metric)) {
-      newExpanded.delete(metric);
-    } else {
-      newExpanded.add(metric);
+  // Auto-select first variable
+  useEffect(() => {
+    if (uniqueVariables.length > 0 && !selectedVariable) {
+      setSelectedVariable(uniqueVariables[0]);
     }
-    setExpandedMetrics(newExpanded);
-  };
-
-  const groupedData = data.reduce((acc, item) => {
-    if (!acc[item.variable_id]) {
-      acc[item.variable_id] = [];
-    }
-    acc[item.variable_id].push(item);
-    return acc;
-  }, {} as { [key: string]: OuraData[] });
-
-  const formatValue = (metric: string, value: number) => {
-    if (value === null || value === undefined || isNaN(value)) {
-      return "N/A";
-    }
-
-    if (metric.includes("duration")) {
-      return `${Math.round(value / 60)} min`;
-    }
-    if (metric.includes("temperature")) {
-      return `${value.toFixed(2)}°C`;
-    }
-    if (metric.includes("hr_")) {
-      return `${value} bpm`;
-    }
-    if (metric === "efficiency") {
-      return `${value}%`;
-    }
-    return value.toString();
-  };
-
-  const getMetricStats = (metricData: OuraData[]) => {
-    const values = metricData
-      .map((d) => d.value)
-      .filter((v) => v !== null && v !== undefined && !isNaN(v));
-
-    if (values.length === 0) {
-      return { avg: 0, min: 0, max: 0, latest: 0 };
-    }
-
-    const avg = values.reduce((a, b) => a + b, 0) / values.length;
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const latest = values[values.length - 1];
-
-    return { avg, min, max, latest };
-  };
+  }, [uniqueVariables, selectedVariable]);
 
   if (!connected) {
     return (
@@ -371,256 +503,390 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
     );
   }
 
-  return (
-    <Card>
-      <CardContent>
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            mb: 2,
-          }}
-        >
-          <Box sx={{ display: "flex", alignItems: "center" }}>
-            <FitnessIcon sx={{ mr: 1, color: "success.main" }} />
-            <Typography variant="h6">Oura Ring Data</Typography>
-            <Chip
-              label="Connected"
-              color="success"
-              size="small"
-              sx={{ ml: 1 }}
-            />
+  if (loading) {
+    return (
+      <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (data.length === 0) {
+    return (
+      <Card>
+        <CardContent>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              mb: 2,
+            }}
+          >
+            <Box sx={{ display: "flex", alignItems: "center" }}>
+              <FitnessIcon sx={{ mr: 1, color: "success.main" }} />
+              <Typography variant="h6">Oura Ring Data</Typography>
+              <Chip
+                label="Connected"
+                color="success"
+                size="small"
+                sx={{ ml: 1 }}
+              />
+            </Box>
+            <Button
+              variant="outlined"
+              onClick={syncData}
+              disabled={syncing}
+              startIcon={
+                syncing ? <CircularProgress size={16} /> : <SyncIcon />
+              }
+            >
+              {syncing ? "Syncing..." : "Sync Data"}
+            </Button>
           </Box>
+          <Alert severity="info">
+            No Oura data found. Try syncing your data or check your Oura Ring
+            connection.
+          </Alert>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Box className="space-y-6">
+      {/* Header Section */}
+      <Box className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <Box className="flex items-center gap-3">
+          <Box className="p-2 bg-gold/10 rounded-lg">
+            <FitnessIcon className="text-gold text-xl" />
+          </Box>
+          <Box>
+            <Typography variant="h5" className="text-white font-semibold">
+              Oura Ring Data
+            </Typography>
+            <Typography variant="body2" className="text-text-secondary">
+              {data.length} data points • Last {timeRange} days
+            </Typography>
+          </Box>
+        </Box>
+
+        <Box className="flex items-center gap-2">
+          <Chip label="Connected" color="success" size="small" />
           <Button
             variant="outlined"
             onClick={syncData}
             disabled={syncing}
             startIcon={syncing ? <CircularProgress size={16} /> : <SyncIcon />}
+            sx={{ minWidth: 120 }}
           >
             {syncing ? "Syncing..." : "Sync Data"}
           </Button>
         </Box>
+      </Box>
 
-        {lastSync && (
-          <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-            Last synced: {format(parseISO(lastSync), "PPp")}
-          </Typography>
-        )}
+      {selectedVariable && (
+        <Box>
+          {/* Stats Cards */}
+          <Box sx={{ display: "flex", gap: 2, mb: 3, flexWrap: "wrap" }}>
+            <Card sx={{ flex: "1 1 200px", minWidth: 200 }}>
+              <CardContent>
+                <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+                  <BarChartIcon sx={{ mr: 1, color: "primary.main" }} />
+                  <Typography variant="h6" component="div">
+                    {variableStats.average}
+                  </Typography>
+                </Box>
+                <Typography variant="body2" color="text.secondary">
+                  Average
+                </Typography>
+              </CardContent>
+            </Card>
 
-        {loading ? (
-          <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
-            <CircularProgress />
+            <Card sx={{ flex: "1 1 200px", minWidth: 200 }}>
+              <CardContent>
+                <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+                  <TimelineIcon sx={{ mr: 1, color: "secondary.main" }} />
+                  <Typography variant="h6" component="div">
+                    {variableStats.latest}
+                  </Typography>
+                </Box>
+                <Typography variant="body2" color="text.secondary">
+                  Latest
+                </Typography>
+              </CardContent>
+            </Card>
+
+            <Tooltip
+              title={
+                <Box>
+                  <Typography variant="body2">
+                    {variableStats.changePercentage > 5
+                      ? `📈 Strong ${
+                          variableStats.trend === "up" ? "Upward" : "Stable"
+                        } Trend: Recent data points are ${variableStats.changePercentage.toFixed(
+                          1
+                        )}% higher.`
+                      : variableStats.changePercentage < -5
+                      ? `📉 Strong Downward Trend: Recent data points are ${Math.abs(
+                          variableStats.changePercentage
+                        ).toFixed(1)}% lower.`
+                      : `📊 Stable Trend: Recent data shows minimal change (${variableStats.changePercentage.toFixed(
+                          1
+                        )}%).`}
+                  </Typography>
+                </Box>
+              }
+              placement="top"
+              arrow
+            >
+              <Card sx={{ flex: "1 1 200px", minWidth: 200, cursor: "help" }}>
+                <CardContent>
+                  <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+                    {variableStats.trend === "up" && (
+                      <TrendingUpIcon sx={{ mr: 1, color: "success.main" }} />
+                    )}
+                    {variableStats.trend === "down" && (
+                      <TrendingDownIcon sx={{ mr: 1, color: "error.main" }} />
+                    )}
+                    {variableStats.trend === "stable" && (
+                      <TrendingFlatIcon sx={{ mr: 1, color: "info.main" }} />
+                    )}
+                    <Typography variant="h6" component="div">
+                      {variableStats.changePercentage > 0 ? "+" : ""}
+                      {variableStats.changePercentage}%
+                    </Typography>
+                  </Box>
+                  <Typography variant="body2" color="text.secondary">
+                    Trend
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Tooltip>
+
+            <Card sx={{ flex: "1 1 200px", minWidth: 200 }}>
+              <CardContent>
+                <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+                  <LocalFireDepartmentIcon
+                    sx={{ mr: 1, color: "warning.main" }}
+                  />
+                  <Typography variant="h6" component="div">
+                    {variableStats.streak}
+                  </Typography>
+                </Box>
+                <Typography variant="body2" color="text.secondary">
+                  Day Streak
+                </Typography>
+              </CardContent>
+            </Card>
           </Box>
-        ) : data.length === 0 ? (
-          <Alert severity="info">
-            No Oura data found. Try syncing your data or check your Oura Ring
-            connection.
-          </Alert>
-        ) : (
-          <Box>
-            <Typography variant="h6" sx={{ mb: 2 }}>
-              📊 Data Summary (Last 14 Days)
-            </Typography>
 
-            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
-              {Object.entries(groupedData).map(([metric, metricData]) => {
-                const stats = getMetricStats(metricData);
-                const isExpanded = expandedMetrics.has(metric);
+          {/* Filter Controls */}
+          <Box
+            sx={{ display: "flex", justifyContent: "center", gap: 2, mb: 2 }}
+          >
+            <FormControl size="small" sx={{ minWidth: 120 }}>
+              <InputLabel>Time Range</InputLabel>
+              <Select
+                value={timeRange}
+                label="Time Range"
+                onChange={handleTimeRangeChange}
+              >
+                <MenuItem value="7">Last 7 days</MenuItem>
+                <MenuItem value="30">Last 30 days</MenuItem>
+                <MenuItem value="90">Last 90 days</MenuItem>
+                <MenuItem value="365">Last year</MenuItem>
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: 200 }}>
+              <InputLabel>Metric</InputLabel>
+              <Select
+                value={selectedVariable}
+                label="Metric"
+                onChange={handleVariableChange}
+              >
+                {uniqueVariables.map((variable) => (
+                  <MenuItem key={variable} value={variable}>
+                    {METRIC_LABELS[variable] || variable}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
 
-                return (
-                  <Box
-                    key={metric}
-                    sx={{ width: { xs: "100%", md: "50%" }, p: 1 }}
+          {/* Chart */}
+          {chartData && (
+            <Card>
+              <CardContent>
+                <Typography variant="h6" component="h4" sx={{ mb: 1 }}>
+                  {METRIC_LABELS[selectedVariable] || selectedVariable}
+                </Typography>
+                <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
+                  <Chip
+                    label={`${variableStats.totalLogs} data points`}
+                    size="small"
+                    color="primary"
+                  />
+                  <Chip
+                    label={`Latest: ${formatValue(
+                      selectedVariable,
+                      variableStats.latest
+                    )}`}
+                    size="small"
+                    color="secondary"
+                  />
+                  <Chip
+                    label={`Range: ${variableStats.min} - ${variableStats.max}`}
+                    size="small"
+                    variant="outlined"
+                  />
+                </Box>
+                <Box sx={{ height: 400 }}>
+                  <Line data={chartData} options={chartOptions} />
+                </Box>
+              </CardContent>
+            </Card>
+          )}
+        </Box>
+      )}
+
+      <Divider sx={{ my: 3 }} />
+
+      {/* Table Section */}
+      <Card
+        sx={{
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: "12px",
+          overflow: "hidden",
+        }}
+      >
+        <CardContent>
+          <Typography variant="h6" sx={{ mb: 2 }}>
+            📋 Recent Data
+          </Typography>
+        </CardContent>
+
+        <TableContainer
+          sx={{
+            maxHeight: 600,
+            "&::-webkit-scrollbar": {
+              width: "8px",
+              height: "8px",
+            },
+            "&::-webkit-scrollbar-track": {
+              background: "var(--surface-dark)",
+              borderRadius: "4px",
+            },
+            "&::-webkit-scrollbar-thumb": {
+              background: "var(--gold)",
+              borderRadius: "4px",
+            },
+          }}
+        >
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell
+                  sx={{
+                    background: "var(--surface-dark)",
+                    color: "var(--text-primary)",
+                    fontWeight: 600,
+                    borderBottom: "2px solid var(--border)",
+                  }}
+                >
+                  Date
+                </TableCell>
+                <TableCell
+                  sx={{
+                    background: "var(--surface-dark)",
+                    color: "var(--text-primary)",
+                    fontWeight: 600,
+                    borderBottom: "2px solid var(--border)",
+                  }}
+                >
+                  Metric
+                </TableCell>
+                <TableCell
+                  sx={{
+                    background: "var(--surface-dark)",
+                    color: "var(--text-primary)",
+                    fontWeight: 600,
+                    borderBottom: "2px solid var(--border)",
+                  }}
+                  align="right"
+                >
+                  Value
+                </TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {data
+                .slice(-20)
+                .reverse()
+                .map((item, index) => (
+                  <TableRow
+                    key={index}
+                    hover
+                    sx={{
+                      transition: "all var(--transition-fast)",
+                      "&:hover": {
+                        background: "var(--surface-light)",
+                      },
+                    }}
                   >
-                    <Card variant="outlined">
-                      <CardContent>
+                    <TableCell
+                      sx={{
+                        color: "var(--text-secondary)",
+                        borderBottom: "1px solid var(--border-light)",
+                      }}
+                    >
+                      {format(parseISO(item.date), "MMM dd, yyyy")}
+                    </TableCell>
+                    <TableCell
+                      sx={{
+                        color: "var(--text-primary)",
+                        borderBottom: "1px solid var(--border-light)",
+                      }}
+                    >
+                      <Box
+                        sx={{ display: "flex", alignItems: "center", gap: 1 }}
+                      >
                         <Box
                           sx={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
+                            width: 12,
+                            height: 12,
+                            borderRadius: "50%",
+                            backgroundColor: getVariableColor(item.variable_id),
                           }}
-                        >
-                          <Box sx={{ display: "flex", alignItems: "center" }}>
-                            {METRIC_ICONS[metric] || <TrendingUpIcon />}
-                            <Box sx={{ ml: 1 }}>
-                              <Typography variant="subtitle1">
-                                {METRIC_LABELS[metric] || metric}
-                              </Typography>
-                              <Typography variant="body2" color="textSecondary">
-                                Latest: {formatValue(metric, stats.latest)}
-                              </Typography>
-                            </Box>
-                          </Box>
-                          <IconButton
-                            onClick={() => toggleMetricExpansion(metric)}
-                            size="small"
-                          >
-                            {isExpanded ? (
-                              <ExpandLessIcon />
-                            ) : (
-                              <ExpandMoreIcon />
-                            )}
-                          </IconButton>
-                        </Box>
-
-                        <Collapse in={isExpanded}>
-                          <Box sx={{ mt: 2 }}>
-                            <Box sx={{ display: "flex", gap: 2, mb: 2 }}>
-                              <Box sx={{ flex: 1, textAlign: "center" }}>
-                                <Typography
-                                  variant="body2"
-                                  color="textSecondary"
-                                >
-                                  Average
-                                </Typography>
-                                <Typography variant="body1">
-                                  {formatValue(metric, stats.avg)}
-                                </Typography>
-                              </Box>
-                              <Box sx={{ flex: 1, textAlign: "center" }}>
-                                <Typography
-                                  variant="body2"
-                                  color="textSecondary"
-                                >
-                                  Min
-                                </Typography>
-                                <Typography variant="body1">
-                                  {formatValue(metric, stats.min)}
-                                </Typography>
-                              </Box>
-                              <Box sx={{ flex: 1, textAlign: "center" }}>
-                                <Typography
-                                  variant="body2"
-                                  color="textSecondary"
-                                >
-                                  Max
-                                </Typography>
-                                <Typography variant="body1">
-                                  {formatValue(metric, stats.max)}
-                                </Typography>
-                              </Box>
-                            </Box>
-
-                            {metricData.filter(
-                              (d) =>
-                                d.value !== null &&
-                                d.value !== undefined &&
-                                !isNaN(d.value)
-                            ).length > 0 ? (
-                              <Box sx={{ height: 200 }}>
-                                <Line
-                                  data={{
-                                    labels: metricData
-                                      .filter(
-                                        (d) =>
-                                          d.value !== null &&
-                                          d.value !== undefined &&
-                                          !isNaN(d.value)
-                                      )
-                                      .map((d) =>
-                                        format(parseISO(d.date), "MMM dd")
-                                      ),
-                                    datasets: [
-                                      {
-                                        label: METRIC_LABELS[metric] || metric,
-                                        data: metricData
-                                          .filter(
-                                            (d) =>
-                                              d.value !== null &&
-                                              d.value !== undefined &&
-                                              !isNaN(d.value)
-                                          )
-                                          .map((d) => d.value),
-                                        borderColor:
-                                          METRIC_COLORS[metric] || "#3b82f6",
-                                        backgroundColor: `${
-                                          METRIC_COLORS[metric] || "#3b82f6"
-                                        }20`,
-                                        fill: false,
-                                        tension: 0.2,
-                                      },
-                                    ],
-                                  }}
-                                  options={{
-                                    responsive: true,
-                                    maintainAspectRatio: false,
-                                    plugins: {
-                                      legend: { display: false },
-                                    },
-                                    scales: {
-                                      y: {
-                                        beginAtZero: false,
-                                      },
-                                    },
-                                  }}
-                                />
-                              </Box>
-                            ) : (
-                              <Box
-                                sx={{
-                                  height: 200,
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                }}
-                              >
-                                <Typography
-                                  variant="body2"
-                                  color="textSecondary"
-                                >
-                                  No valid data available for chart
-                                </Typography>
-                              </Box>
-                            )}
-                          </Box>
-                        </Collapse>
-                      </CardContent>
-                    </Card>
-                  </Box>
-                );
-              })}
-            </Box>
-
-            <Divider sx={{ my: 3 }} />
-
-            <Typography variant="h6" sx={{ mb: 2 }}>
-              📋 Recent Data
-            </Typography>
-
-            <TableContainer component={Paper} variant="outlined">
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Date</TableCell>
-                    <TableCell>Metric</TableCell>
-                    <TableCell align="right">Value</TableCell>
+                        />
+                        {METRIC_LABELS[item.variable_id] || item.variable_id}
+                      </Box>
+                    </TableCell>
+                    <TableCell
+                      align="right"
+                      sx={{
+                        color: "var(--text-primary)",
+                        borderBottom: "1px solid var(--border-light)",
+                        fontWeight: 500,
+                      }}
+                    >
+                      {formatValue(item.variable_id, item.value)}
+                    </TableCell>
                   </TableRow>
-                </TableHead>
-                <TableBody>
-                  {data
-                    .slice(-20)
-                    .reverse()
-                    .map((item, index) => (
-                      <TableRow key={index}>
-                        <TableCell>
-                          {format(parseISO(item.date), "MMM dd, yyyy")}
-                        </TableCell>
-                        <TableCell>
-                          {METRIC_LABELS[item.variable_id] || item.variable_id}
-                        </TableCell>
-                        <TableCell align="right">
-                          {formatValue(item.variable_id, item.value)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Box>
-        )}
-      </CardContent>
-    </Card>
+                ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Card>
+
+      {lastSync && (
+        <Box sx={{ textAlign: "center", mt: 2 }}>
+          <Typography variant="body2" color="textSecondary">
+            Last synced: {format(parseISO(lastSync), "PPp")}
+          </Typography>
+        </Box>
+      )}
+    </Box>
   );
 }
