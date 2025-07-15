@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createServerClient } from "@supabase/ssr";
+import { rateLimit } from "@/utils/rateLimiter";
 
 function getCookiesFromReq(req: NextApiRequest) {
   const cookieHeader = req.headers.cookie;
@@ -385,6 +386,11 @@ export default async function handler(
 
     if (!userId || !accessToken) {
       return res.status(400).json({ error: "Missing userId or accessToken" });
+    }
+
+    // Limit re-import to once per hour per user
+    if (rateLimit(userId + ":withings_reimport", { windowMs: 60 * 60 * 1000, max: 1 })) {
+      return res.status(429).json({ error: "Re-import rate limit exceeded" });
     }
 
     console.log(`[Withings Reimport] Starting re-import for user ${userId}`);

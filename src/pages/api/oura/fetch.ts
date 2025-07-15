@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
+import { rateLimit } from "@/utils/rateLimiter";
 
 interface HRData {
   bpm: number;
@@ -44,6 +45,11 @@ export default async function handler(
   }
 
   const user_id = user.id;
+
+  // Limit Oura fetches: 3 per 10 minutes per user
+  if (rateLimit(user_id + ":oura_fetch", { windowMs: 10 * 60 * 1000, max: 3 })) {
+    return res.status(429).json({ error: "Rate limit exceeded" });
+  }
   console.log("[Oura Fetch] user_id:", user_id);
 
   // Fetch the Oura token for the current user (RLS will now work)

@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createServerClient } from "@supabase/ssr";
+import { rateLimit } from "@/utils/rateLimiter";
 
 function getCookiesFromReq(req: NextApiRequest) {
   const cookieHeader = req.headers.cookie;
@@ -45,6 +46,11 @@ export default async function handler(
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) return res.status(401).json({ error: "Not authenticated" });
+
+    // Rate limit: 3 Withings fetches per minute per user
+    if (rateLimit(user.id + ":withings_fetch", { windowMs: 60_000, max: 3 })) {
+      return res.status(429).json({ error: "Rate limit exceeded" });
+    }
 
     // Fetch tokens for this user
     const { data: tokenRow } = await supabase
