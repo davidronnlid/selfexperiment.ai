@@ -1,19 +1,42 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { supabase } from '@/utils/supaBase';
-import { createClient } from '@supabase/supabase-js';
+import { createServerClient } from "@supabase/ssr";
 
-// Create a service role client that bypasses RLS
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getCookiesFromReq(req: NextApiRequest) {
+  const cookieHeader = req.headers.cookie;
+  if (!cookieHeader) return [] as { name: string; value: string }[];
+  return cookieHeader.split(";").map((cookie) => {
+    const [name, ...rest] = cookie.trim().split("=");
+    return { name, value: rest.join("=") } as { name: string; value: string };
+  });
+}
+
+function createSupabaseServerClient(req: NextApiRequest, res: NextApiResponse) {
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return getCookiesFromReq(req);
+        },
+        setAll(cookies) {
+          cookies.forEach(({ name, value }) => {
+            res.setHeader("Set-Cookie", `${name}=${value}; Path=/; HttpOnly`);
+          });
+        },
+      },
+    }
+  );
+}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const supabase = createSupabaseServerClient(req, res);
+
   if (req.method === 'GET') {
     try {
       const { tag, status } = req.query;
       
-      let query = supabaseAdmin
+      let query = supabase
         .from('roadmap_posts')
         .select('*')
         .order('created_at', { ascending: false });
@@ -37,13 +60,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const postsWithCounts = [];
       for (const post of posts || []) {
         // Get like count for this post
-        const { data: likes } = await supabaseAdmin
+        const { data: likes } = await supabase
           .from('roadmap_likes')
           .select('user_id')
           .eq('post_id', post.id);
 
         // Get creator username
-        const { data: creatorProfile } = await supabaseAdmin
+        const { data: creatorProfile } = await supabase
           .from('profiles')
           .select('username')
           .eq('id', post.created_by)
@@ -52,7 +75,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Get last editor username if different from creator
         let lastEditorProfile = null;
         if (post.last_edited_by && post.last_edited_by !== post.created_by) {
-          const { data: editorProfile } = await supabaseAdmin
+          const { data: editorProfile } = await supabase
             .from('profiles')
             .select('username')
             .eq('id', post.last_edited_by)
@@ -75,7 +98,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   } else if (req.method === 'POST') {
     try {
-      const { title, description, tag, userId } = req.body;
+      const { title, description, tag } = req.body;
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const userId = user.id;
 
       if (!title || !tag) {
         return res.status(400).json({ error: 'Title and tag are required' });
@@ -85,7 +118,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(401).json({ error: 'User ID is required' });
       }
 
-      const { data: post, error } = await supabaseAdmin
+      const { data: post, error } = await supabase
         .from('roadmap_posts')
         .insert({
           title: title.trim(),
@@ -103,7 +136,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       // Get creator profile
-      const { data: creatorProfile } = await supabaseAdmin
+      const { data: creatorProfile } = await supabase
         .from('profiles')
         .select('username')
         .eq('id', userId)
@@ -121,18 +154,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   } else if (req.method === 'PUT') {
     try {
-      const { id, title, description, tag, status, priority, userId } = req.body;
+      const { id, title, description, tag, status, priority } = req.body;
 
-      if (!id) {
-        return res.status(400).json({ error: 'Post ID is required' });
-      }
+      const { data: session } = await supabase.auth.getUser();
+      const user = session.user;
 
-      if (!userId) {
-        return res.status(401).json({ error: 'User ID is required' });
+      if (!user) {
+        return res.status(401).json({ error: "Not authenticated" });
       }
+      const userId = user.id;
 
       // Check if user is admin for status/priority changes
-      const { data: userProfile } = await supabaseAdmin
+      const { data: userProfile } = await supabase
         .from('profiles')
         .select('username')
         .eq('id', userId)
@@ -167,7 +200,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       }
 
-      const { data: post, error } = await supabaseAdmin
+      const { data: post, error } = await supabase
         .from('roadmap_posts')
         .update(updateData)
         .eq('id', id)
@@ -180,13 +213,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       // Get like count
-      const { data: likes } = await supabaseAdmin
+      const { data: likes } = await supabase
         .from('roadmap_likes')
         .select('user_id')
         .eq('post_id', post.id);
 
       // Get creator profile
-      const { data: creatorProfile } = await supabaseAdmin
+      const { data: creatorProfile } = await supabase
         .from('profiles')
         .select('username')
         .eq('id', post.created_by)
@@ -195,7 +228,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Get last editor profile if different from creator
       let lastEditorProfile = null;
       if (post.last_edited_by && post.last_edited_by !== post.created_by) {
-        const { data: editorProfile } = await supabaseAdmin
+        const { data: editorProfile } = await supabase
           .from('profiles')
           .select('username')
           .eq('id', post.last_edited_by)
@@ -219,11 +252,37 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
       const { id } = req.query;
 
-      if (!id) {
-        return res.status(400).json({ error: 'Post ID is required' });
+      const { data: authData } = await supabase.auth.getUser();
+      const user = authData.user;
+
+      if (!user) {
+        return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const { error } = await supabaseAdmin
+      // Ensure the user is either the creator or admin
+      const { data: postRow, error: fetchErr } = await supabase
+        .from("roadmap_posts")
+        .select("created_by")
+        .eq("id", id)
+        .single();
+
+      if (fetchErr || !postRow) {
+        return res.status(404).json({ error: "Post not found" });
+      }
+
+      const { data: userProfile } = await supabase
+        .from("profiles")
+        .select("username")
+        .eq("id", user.id)
+        .single();
+
+      const isAdmin = userProfile?.username === "davidronnlidmh";
+
+      if (!isAdmin && postRow.created_by !== user.id) {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const { error } = await supabase
         .from('roadmap_posts')
         .delete()
         .eq('id', id);
