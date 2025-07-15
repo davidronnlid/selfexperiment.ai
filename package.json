@@ -9,6 +9,10 @@
     "start": "next start",
     "lint": "next lint",
     "test": "jest",
+    "analyze": "ANALYZE=true npm run build",
+    "perf": "node scripts/performance-optimization.js",
+    "perf:fix": "FIX=true node scripts/performance-optimization.js",
+    "perf:verbose": "VERBOSE=true node scripts/performance-optimization.js",
     "test:watch": "jest --watchAll",
     "test:mood": "npx ts-node src/test/mood-variable-page.test.ts",
     "test:validation": "npx ts-node src/test/validationTest.ts",
@@ -44,6 +48,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@next/bundle-analyzer": "^15.4.1",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",

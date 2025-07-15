@@ -26,6 +26,8 @@ import {
   validateVariableValue,
   convertUnit,
   getUserPreferredUnit,
+  convertBooleanValueToString,
+  convertBooleanStringToValue,
 } from "../utils/variableUtils";
 import { useUser } from "../pages/_app";
 
@@ -72,7 +74,7 @@ export default function VariableInput({
 
       try {
         // Get user's preferred unit
-        const preferredUnit = await getUserPreferredUnit(user.id, variable.id);
+        const preferredUnit = getUserPreferredUnit(variable);
         if (preferredUnit && !displayUnit) {
           setDisplayUnit(preferredUnit);
         }
@@ -188,18 +190,92 @@ export default function VariableInput({
 
       case "boolean":
         return (
-          <FormControlLabel
-            control={
-              <Switch
-                checked={inputValue === "true"}
-                onChange={(e) =>
-                  setInputValue(e.target.checked ? "true" : "false")
-                }
-                disabled={disabled}
-              />
-            }
-            label={variable.label}
-          />
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={
+                    inputValue === "true" ||
+                    inputValue === "yes" ||
+                    inputValue === "1"
+                  }
+                  onChange={(e) => {
+                    // Local conversion function
+                    const convertBooleanValueToString = (
+                      value: boolean,
+                      unit: string
+                    ): string => {
+                      switch (unit) {
+                        case "true/false":
+                          return value ? "true" : "false";
+                        case "yes/no":
+                          return value ? "yes" : "no";
+                        case "0/1":
+                          return value ? "1" : "0";
+                        default:
+                          return value ? "true" : "false";
+                      }
+                    };
+
+                    const newValue = convertBooleanValueToString(
+                      e.target.checked,
+                      displayUnit || "true/false"
+                    );
+                    setInputValue(newValue);
+                  }}
+                  disabled={disabled}
+                />
+              }
+              label={variable.label}
+            />
+            {showUnitSelector && availableUnits.length > 1 && (
+              <Select
+                value={displayUnit || "true/false"}
+                onChange={(e) => {
+                  const newUnit = e.target.value;
+                  setDisplayUnit(newUnit);
+                  if (onUnitChange) {
+                    onUnitChange(newUnit);
+                  }
+
+                  // Convert current value to new unit
+                  const convertBooleanValueToString = (
+                    value: boolean,
+                    unit: string
+                  ): string => {
+                    switch (unit) {
+                      case "true/false":
+                        return value ? "true" : "false";
+                      case "yes/no":
+                        return value ? "yes" : "no";
+                      case "0/1":
+                        return value ? "1" : "0";
+                      default:
+                        return value ? "true" : "false";
+                    }
+                  };
+
+                  const isCurrentlyTrue =
+                    inputValue === "true" ||
+                    inputValue === "yes" ||
+                    inputValue === "1";
+                  const newValue = convertBooleanValueToString(
+                    isCurrentlyTrue,
+                    newUnit
+                  );
+                  setInputValue(newValue);
+                }}
+                size="small"
+                sx={{ minWidth: 120 }}
+              >
+                {availableUnits.map((unit) => (
+                  <MenuItem key={unit} value={unit}>
+                    {unit}
+                  </MenuItem>
+                ))}
+              </Select>
+            )}
+          </Box>
         );
 
       case "time":
@@ -341,13 +417,6 @@ export default function VariableInput({
       {showValidation && validation.error && (
         <Alert severity="error" sx={{ mt: 1 }}>
           {validation.error}
-        </Alert>
-      )}
-
-      {/* Validation Warning */}
-      {showValidation && validation.warning && (
-        <Alert severity="warning" sx={{ mt: 1 }}>
-          {validation.warning}
         </Alert>
       )}
 

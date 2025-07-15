@@ -249,11 +249,31 @@ const BASE_UNIT_OPTIONS: UnitOption[] = [
     dataTypes: ["continuous"],
   },
 
+  // Boolean
+  {
+    value: "true/false",
+    label: "True/False",
+    category: "Boolean",
+    dataTypes: ["boolean"],
+  },
+  {
+    value: "yes/no",
+    label: "Yes/No",
+    category: "Boolean",
+    dataTypes: ["boolean"],
+  },
+  {
+    value: "0/1",
+    label: "0/1",
+    category: "Boolean",
+    dataTypes: ["boolean"],
+  },
+
   // General
   {
     value: "rating",
     label: "Rating/Score",
-    category: "Subjective",
+    category: "General",
     dataTypes: ["continuous"],
   },
   {

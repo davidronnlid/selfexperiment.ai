@@ -506,6 +506,12 @@ export function convertUnit(
   // Basic unit conversion - can be enhanced with more conversions
   if (fromUnit === toUnit) return value;
 
+  // Handle boolean conversions
+  if (fromUnit.includes("/") && toUnit.includes("/")) {
+    // Boolean unit conversion
+    return convertBooleanUnit(value, fromUnit, toUnit);
+  }
+
   // Common conversions
   const conversions: Record<string, Record<string, number>> = {
     kg: { lbs: 2.20462 },
@@ -531,10 +537,148 @@ export function convertUnit(
 }
 
 /**
+ * Convert boolean value between different unit representations
+ */
+export function convertBooleanUnit(
+  value: number,
+  fromUnit: string,
+  toUnit: string
+): number {
+  // All boolean units represent the same underlying value
+  // The conversion is just a representation change
+  return value;
+}
+
+/**
+ * Convert boolean value to display string based on unit
+ */
+export function convertBooleanValueToString(
+  value: string | number | boolean,
+  unit: string
+): string {
+  // Normalize the value to a boolean
+  let boolValue: boolean;
+  if (typeof value === "boolean") {
+    boolValue = value;
+  } else if (typeof value === "string") {
+    const normalized = value.toLowerCase().trim();
+    boolValue = ["true", "yes", "y", "1"].includes(normalized);
+  } else {
+    boolValue = value === 1;
+  }
+
+  // Return the appropriate string representation based on unit
+  switch (unit) {
+    case "true/false":
+      return boolValue ? "true" : "false";
+    case "yes/no":
+      return boolValue ? "yes" : "no";
+    case "0/1":
+      return boolValue ? "1" : "0";
+    default:
+      return boolValue ? "true" : "false";
+  }
+}
+
+/**
+ * Convert boolean string to standard boolean value
+ */
+export function convertBooleanStringToValue(
+  value: string,
+  unit: string
+): boolean {
+  const normalized = value.toLowerCase().trim();
+
+  switch (unit) {
+    case "true/false":
+      return normalized === "true";
+    case "yes/no":
+      return normalized === "yes";
+    case "0/1":
+      return normalized === "1";
+    default:
+      return ["true", "yes", "y", "1"].includes(normalized);
+  }
+}
+
+/**
  * Get user's preferred unit for a variable
  */
 export function getUserPreferredUnit(variable: Variable): string {
   return variable.default_display_unit || variable.canonical_unit || "";
+}
+
+/**
+ * Get user's preferred display unit from database with caching
+ */
+const displayUnitCache = new Map<string, string>();
+
+export async function getUserDisplayUnit(
+  userId: string, 
+  variableId: string, 
+  variable?: Variable
+): Promise<string> {
+  const cacheKey = `${userId}-${variableId}`;
+  
+  // Check cache first
+  if (displayUnitCache.has(cacheKey)) {
+    return displayUnitCache.get(cacheKey)!;
+  }
+  
+  try {
+    const { data, error } = await supabase
+      .from("user_variable_preferences")
+      .select("display_unit")
+      .eq("user_id", userId)
+      .eq("variable_id", variableId)
+      .single();
+    
+    let displayUnit = "";
+    if (!error && data && data.display_unit) {
+      displayUnit = data.display_unit;
+    } else {
+      // Fallback to variable's canonical unit
+      displayUnit = variable?.canonical_unit || "";
+    }
+    
+    // Cache the result
+    displayUnitCache.set(cacheKey, displayUnit);
+    return displayUnit;
+  } catch (error) {
+    console.error("Failed to get user display unit:", error);
+    const fallback = variable?.canonical_unit || "";
+    displayUnitCache.set(cacheKey, fallback);
+    return fallback;
+  }
+}
+
+/**
+ * Format variable value with user's preferred display unit
+ */
+export async function formatVariableWithUserUnit(
+  value: string | number,
+  userId: string,
+  variableId: string,
+  variable?: Variable
+): Promise<{ formattedValue: string; unit: string }> {
+  const displayUnit = await getUserDisplayUnit(userId, variableId, variable);
+  const formattedValue = typeof value === "number" ? value.toString() : value;
+  
+  return {
+    formattedValue,
+    unit: displayUnit
+  };
+}
+
+/**
+ * Clear display unit cache (useful when preferences are updated)
+ */
+export function clearDisplayUnitCache(userId?: string, variableId?: string) {
+  if (userId && variableId) {
+    displayUnitCache.delete(`${userId}-${variableId}`);
+  } else {
+    displayUnitCache.clear();
+  }
 }
 
 /**
@@ -635,3 +779,23 @@ export async function getVariableInsights(
     return {};
   }
 }
+
+// Fix the getUserVariablePreferences function to use simplified query
+export const getUserVariablePreferences = async (userId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from("user_variable_preferences")
+      .select("id, user_id, variable_id, is_shared, created_at, updated_at")
+      .eq("user_id", userId);
+
+    if (error) {
+      console.error("Error fetching user variable preferences:", error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("getUserVariablePreferences error:", error);
+    return [];
+  }
+};

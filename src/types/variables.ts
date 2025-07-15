@@ -182,6 +182,7 @@ export interface UpdateVariableRequest {
 export interface CreateVariableLogRequest {
   variable_id: string;
   value: string;
+  display_unit?: string;
   notes?: string;
   context?: Record<string, any>;
   is_private?: boolean;
@@ -349,6 +350,7 @@ export interface UserVariablePreference {
   variable_type: string;
   category?: string;
   preferred_unit?: string;
+  display_unit?: string;
   display_name?: string;
   is_favorite?: boolean;
   created_at: string;

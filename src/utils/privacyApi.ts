@@ -1,62 +1,24 @@
 import { supabase } from "./supaBase";
 
-export async function fetchUserVariablePreferences(userId: string) {
+// Get user preferences for variables (simplified query)
+export const getUserPreferences = async (userId: string) => {
   try {
-    // Get user variable preferences which include sharing settings
     const { data, error } = await supabase
       .from("user_variable_preferences")
-      .select(
-        `
-      *,
-      variable:variables!user_variable_preferences_variable_id_fkey (
-        id,
-          slug,
-        label,
-        data_type,
-        category,
-        icon
-      )
-    `
-      )
+      .select("id, user_id, variable_id, is_shared, created_at, updated_at")
       .eq("user_id", userId);
 
     if (error) {
-      console.error("Error fetching user variable preferences:", error);
-      // If table doesn't exist, return empty array instead of failing
-      if (
-        error.code === "PGRST116" ||
-        error.message.includes("relation") ||
-        error.message.includes("does not exist")
-      ) {
-        console.warn(
-          "user_variable_preferences table doesn't exist, returning empty preferences"
-        );
-        return { data: [], error: null };
-      }
-      return { data: [], error };
+      console.error("Error fetching user preferences:", error);
+      throw error;
     }
 
-    // Transform to match the expected format
-    const transformedData =
-      data?.map((pref) => ({
-        variable_name: pref.variable.label,
-        is_shared: pref.is_shared,
-        variable_type: pref.variable.data_type,
-        category: pref.variable.category,
-        variable_id: pref.variable.id,
-        label: pref.variable.label,
-        icon: pref.variable.icon,
-        preferred_unit: pref.preferred_unit,
-        display_name: pref.display_name,
-        is_favorite: pref.is_favorite,
-      })) || [];
-
-    return { data: transformedData, error: null };
+    return data || [];
   } catch (error) {
-    console.error("Exception fetching user variable preferences:", error);
-    return { data: [], error: null };
+    console.error("getUserPreferences error:", error);
+    return [];
   }
-}
+};
 
 export async function upsertUserVariablePreference({
   userId,

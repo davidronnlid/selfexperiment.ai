@@ -24,6 +24,9 @@ import {
   Grid,
   IconButton,
   Collapse,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from "@mui/material";
 import { Scatter } from "react-chartjs-2";
 import {
@@ -42,6 +45,9 @@ import TrendingDownIcon from "@mui/icons-material/TrendingDown";
 import AnalyticsIcon from "@mui/icons-material/Analytics";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import InfoIcon from "@mui/icons-material/Info";
+import WarningIcon from "@mui/icons-material/Warning";
+import { VariableLinkSimple } from "./VariableLink";
 
 ChartJS.register(
   CategoryScale,
@@ -470,7 +476,14 @@ export default function CorrelationAnalysis({
             >
               {numericVariables.map((variable) => (
                 <MenuItem key={variable} value={variable}>
-                  {variables[variable] || variable}
+                  <VariableLinkSimple
+                    variableId={variable}
+                    variables={variables}
+                    variant="inherit"
+                    underline={false}
+                    onClick={() => {}} // Prevent navigation when in dropdown
+                    forceAsText={true}
+                  />
                 </MenuItem>
               ))}
             </Select>
@@ -486,7 +499,14 @@ export default function CorrelationAnalysis({
                 .filter((v) => v !== selectedVar1)
                 .map((variable) => (
                   <MenuItem key={variable} value={variable}>
-                    {variables[variable] || variable}
+                    <VariableLinkSimple
+                      variableId={variable}
+                      variables={variables}
+                      variant="inherit"
+                      underline={false}
+                      onClick={() => {}} // Prevent navigation when in dropdown
+                      forceAsText={true}
+                    />
                   </MenuItem>
                 ))}
             </Select>
@@ -511,7 +531,9 @@ export default function CorrelationAnalysis({
                     {variables[selectedVar1] || selectedVar1} vs{" "}
                     {variables[selectedVar2] || selectedVar2}
                   </Typography>
-                  <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
+                  <Box
+                    sx={{ display: "flex", gap: 1, mb: 2, flexWrap: "wrap" }}
+                  >
                     <Chip
                       label={`Correlation: ${selectedCorrelation.correlation}`}
                       size="small"
@@ -533,6 +555,32 @@ export default function CorrelationAnalysis({
                       color="primary"
                     />
                   </Box>
+
+                  {/* Educational Information */}
+                  <Alert
+                    severity="info"
+                    icon={<InfoIcon />}
+                    sx={{ mb: 2, bgcolor: "#e3f2fd" }}
+                  >
+                    <Typography
+                      variant="body2"
+                      sx={{ fontWeight: 600, mb: 0.5 }}
+                    >
+                      Understanding Correlation (r ={" "}
+                      {selectedCorrelation.correlation}):
+                    </Typography>
+                    <Typography variant="body2" component="div">
+                      • <strong>Correlation ≠ Causation:</strong> A correlation
+                      doesn't mean one variable causes the other
+                      <br />• <strong>Range:</strong> Values from -1 (perfect
+                      negative) to +1 (perfect positive)
+                      <br />• <strong>Strength:</strong> |0.7+| = strong,
+                      |0.3-0.7| = moderate, |0.1-0.3| = weak
+                      <br />• <strong>Confounding:</strong> Other variables may
+                      influence both measurements
+                    </Typography>
+                  </Alert>
+
                   <Box sx={{ height: 400 }}>
                     <Scatter
                       data={scatterChartData}
@@ -831,6 +879,136 @@ export default function CorrelationAnalysis({
             </CardContent>
           </Card>
         )}
+
+        {/* Educational Section */}
+        <Accordion sx={{ bgcolor: "#fff3e0" }}>
+          <AccordionSummary
+            expandIcon={<ExpandMoreIcon />}
+            aria-controls="correlation-education-content"
+            id="correlation-education-header"
+          >
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <WarningIcon color="warning" />
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                📚 Understanding Correlation: Important Limitations
+              </Typography>
+            </Box>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Stack spacing={3}>
+              <Alert severity="warning" icon={<WarningIcon />}>
+                <Typography variant="body1" sx={{ fontWeight: 600, mb: 1 }}>
+                  ⚠️ Critical: Correlation does NOT equal causation!
+                </Typography>
+                <Typography variant="body2">
+                  Just because two variables are correlated doesn't mean one
+                  causes the other. There may be hidden factors, coincidences,
+                  or reverse causation at play.
+                </Typography>
+              </Alert>
+
+              <Box>
+                <Typography
+                  variant="h6"
+                  gutterBottom
+                  sx={{ color: "primary.main" }}
+                >
+                  🎯 What Correlation Measures
+                </Typography>
+                <Typography variant="body2" paragraph>
+                  Pearson's correlation coefficient (r) measures the{" "}
+                  <strong>linear relationship</strong> between two variables:
+                </Typography>
+                <Box component="ul" sx={{ pl: 3, mb: 2 }}>
+                  <li>
+                    <strong>+1.0:</strong> Perfect positive relationship (as one
+                    goes up, the other always goes up)
+                  </li>
+                  <li>
+                    <strong>0.0:</strong> No linear relationship
+                  </li>
+                  <li>
+                    <strong>-1.0:</strong> Perfect negative relationship (as one
+                    goes up, the other always goes down)
+                  </li>
+                </Box>
+              </Box>
+
+              <Box>
+                <Typography
+                  variant="h6"
+                  gutterBottom
+                  sx={{ color: "warning.main" }}
+                >
+                  ⚠️ Common Pitfalls
+                </Typography>
+                <Box component="ul" sx={{ pl: 3 }}>
+                  <li>
+                    <strong>Confounding Variables:</strong> A third factor might
+                    influence both variables
+                  </li>
+                  <li>
+                    <strong>Non-linear Relationships:</strong> Variables might
+                    be related in complex ways not captured by correlation
+                  </li>
+                  <li>
+                    <strong>Sample Size:</strong> Small datasets can show
+                    misleading correlations due to chance
+                  </li>
+                  <li>
+                    <strong>Outliers:</strong> Extreme values can significantly
+                    skew correlation results
+                  </li>
+                  <li>
+                    <strong>Time Factors:</strong> Correlations might change
+                    over different time periods
+                  </li>
+                </Box>
+              </Box>
+
+              <Box>
+                <Typography
+                  variant="h6"
+                  gutterBottom
+                  sx={{ color: "success.main" }}
+                >
+                  ✅ How to Interpret Safely
+                </Typography>
+                <Box component="ul" sx={{ pl: 3 }}>
+                  <li>
+                    <strong>Look for patterns:</strong> Use correlation to
+                    identify interesting relationships to investigate further
+                  </li>
+                  <li>
+                    <strong>Consider context:</strong> Think about what might
+                    logically connect these variables
+                  </li>
+                  <li>
+                    <strong>Check sample size:</strong> Stronger correlations
+                    with more data points are more reliable
+                  </li>
+                  <li>
+                    <strong>Test theories:</strong> Use correlation to generate
+                    hypotheses, not prove them
+                  </li>
+                  <li>
+                    <strong>Combine with other evidence:</strong> Correlation is
+                    one piece of the puzzle, not the whole picture
+                  </li>
+                </Box>
+              </Box>
+
+              <Alert severity="info" icon={<InfoIcon />}>
+                <Typography variant="body2">
+                  <strong>Remember:</strong> Correlation analysis is a powerful
+                  tool for discovering patterns in your data, but it's the
+                  starting point for investigation, not the final answer. Always
+                  consider the bigger picture when interpreting your results.
+                </Typography>
+              </Alert>
+            </Stack>
+          </AccordionDetails>
+        </Accordion>
       </Stack>
     </Box>
   );

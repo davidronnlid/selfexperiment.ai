@@ -28,6 +28,7 @@ import {
   getUserPreferredUnit,
 } from "../utils/variableUtils";
 import { useUser } from "../pages/_app";
+import VariableLink from "./VariableLink";
 
 interface VariableDisplayProps {
   variable: Variable;
@@ -70,7 +71,7 @@ export default function VariableDisplay({
   const [displayData, setDisplayData] = useState<{
     value: string | number;
     unit?: string;
-    convertedValue?: number;
+    convertedValue?: string | number;
     convertedUnit?: string;
   }>({ value, unit });
   const [isLoading, setIsLoading] = useState(false);
@@ -83,21 +84,57 @@ export default function VariableDisplay({
 
       setIsLoading(true);
       try {
-        const formatted = await formatVariableValue(
-          variable,
-          value,
-          unit,
-          user.id
-        );
-        setDisplayData({
-          value: formatted.value,
-          unit: formatted.unit,
-          convertedValue: formatted.converted_value,
-          convertedUnit: formatted.converted_unit,
-        });
+        // For boolean variables, handle unit conversion
+        if (variable.data_type === "boolean") {
+          const convertBooleanValueToString = (
+            value: string | number | boolean,
+            unit: string
+          ): string => {
+            let boolValue: boolean;
+            if (typeof value === "boolean") {
+              boolValue = value;
+            } else if (typeof value === "string") {
+              const normalized = value.toLowerCase().trim();
+              boolValue = ["true", "yes", "y", "1"].includes(normalized);
+            } else {
+              boolValue = value === 1;
+            }
+
+            switch (unit) {
+              case "true/false":
+                return boolValue ? "true" : "false";
+              case "yes/no":
+                return boolValue ? "yes" : "no";
+              case "0/1":
+                return boolValue ? "1" : "0";
+              default:
+                return boolValue ? "true" : "false";
+            }
+          };
+
+          const convertedValue = convertBooleanValueToString(
+            value,
+            unit || "true/false"
+          );
+          setDisplayData({
+            value: convertedValue,
+            unit: unit || "true/false",
+            convertedValue: convertedValue,
+            convertedUnit: unit || "true/false",
+          });
+        } else {
+          // For other variable types, use the existing formatVariableValue function
+          const formatted = formatVariableValue(value, unit);
+          setDisplayData({
+            value: formatted,
+            unit: unit || "",
+            convertedValue: formatted,
+            convertedUnit: unit || "",
+          });
+        }
       } catch (error) {
         console.error("Failed to format variable value:", error);
-        setDisplayData({ value, unit });
+        setDisplayData({ value: value.toString(), unit: unit || "" });
       } finally {
         setIsLoading(false);
       }
@@ -143,8 +180,15 @@ export default function VariableDisplay({
   if (variant === "compact") {
     return (
       <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-        <Typography variant="body2" color="textSecondary">
-          {variable.icon} {variable.label}:
+        <VariableLink
+          variable={variable}
+          variant="body2"
+          color="text.secondary"
+          showIcon={true}
+          sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
+        />
+        <Typography variant="body2" color="text.secondary">
+          :
         </Typography>
         <Typography variant="body2" fontWeight="medium">
           {formatValue(displayData.value, displayData.unit)}
@@ -335,13 +379,16 @@ export default function VariableDisplay({
                   key={index}
                   sx={{ display: "flex", justifyContent: "space-between" }}
                 >
-                  <Typography variant="body2" color="textSecondary">
-                    {new Date(log.created_at).toLocaleDateString()}
+                  <Typography variant="caption" color="text.secondary">
+                    {log.created_at
+                      ? new Date(log.created_at).toLocaleString()
+                      : "Unknown date"}{" "}
+                    • {log.source || "Manual"}
                   </Typography>
                   <Typography variant="body2">
                     {formatValue(
                       log.value || log.canonical_value || 0,
-                      log.display_unit
+                      variable.default_display_unit || variable.canonical_unit
                     )}
                   </Typography>
                 </Box>

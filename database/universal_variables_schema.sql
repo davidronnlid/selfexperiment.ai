@@ -382,7 +382,15 @@ INSERT INTO unit_conversions (from_unit, to_unit, conversion_factor, unit_group)
 
 -- Temperature conversions (using formula)
 ('°C', '°F', 1, 'temperature'),
-('°F', '°C', 1, 'temperature')
+('°F', '°C', 1, 'temperature'),
+
+-- Boolean conversions
+('true/false', 'yes/no', 1, 'boolean'),
+('yes/no', 'true/false', 1, 'boolean'),
+('true/false', '0/1', 1, 'boolean'),
+('0/1', 'true/false', 1, 'boolean'),
+('yes/no', '0/1', 1, 'boolean'),
+('0/1', 'yes/no', 1, 'boolean')
 
 ON CONFLICT (from_unit, to_unit) DO NOTHING;
 

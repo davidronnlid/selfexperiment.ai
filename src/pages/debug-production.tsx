@@ -119,7 +119,7 @@ export default function DebugProductionPage() {
       // Test 7: Daily routines table
       await runTest("Daily Routines Table", async () => {
         const { data, error } = await supabase
-          .from("daily_routines")
+          .from("routines")
           .select("*")
           .eq("user_id", user.id)
           .limit(5);

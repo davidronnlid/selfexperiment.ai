@@ -43,6 +43,7 @@ import TrendingFlatIcon from "@mui/icons-material/TrendingFlat";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment";
+import { VariableLinkSimple } from "./VariableLink";
 
 ChartJS.register(
   CategoryScale,
@@ -604,7 +605,14 @@ const ManualLogsChart = memo(function ManualLogsChart({
               >
                 {numericVariables.map((variable) => (
                   <MenuItem key={variable} value={variable}>
-                    {variables[variable] || variable}
+                    <VariableLinkSimple
+                      variableId={variable}
+                      variables={variables}
+                      variant="inherit"
+                      underline={false}
+                      onClick={() => {}} // Prevent navigation when in dropdown
+                      forceAsText={true}
+                    />
                   </MenuItem>
                 ))}
               </Select>
@@ -615,9 +623,13 @@ const ManualLogsChart = memo(function ManualLogsChart({
           <Box>
             <Card>
               <CardContent>
-                <Typography variant="h6" component="h4" gutterBottom>
-                  {variables[selectedVariable] || selectedVariable}
-                </Typography>
+                <VariableLinkSimple
+                  variableId={selectedVariable}
+                  variables={variables}
+                  variant="h6"
+                  component="h4"
+                  sx={{ mb: 1 }}
+                />
                 <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
                   <Chip
                     label={`${variableStats.totalLogs} data points`}

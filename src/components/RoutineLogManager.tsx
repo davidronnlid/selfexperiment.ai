@@ -5,6 +5,7 @@ import { supabase } from "@/utils/supaBase";
 import { Variable } from "@/types/variables";
 import Snackbar from "@mui/material/Snackbar";
 import MuiAlert from "@mui/material/Alert";
+import { VariableLinkSimple } from "./VariableLink";
 
 interface RoutineLogManagerProps {
   user: any;
@@ -286,7 +287,15 @@ export default function RoutineLogManager({
                         border: "2px solid #444",
                       }}
                     >
-                      <Typography
+                      <VariableLinkSimple
+                        variableId={v.variable_id}
+                        variableLabel={
+                          variableMeta
+                            ? variableMeta.label
+                            : v.variable_name || "Unknown Variable"
+                        }
+                        variables={variables}
+                        variant="body1"
                         sx={{
                           fontWeight: 900,
                           color: "#222",
@@ -298,11 +307,7 @@ export default function RoutineLogManager({
                           display: "inline-block",
                           mb: 1,
                         }}
-                      >
-                        {variableMeta
-                          ? variableMeta.label
-                          : v.variable_name || "Unknown Variable"}
-                      </Typography>
+                      />
                       {/* TODO: Add log editor for each variable at this time */}
                       <RoutineVariableLogEditor
                         value={

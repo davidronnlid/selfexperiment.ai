@@ -81,28 +81,20 @@ async function handleGet(
   try {
     switch (type) {
       case "variable-settings":
-        const { data: varSettings, error: varError } = await supabase
+        // Get user preferences - simplified query without foreign key joins
+        const { data: preferences, error: prefError } = await supabase
           .from("user_variable_preferences")
-          .select(
-            `
-            *,
-            variable:variables!user_variable_preferences_variable_id_fkey (
-              id,
-              name,
-              label,
-              data_type,
-              category,
-              icon
-            )
-          `
-          )
+          .select("id, user_id, variable_id, is_shared, created_at, updated_at")
           .eq("user_id", userId);
 
-        if (varError) throw varError;
+        if (prefError) {
+          console.error("Error fetching preferences:", prefError);
+          return res.status(500).json({ error: "Failed to fetch preferences" });
+        }
 
         // Transform to match expected format
         const transformedSettings =
-          varSettings?.map((pref: any) => ({
+          preferences?.map((pref: any) => ({
             variable_name: pref.variable.name,
             is_shared: pref.is_shared,
             variable_type: pref.variable.data_type,

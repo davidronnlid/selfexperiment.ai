@@ -125,33 +125,13 @@ export default function ManualLogsTable({
 
       if (error) throw error;
 
-      // Deduplicate logs - keep only the most recent entry for each variable_id+date combination
-      const deduplicatedLogs = [];
-      const seen = new Set();
-
-      // Sort by created_at descending to get most recent first
-      const sortedData = (data || []).sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-
-      for (const log of sortedData) {
-        const dateKey = log.date.split("T")[0]; // Get just the date part
-        const key = `${log.variable_id}-${dateKey}`;
-
-        if (!seen.has(key)) {
-          seen.add(key);
-          deduplicatedLogs.push(log);
-        }
-      }
-
-      // Sort the final result by date descending for display
-      deduplicatedLogs.sort(
+      // Sort by date descending for display
+      const finalLogs = (data || []).sort(
         (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
       );
 
       // Map logs to ManualLog type
-      const mappedLogs: ManualLog[] = deduplicatedLogs.map((log: any) => ({
+      const mappedLogs: ManualLog[] = finalLogs.map((log: any) => ({
         id: log.id,
         date: log.date,
         variable_id: log.variable_id,
@@ -201,6 +181,14 @@ export default function ManualLogsTable({
   const formatDateTime = (dateString: string) => {
     try {
       return format(parseISO(dateString), "MMM dd, yyyy 'at' HH:mm");
+    } catch {
+      return dateString;
+    }
+  };
+
+  const formatTimeOnly = (dateString: string) => {
+    try {
+      return format(parseISO(dateString), "HH:mm");
     } catch {
       return dateString;
     }
@@ -599,9 +587,17 @@ export default function ManualLogsTable({
                       >
                         <Box className="flex items-center gap-2">
                           <AccessTime className="text-gold text-sm" />
-                          <Typography variant="body2" className="font-medium">
-                            {formatDate(log.date)}
-                          </Typography>
+                          <Box>
+                            <Typography variant="body2" className="font-medium">
+                              {formatDate(log.date)}
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              className="text-text-muted"
+                            >
+                              {formatTimeOnly(log.date)}
+                            </Typography>
+                          </Box>
                         </Box>
                       </TableCell>
 

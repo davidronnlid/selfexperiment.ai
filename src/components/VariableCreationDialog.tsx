@@ -165,6 +165,31 @@ const UNIT_OPTIONS = [
     defaultMin: 0,
     defaultMax: 100,
   },
+  // Boolean Units
+  {
+    value: "true/false",
+    label: "True/False",
+    category: "Boolean",
+    dataTypes: ["boolean"],
+    defaultMin: 0,
+    defaultMax: 1,
+  },
+  {
+    value: "yes/no",
+    label: "Yes/No",
+    category: "Boolean",
+    dataTypes: ["boolean"],
+    defaultMin: 0,
+    defaultMax: 1,
+  },
+  {
+    value: "0/1",
+    label: "0/1",
+    category: "Boolean",
+    dataTypes: ["boolean"],
+    defaultMin: 0,
+    defaultMax: 1,
+  },
   // Categorical Units
   {
     value: "option",
@@ -463,6 +488,19 @@ export default function VariableCreationDialog({
       // Get category based on unit selection
       const unitCategory = getUnitCategory(unit);
 
+      // Set default units for boolean variables
+      let canonicalUnit = unit || null;
+      let unitGroup = null;
+      let convertibleUnits = null;
+      let defaultDisplayUnit = null;
+
+      if (constraints.type === "boolean") {
+        canonicalUnit = canonicalUnit || "true/false";
+        unitGroup = "boolean";
+        convertibleUnits = ["true/false", "yes/no", "0/1"];
+        defaultDisplayUnit = "true/false";
+      }
+
       const variableData = {
         slug,
         label: variableName,
@@ -471,7 +509,10 @@ export default function VariableCreationDialog({
         data_type: constraints.type,
         validation_rules:
           Object.keys(validationRules).length > 0 ? validationRules : null,
-        canonical_unit: unit || null,
+        canonical_unit: canonicalUnit,
+        unit_group: unitGroup,
+        convertible_units: convertibleUnits,
+        default_display_unit: defaultDisplayUnit,
         source_type: source,
         category: unitCategory,
         is_public: isShared,

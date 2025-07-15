@@ -25,6 +25,7 @@ import {
 } from "react-icons/fa";
 import { supabase } from "@/utils/supaBase";
 import { LOG_LABELS } from "@/utils/logLabels";
+import { VariableLinkSimple } from "./VariableLink";
 import { useUser } from "@/pages/_app";
 import LogPrivacyManager from "./LogPrivacyManager";
 import { UserVariablePreference } from "../hooks/useVariableSharingSettings";
@@ -381,7 +382,12 @@ export default function AnalyzePrivacySection() {
                     >
                       <span>{variable.icon}</span>
                       <Typography variant="body2" fontWeight="medium">
-                        {variable.label}
+                        <VariableLinkSimple
+                          variableLabel={variable.label}
+                          variant="body2"
+                          fontWeight="medium"
+                          color="white"
+                        />
                       </Typography>
                       {getVariableSharingStatus(variable.label) ? (
                         <FaGlobe color="green" />

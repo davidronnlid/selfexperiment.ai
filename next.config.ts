@@ -1,61 +1,92 @@
 import type { NextConfig } from "next";
 
+const withBundleAnalyzer = require('@next/bundle-analyzer')({
+  enabled: process.env.ANALYZE === 'true',
+});
+
+/** @type {import('next').NextConfig} */
 const nextConfig: NextConfig = {
-  /* config options here */
   reactStrictMode: true,
-  eslint: {
-    ignoreDuringBuilds: true,
+  
+  // Performance optimizations
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production',
   },
-
-  // Experimental features for better performance
-  experimental: {
-    // Faster builds - optimize package imports
-    optimizePackageImports: [
-      "@mui/material",
-      "@mui/icons-material",
-      "react-icons",
-    ],
+  
+  // Image optimization
+  images: {
+    domains: ['lh3.googleusercontent.com', 'avatars.githubusercontent.com'],
+    formats: ['image/avif', 'image/webp'],
+    minimumCacheTTL: 60,
   },
-
-  // Move serverComponentsExternalPackages to the correct location
-  serverExternalPackages: ["chart.js"],
-
-  // Webpack optimizations
-  webpack: (config, { dev, isServer }) => {
-    if (dev) {
-      // Development optimizations
-      config.watchOptions = {
-        poll: 1000,
-        aggregateTimeout: 300,
-        ignored: ["**/node_modules/**", "**/.git/**", "**/.next/**"],
-      };
-
-      // Reduce bundle analysis in dev
-      config.optimization = {
-        ...config.optimization,
-        removeAvailableModules: false,
-        removeEmptyChunks: false,
-        splitChunks: false,
-      };
-    }
-
+  
+  // Compression
+  compress: true,
+  
+  // Bundle optimization
+  webpack: (config, { isServer }) => {
+    // Optimize bundle size
+    config.optimization.splitChunks = {
+      chunks: 'all',
+      cacheGroups: {
+        vendor: {
+          test: /[\\/]node_modules[\\/]/,
+          name: 'vendors',
+          priority: 10,
+          reuseExistingChunk: true,
+        },
+        mui: {
+          test: /[\\/]node_modules[\\/]@mui[\\/]/,
+          name: 'mui',
+          priority: 20,
+          reuseExistingChunk: true,
+        },
+        supabase: {
+          test: /[\\/]node_modules[\\/]@supabase[\\/]/,
+          name: 'supabase',
+          priority: 20,
+          reuseExistingChunk: true,
+        },
+      },
+    };
+    
     return config;
   },
-
-  // Faster image optimization
-  images: {
-    unoptimized: true, // Disable image optimization in development
-  },
-
-  // TypeScript optimizations
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-
-  // Disable all overlay systems
-  compiler: {
-    removeConsole: process.env.NODE_ENV === "production",
+  
+  // Static generation for better performance
+  generateEtags: false,
+  
+  // Headers for caching
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY',
+          },
+          {
+            key: 'X-XSS-Protection',
+            value: '1; mode=block',
+          },
+        ],
+      },
+      {
+        source: '/api/(.*)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=60, stale-while-revalidate=300',
+          },
+        ],
+      },
+    ];
   },
 };
 
-export default nextConfig;
+module.exports = withBundleAnalyzer(nextConfig);

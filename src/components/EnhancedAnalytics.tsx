@@ -48,6 +48,7 @@ import TrendingFlatIcon from "@mui/icons-material/TrendingFlat";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment";
+import { VariableLinkSimple } from "./VariableLink";
 import ShowChartIcon from "@mui/icons-material/ShowChart";
 import AssessmentIcon from "@mui/icons-material/Assessment";
 import InsightsIcon from "@mui/icons-material/Insights";
@@ -515,7 +516,14 @@ export default function EnhancedAnalytics({ userId }: EnhancedAnalyticsProps) {
             >
               {numericVariables.map((variable) => (
                 <MenuItem key={variable} value={variable}>
-                  {variables[variable] || variable}
+                  <VariableLinkSimple
+                    variableId={variable}
+                    variables={variables}
+                    variant="inherit"
+                    underline={false}
+                    onClick={() => {}} // Prevent navigation when in dropdown
+                    forceAsText={true}
+                  />
                 </MenuItem>
               ))}
             </Select>
@@ -690,9 +698,12 @@ export default function EnhancedAnalytics({ userId }: EnhancedAnalyticsProps) {
                   mb: 2,
                 }}
               >
-                <Typography variant="h6" component="h4">
-                  {variables[selectedVariable] || selectedVariable}
-                </Typography>
+                <VariableLinkSimple
+                  variableId={selectedVariable}
+                  variables={variables}
+                  variant="h6"
+                  component="h4"
+                />
                 <Box sx={{ display: "flex", gap: 1 }}>
                   <Chip
                     label={`${variableStats.totalLogs} data points`}

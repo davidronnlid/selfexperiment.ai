@@ -127,24 +127,28 @@ async function insertInitialData() {
         to_unit: "lb",
         conversion_factor: 2.20462,
         unit_group: "mass",
+        is_active: true,
       },
       {
         from_unit: "lb",
         to_unit: "kg",
         conversion_factor: 0.453592,
         unit_group: "mass",
+        is_active: true,
       },
       {
         from_unit: "kg",
         to_unit: "g",
         conversion_factor: 1000,
         unit_group: "mass",
+        is_active: true,
       },
       {
         from_unit: "g",
         to_unit: "kg",
         conversion_factor: 0.001,
         unit_group: "mass",
+        is_active: true,
       },
 
       // Distance conversions
@@ -153,24 +157,28 @@ async function insertInitialData() {
         to_unit: "mi",
         conversion_factor: 0.621371,
         unit_group: "distance",
+        is_active: true,
       },
       {
         from_unit: "mi",
         to_unit: "km",
         conversion_factor: 1.60934,
         unit_group: "distance",
+        is_active: true,
       },
       {
         from_unit: "m",
         to_unit: "ft",
         conversion_factor: 3.28084,
         unit_group: "distance",
+        is_active: true,
       },
       {
         from_unit: "ft",
         to_unit: "m",
         conversion_factor: 0.3048,
         unit_group: "distance",
+        is_active: true,
       },
 
       // Time conversions
@@ -179,21 +187,24 @@ async function insertInitialData() {
         to_unit: "minutes",
         conversion_factor: 60,
         unit_group: "time",
+        is_active: true,
       },
       {
         from_unit: "minutes",
         to_unit: "hours",
         conversion_factor: 0.0166667,
         unit_group: "time",
+        is_active: true,
       },
 
-      // Temperature conversions (using formulas)
+      // Temperature conversions (special case - will be handled separately)
       {
         from_unit: "°C",
         to_unit: "°F",
         conversion_factor: 1,
         unit_group: "temperature",
         formula: "($1 * 9/5) + 32",
+        is_active: true,
       },
       {
         from_unit: "°F",
@@ -201,6 +212,51 @@ async function insertInitialData() {
         conversion_factor: 1,
         unit_group: "temperature",
         formula: "($1 - 32) * 5/9",
+        is_active: true,
+      },
+
+      // Boolean conversions
+      {
+        from_unit: "true/false",
+        to_unit: "yes/no",
+        conversion_factor: 1,
+        unit_group: "boolean",
+        is_active: true,
+      },
+      {
+        from_unit: "yes/no",
+        to_unit: "true/false",
+        conversion_factor: 1,
+        unit_group: "boolean",
+        is_active: true,
+      },
+      {
+        from_unit: "true/false",
+        to_unit: "0/1",
+        conversion_factor: 1,
+        unit_group: "boolean",
+        is_active: true,
+      },
+      {
+        from_unit: "0/1",
+        to_unit: "true/false",
+        conversion_factor: 1,
+        unit_group: "boolean",
+        is_active: true,
+      },
+      {
+        from_unit: "yes/no",
+        to_unit: "0/1",
+        conversion_factor: 1,
+        unit_group: "boolean",
+        is_active: true,
+      },
+      {
+        from_unit: "0/1",
+        to_unit: "yes/no",
+        conversion_factor: 1,
+        unit_group: "boolean",
+        is_active: true,
       },
     ];
 

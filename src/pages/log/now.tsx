@@ -260,16 +260,6 @@ export default function LogPage() {
           log.context?.routine_name ||
           `Routine ${routineId}`;
 
-        console.log("Processing auto log:", {
-          logId: log.id,
-          routineId,
-          routineName,
-          routineNames,
-          logContext: log.context,
-          logRoutineId: log.routine_id,
-          fullLog: log,
-        });
-
         if (routineId) {
           if (!grouped.auto.routines[routineId]) {
             grouped.auto.routines[routineId] = {
@@ -329,7 +319,7 @@ export default function LogPage() {
               .eq("user_id", user.id)
               .gte("end_date", new Date().toISOString().split("T")[0]),
             supabase
-              .from("daily_routines")
+              .from("routines")
               .select("id, routine_name")
               .eq("user_id", user.id),
           ]);
@@ -367,7 +357,7 @@ export default function LogPage() {
         (routinesRes.data || []).forEach((routine: any) => {
           routineNameMap[routine.id] = routine.routine_name;
         });
-        console.log("Routine names map:", routineNameMap);
+
         setRoutineNames(routineNameMap);
 
         console.log(
@@ -424,6 +414,19 @@ export default function LogPage() {
     }
     // Fallback to the legacy variable field
     return log.variable || "Unknown Variable";
+  };
+
+  // Helper function to get variable slug from variable_id
+  const getVariableSlugFromLog = (log: LogEntry): string => {
+    // If log has variable_id, look up the variable in the variables array
+    if (log.variable_id && variables.length > 0) {
+      const variable = variables.find((v) => v.id === log.variable_id);
+      if (variable) {
+        return variable.slug;
+      }
+    }
+    // Fallback to the legacy variable field
+    return log.variable || "unknown-variable";
   };
 
   // Helper function to get variable icon from log
@@ -2349,9 +2352,9 @@ export default function LogPage() {
                 <Box
                   sx={{
                     p: { xs: 2, sm: 2.5 },
-                    backgroundColor: "#FFD700",
-                    color: "#000",
-                    borderBottom: "2px solid #FFD700",
+                    backgroundColor: "#000",
+                    color: "#fff",
+                    borderBottom: "2px solid #000",
                   }}
                 >
                   <Typography
@@ -2362,6 +2365,7 @@ export default function LogPage() {
                       display: "flex",
                       alignItems: "center",
                       gap: 1,
+                      color: "#fff", // White text for better contrast on black background
                     }}
                   >
                     ✍️ Manual Logs
@@ -2727,42 +2731,44 @@ export default function LogPage() {
                                   flex: 1,
                                 }}
                               >
-                                <Typography
-                                  variant="subtitle1"
-                                  fontWeight="bold"
-                                  sx={{
-                                    color: "#1976d2",
-                                    fontSize: { xs: "1rem", sm: "1.1rem" },
-                                    cursor: "pointer",
-                                    textDecoration: "underline",
-                                    "&:hover": {
-                                      color: "#0d47a1",
-                                    },
-                                  }}
-                                  onClick={() => {
-                                    // Find the variable to get its slug
-                                    let variableSlug = log.variable;
-                                    if (
-                                      log.variable_id &&
-                                      variables &&
-                                      Array.isArray(variables)
-                                    ) {
-                                      const foundVar = variables.find(
-                                        (v) => v.id === log.variable_id
-                                      );
-                                      if (foundVar) {
-                                        variableSlug = foundVar.slug;
+                                <Link
+                                  href={`/variable/${encodeURIComponent(
+                                    (() => {
+                                      // Get variable slug from log
+                                      if (
+                                        log.variable_id &&
+                                        variables.length > 0
+                                      ) {
+                                        const variable = variables.find(
+                                          (v) => v.id === log.variable_id
+                                        );
+                                        if (variable) {
+                                          return variable.slug;
+                                        }
                                       }
-                                    }
-                                    router.push(
-                                      `/variable/${encodeURIComponent(
-                                        variableSlug
-                                      )}`
-                                    );
+                                      return log.variable || "unknown-variable";
+                                    })()
+                                  )}`}
+                                  style={{
+                                    color: "#1976d2",
+                                    textDecoration: "underline",
+                                    cursor: "pointer",
                                   }}
                                 >
-                                  {log.variable}
-                                </Typography>
+                                  <Typography
+                                    variant="subtitle1"
+                                    fontWeight="bold"
+                                    sx={{
+                                      color: "#1976d2",
+                                      fontSize: {
+                                        xs: "1rem",
+                                        sm: "1.1rem",
+                                      },
+                                    }}
+                                  >
+                                    {getVariableNameFromLog(log)}
+                                  </Typography>
+                                </Link>
                                 <Typography
                                   variant="h5"
                                   sx={{
@@ -2939,9 +2945,9 @@ export default function LogPage() {
                   <Box
                     sx={{
                       p: { xs: 2, sm: 2.5 },
-                      backgroundColor: "#FFD700",
-                      color: "#000",
-                      borderBottom: "2px solid #FFD700",
+                      backgroundColor: "#000",
+                      color: "#fff",
+                      borderBottom: "2px solid #000",
                     }}
                   >
                     <Typography
@@ -2952,6 +2958,7 @@ export default function LogPage() {
                         display: "flex",
                         alignItems: "center",
                         gap: 1,
+                        color: "#fff", // White text for better contrast on black background
                       }}
                     >
                       🤖 Auto Logs
@@ -2975,7 +2982,17 @@ export default function LogPage() {
                             gap: 1,
                           }}
                         >
-                          📋 {(routineData as any).routineName}
+                          📋{" "}
+                          <Link
+                            href="/log/routines"
+                            style={{
+                              color: "#FFD700",
+                              textDecoration: "underline",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {(routineData as any).routineName}
+                          </Link>
                         </Typography>
 
                         {/* Logs for this routine */}
@@ -3312,19 +3329,46 @@ export default function LogPage() {
                                         flex: 1,
                                       }}
                                     >
-                                      <Typography
-                                        variant="subtitle1"
-                                        fontWeight="bold"
-                                        sx={{
+                                      <Link
+                                        href={`/variable/${encodeURIComponent(
+                                          (() => {
+                                            // Get variable slug from log
+                                            if (
+                                              log.variable_id &&
+                                              variables.length > 0
+                                            ) {
+                                              const variable = variables.find(
+                                                (v) => v.id === log.variable_id
+                                              );
+                                              if (variable) {
+                                                return variable.slug;
+                                              }
+                                            }
+                                            return (
+                                              log.variable || "unknown-variable"
+                                            );
+                                          })()
+                                        )}`}
+                                        style={{
                                           color: "#1976d2",
-                                          fontSize: {
-                                            xs: "1rem",
-                                            sm: "1.1rem",
-                                          },
+                                          textDecoration: "underline",
+                                          cursor: "pointer",
                                         }}
                                       >
-                                        {getVariableNameFromLog(log)}
-                                      </Typography>
+                                        <Typography
+                                          variant="subtitle1"
+                                          fontWeight="bold"
+                                          sx={{
+                                            color: "#1976d2",
+                                            fontSize: {
+                                              xs: "1rem",
+                                              sm: "1.1rem",
+                                            },
+                                          }}
+                                        >
+                                          {getVariableNameFromLog(log)}
+                                        </Typography>
+                                      </Link>
                                       <Typography
                                         variant="h5"
                                         sx={{

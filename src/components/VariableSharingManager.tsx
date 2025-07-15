@@ -25,6 +25,7 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { FaShare, FaLock, FaUsers, FaCog } from "react-icons/fa";
 import { getVariables } from "../utils/variableUtils";
 import { Variable } from "../types/variables";
+import { VariableLinkSimple } from "./VariableLink";
 
 interface VariableSharingManagerProps {
   user: { id: string };
@@ -267,7 +268,13 @@ export default function VariableSharingManager({
                                   variant="body2"
                                   className="text-white font-medium truncate"
                                 >
-                                  {variable.label}
+                                  <VariableLinkSimple
+                                    variable={variable}
+                                    variant="body2"
+                                    color="white"
+                                    fontWeight="medium"
+                                    sx={{ fontSize: "inherit" }}
+                                  />
                                 </Typography>
                                 {variable.description && (
                                   <Typography

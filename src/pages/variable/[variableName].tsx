@@ -1,6 +1,8 @@
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/utils/supaBase";
+import { clearDisplayUnitCache } from "@/utils/variableUtils";
+import { useUserDisplayUnit } from "@/hooks/useUserDisplayUnit";
 import { useUser } from "../_app";
 import {
   Container,
@@ -25,6 +27,10 @@ import {
   TableRow,
   Paper,
   Grid,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import {
   FaArrowLeft,
@@ -76,6 +82,7 @@ interface VariableInfo {
   validation_rules?: any;
   canonical_unit?: string;
   is_public: boolean;
+  convertible_units?: string[]; // Added for unit conversion
 }
 
 export default function VariableLogsPage() {
@@ -87,6 +94,12 @@ export default function VariableLogsPage() {
   const [loading, setLoading] = useState(true);
   const [isShared, setIsShared] = useState(false);
   const [sharingUpdateLoading, setSharingUpdateLoading] = useState(false);
+  const [displayUnitLoading, setDisplayUnitLoading] = useState(false);
+  const {
+    displayUnit,
+    loading: displayUnitHookLoading,
+    refetch: refetchDisplayUnit,
+  } = useUserDisplayUnit(variableInfo?.id || "", variableInfo || undefined);
   const [showDistribution, setShowDistribution] = useState(false);
   const [distributionData, setDistributionData] = useState<any[]>([]);
   const [distributionLoading, setDistributionLoading] = useState(false);
@@ -529,6 +542,38 @@ export default function VariableLogsPage() {
     }
   };
 
+  const updateDisplayUnit = async (unit: string) => {
+    if (!user || !variableInfo) return;
+
+    setDisplayUnitLoading(true);
+    try {
+      const { error } = await supabase
+        .from("user_variable_preferences")
+        .upsert({
+          user_id: user.id,
+          variable_id: variableInfo.id,
+          display_unit: unit,
+        });
+
+      if (error) {
+        console.error("Error updating display unit:", error);
+        setErrorMessage("Failed to update display unit preference");
+        setShowError(true);
+      } else {
+        setSuccessMessage("Display unit preference updated successfully");
+        setShowSuccess(true);
+        clearDisplayUnitCache(user.id, variableInfo.id); // Clear cache after successful update
+        await refetchDisplayUnit(); // Refetch using the hook
+      }
+    } catch (error) {
+      console.error("Error updating display unit:", error);
+      setErrorMessage("Failed to update display unit preference");
+      setShowError(true);
+    } finally {
+      setDisplayUnitLoading(false);
+    }
+  };
+
   if (loading || userLoading) {
     return (
       <Container maxWidth="lg" sx={{ py: 4 }}>
@@ -715,6 +760,26 @@ export default function VariableLogsPage() {
                       </Box>
                     }
                   />
+
+                  {/* Unit Preference Selector */}
+                  {variableInfo.convertible_units &&
+                    variableInfo.convertible_units.length > 1 && (
+                      <FormControl size="small" sx={{ minWidth: 200 }}>
+                        <InputLabel>Preferred Display Unit</InputLabel>
+                        <Select
+                          value={displayUnit}
+                          onChange={(e) => updateDisplayUnit(e.target.value)}
+                          label="Preferred Display Unit"
+                          disabled={displayUnitLoading}
+                        >
+                          {variableInfo.convertible_units.map((unit) => (
+                            <MenuItem key={unit} value={unit}>
+                              {unit}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    )}
 
                   <Button
                     variant="outlined"
