@@ -198,23 +198,35 @@ export default async function handler(
     let upserted = 0;
     for (let i = 0; i < validRows.length; i += 100) {
       const batch = validRows.slice(i, i + 100);
-      const { error: upsertError } = await supabase
-        .from("withings_weights")
-        .upsert(batch, { onConflict: "user_id,date" });
-      console.log(
-        "[Withings Fetch] Dates upserted to Supabase:",
-        batch.map((r) => r.date)
-      );
-      if (upsertError) {
-        console.error("[Withings Fetch] Supabase upsert error:", upsertError);
-        // Return partial success if some rows were upserted
-        return res.status(500).json({
-          error: "Failed to upsert some data to Supabase",
-          details: upsertError,
-          upserted,
+      
+      // Transform to match withings_variable_logs structure
+      const transformedBatch = batch.flatMap(row => {
+        const entries = [];
+        for (const [key, value] of Object.entries(row)) {
+          if (key !== 'user_id' && key !== 'date' && key !== 'raw_data' && 
+              typeof value === 'number' && !isNaN(value) && value > 0) {
+            entries.push({
+              user_id: row.user_id,
+              date: row.date,
+              variable: key,
+              value: value
+            });
+          }
+        }
+        return entries;
+      });
+
+      const { error: batchError } = await supabase
+        .from("withings_variable_logs")
+        .upsert(transformedBatch, {
+          onConflict: "user_id,date,variable",
         });
+
+      if (batchError) {
+        console.error("[Withings Fetch] Batch upsert error:", batchError);
+      } else {
+        upserted += transformedBatch.length;
       }
-      upserted += Math.min(100, validRows.length - i);
     }
 
     res.status(200).json({

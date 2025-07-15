@@ -8,7 +8,6 @@ import {
   Alert,
   CircularProgress,
   Divider,
-  Grid,
   Chip,
   Table,
   TableBody,
@@ -34,10 +33,13 @@ import {
 } from "@mui/icons-material";
 
 interface OuraData {
-  metric: string;
+  id: string;
+  source: string;
+  variable_id: string;
   date: string;
   value: number;
   raw?: any;
+  created_at: string;
 }
 
 interface OuraIntegrationProps {
@@ -95,6 +97,7 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
     new Set()
   );
   const [lastSync, setLastSync] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Check connection status
   const checkConnection = useCallback(async () => {
@@ -126,8 +129,8 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
       twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
 
       const { data: ouraData, error } = await supabase
-        .from("oura_measurements")
-        .select("metric, date, value, raw")
+        .from("oura_variable_logs")
+        .select("id, source, variable_id, date, value, raw, created_at")
         .eq("user_id", userId)
         .gte("date", twoWeeksAgo.toISOString().split("T")[0])
         .order("date", { ascending: true });
@@ -169,13 +172,33 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
 
   // Connect to Oura
   const handleConnect = async () => {
-    const clientId = process.env.NEXT_PUBLIC_OURA_CLIENT_ID!;
-    const redirectUri = encodeURIComponent(
-      `${window.location.origin}/api/oura/callback`
-    );
-    const scope = "email personal daily heartrate";
-    const authUrl = `https://cloud.ouraring.com/oauth/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}&scope=${scope}&state=${userId}`;
-    window.location.href = authUrl;
+    try {
+      setError(null);
+      const response = await fetch("/api/oura/auth", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ userId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Failed to generate Oura auth URL:", errorData);
+        setError(
+          errorData.error || "Failed to connect to Oura. Please try again."
+        );
+        return;
+      }
+
+      const { authUrl } = await response.json();
+      window.location.href = authUrl;
+    } catch (error) {
+      console.error("Error connecting to Oura:", error);
+      setError(
+        "Failed to connect to Oura. Please check your internet connection and try again."
+      );
+    }
   };
 
   useEffect(() => {
@@ -199,10 +222,10 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
   };
 
   const groupedData = data.reduce((acc, item) => {
-    if (!acc[item.metric]) {
-      acc[item.metric] = [];
+    if (!acc[item.variable_id]) {
+      acc[item.variable_id] = [];
     }
-    acc[item.metric].push(item);
+    acc[item.variable_id].push(item);
     return acc;
   }, {} as { [key: string]: OuraData[] });
 
@@ -244,10 +267,16 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
             Connect your Oura Ring to track sleep, readiness, and heart rate
             data.
           </Alert>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
           <Button
             variant="contained"
             onClick={handleConnect}
             startIcon={<FitnessIcon />}
+            disabled={!!error}
           >
             Connect Oura Ring
           </Button>
@@ -456,10 +485,10 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
                           {format(parseISO(item.date), "MMM dd, yyyy")}
                         </TableCell>
                         <TableCell>
-                          {METRIC_LABELS[item.metric] || item.metric}
+                          {METRIC_LABELS[item.variable_id] || item.variable_id}
                         </TableCell>
                         <TableCell align="right">
-                          {formatValue(item.metric, item.value)}
+                          {formatValue(item.variable_id, item.value)}
                         </TableCell>
                       </TableRow>
                     ))}

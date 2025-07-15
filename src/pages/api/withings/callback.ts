@@ -49,14 +49,23 @@ async function fetchAndStoreAllWithingsData(
     if (data.body && data.body.measuregrps) {
       for (const grp of data.body.measuregrps) {
         const date = new Date(grp.date * 1000).toISOString();
-        const row: { [key: string]: any } = { user_id, date, raw_data: grp };
+        
+        // Create separate rows for each measurement type
         for (const m of MEAS_TYPES) {
           const meas = grp.measures.find((x: any) => x.type === m.type);
           if (meas) {
-            row[m.name] = meas.value * Math.pow(10, meas.unit);
+            const value = meas.value * Math.pow(10, meas.unit);
+            // Only include valid weight measurements
+            if (m.name === 'weight' || value > 0) {
+              allRows.push({
+                user_id,
+                date,
+                variable: m.name,
+                value: value
+              });
+            }
           }
         }
-        allRows.push(row);
       }
     }
     // Move to next batch
@@ -64,55 +73,26 @@ async function fetchAndStoreAllWithingsData(
     batchEnd.setDate(batchEnd.getDate() + 30);
   }
 
-  // Deduplicate rows by user_id and date to avoid ON CONFLICT errors
+  // Deduplicate rows by user_id, date, and variable
   const deduplicatedRows = Object.values(
     allRows.reduce((acc, row) => {
-      const key = `${row.user_id}_${row.date}`;
+      const key = `${row.user_id}_${row.date}_${row.variable}`;
       if (!acc[key]) {
         acc[key] = row;
-      } else {
-        // Merge measurement data if we have multiple measurements for the same date
-        for (const [propKey, value] of Object.entries(row)) {
-          if (
-            value !== undefined &&
-            value !== null &&
-            propKey !== "user_id" &&
-            propKey !== "date" &&
-            propKey !== "raw_data"
-          ) {
-            acc[key][propKey] = value;
-          }
-        }
-        // Merge raw_data arrays if they exist
-        if (row.raw_data && acc[key].raw_data) {
-          if (Array.isArray(acc[key].raw_data)) {
-            acc[key].raw_data.push(row.raw_data);
-          } else {
-            acc[key].raw_data = [acc[key].raw_data, row.raw_data];
-          }
-        }
       }
       return acc;
     }, {} as Record<string, any>)
   );
 
-  // Filter out rows where weight_kg is not a valid, positive number
-  const validRows = deduplicatedRows.filter(
-    (row) =>
-      typeof row.weight_kg === "number" &&
-      !isNaN(row.weight_kg) &&
-      row.weight_kg > 0
-  );
-
   // Upsert all rows in batches of 100
-  for (let i = 0; i < validRows.length; i += 100) {
+  for (let i = 0; i < deduplicatedRows.length; i += 100) {
     await supabase
-      .from("withings_weights")
-      .upsert(validRows.slice(i, i + 100), {
-        onConflict: "user_id,date",
+      .from("withings_variable_logs")
+      .upsert(deduplicatedRows.slice(i, i + 100), {
+        onConflict: "user_id,date,variable",
       });
   }
-  return validRows.length;
+  return deduplicatedRows.length;
 }
 
 export default async function handler(

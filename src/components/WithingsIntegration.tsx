@@ -35,15 +35,11 @@ import {
 } from "@mui/icons-material";
 
 interface WithingsData {
+  id: number;
+  user_id: string;
   date: string;
-  weight_kg?: number;
-  fat_free_mass_kg?: number;
-  fat_ratio?: number;
-  fat_mass_weight_kg?: number;
-  muscle_mass_kg?: number;
-  hydration_kg?: number;
-  bone_mass_kg?: number;
-  raw_data?: any;
+  variable: string;
+  value: number;
 }
 
 interface WithingsIntegrationProps {
@@ -51,7 +47,7 @@ interface WithingsIntegrationProps {
 }
 
 const METRIC_LABELS: { [key: string]: string } = {
-  weight_kg: "Weight (kg)",
+  weight: "Weight (kg)",
   fat_free_mass_kg: "Fat-Free Mass (kg)",
   fat_ratio: "Fat Ratio (%)",
   fat_mass_weight_kg: "Fat Mass (kg)",
@@ -61,7 +57,7 @@ const METRIC_LABELS: { [key: string]: string } = {
 };
 
 const METRIC_COLORS: { [key: string]: string } = {
-  weight_kg: "#3b82f6",
+  weight: "#3b82f6",
   fat_free_mass_kg: "#10b981",
   fat_ratio: "#f59e0b",
   fat_mass_weight_kg: "#ef4444",
@@ -71,7 +67,7 @@ const METRIC_COLORS: { [key: string]: string } = {
 };
 
 const METRIC_ICONS: { [key: string]: React.ReactNode } = {
-  weight_kg: <ScaleIcon />,
+  weight: <ScaleIcon />,
   fat_free_mass_kg: <FitnessIcon />,
   fat_ratio: <TrendingUpIcon />,
   fat_mass_weight_kg: <TrendingUpIcon />,
@@ -124,7 +120,7 @@ export default function WithingsIntegration({
       twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
 
       const { data: withingsData, error } = await supabase
-        .from("withings_weights")
+        .from("withings_variable_logs")
         .select("*")
         .eq("user_id", userId)
         .gte("date", twoWeeksAgo.toISOString().split("T")[0])
@@ -245,10 +241,10 @@ export default function WithingsIntegration({
 
   const getMetricData = (metric: string) => {
     return data
-      .filter((d) => d[metric as keyof WithingsData] != null)
+      .filter((d) => d.variable === metric)
       .map((d) => ({
         date: d.date,
-        value: d[metric as keyof WithingsData] as number,
+        value: d.value,
       }));
   };
 
@@ -272,7 +268,7 @@ export default function WithingsIntegration({
   };
 
   const availableMetrics = Object.keys(METRIC_LABELS).filter((metric) => {
-    return data.some((d) => d[metric as keyof WithingsData] != null);
+    return data.some((d) => d.variable === metric);
   });
 
   if (!connected) {
@@ -519,10 +515,8 @@ export default function WithingsIntegration({
                 <TableHead>
                   <TableRow>
                     <TableCell>Date</TableCell>
-                    <TableCell align="right">Weight (kg)</TableCell>
-                    <TableCell align="right">Fat Ratio (%)</TableCell>
-                    <TableCell align="right">Muscle Mass (kg)</TableCell>
-                    <TableCell align="right">Hydration (kg)</TableCell>
+                    <TableCell align="right">Variable</TableCell>
+                    <TableCell align="right">Value</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -535,20 +529,10 @@ export default function WithingsIntegration({
                           {format(parseISO(item.date), "MMM dd, yyyy")}
                         </TableCell>
                         <TableCell align="right">
-                          {item.weight_kg ? item.weight_kg.toFixed(1) : "-"}
+                          {METRIC_LABELS[item.variable] || item.variable}
                         </TableCell>
                         <TableCell align="right">
-                          {item.fat_ratio ? item.fat_ratio.toFixed(1) : "-"}
-                        </TableCell>
-                        <TableCell align="right">
-                          {item.muscle_mass_kg
-                            ? item.muscle_mass_kg.toFixed(1)
-                            : "-"}
-                        </TableCell>
-                        <TableCell align="right">
-                          {item.hydration_kg
-                            ? item.hydration_kg.toFixed(1)
-                            : "-"}
+                          {formatValue(item.variable, item.value)}
                         </TableCell>
                       </TableRow>
                     ))}

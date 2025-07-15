@@ -1,6 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { supabase } from "@/utils/supaBase";
-import { createClient } from "@supabase/supabase-js";
 
 interface HRData {
   bpm: number;
@@ -33,7 +32,7 @@ export default async function handler(
   }
 
   // Fetch the Oura token for the current user
-  let { data: tokens, error: tokenFetchError } = await supabase
+  const { data: tokens, error: tokenFetchError } = await supabase
     .from("oura_tokens")
     .select("access_token, refresh_token, id")
     .eq("user_id", user_id)
@@ -50,9 +49,9 @@ export default async function handler(
     return res.status(500).json({ error: "No token for user" });
   }
 
-  let token = tokens[0].access_token;
-  let refresh_token = tokens[0].refresh_token;
-  let token_id = tokens[0].id;
+  const token = tokens[0].access_token;
+  const refresh_token = tokens[0].refresh_token;
+  const token_id = tokens[0].id;
   console.log(
     "[Oura Fetch] token, refresh_token, token_id:",
     token,
@@ -100,9 +99,7 @@ export default async function handler(
         refresh_token: tokenData.refresh_token,
       })
       .eq("id", token_id);
-    token = tokenData.access_token;
-    refresh_token = tokenData.refresh_token;
-    return token;
+    return tokenData.access_token;
   }
 
   try {
@@ -111,8 +108,8 @@ export default async function handler(
     let readinessRes = await fetchData("daily_readiness", token);
     if (readinessRes.status === 401) {
       // Token expired, refresh and retry
-      token = await refreshOuraToken();
-      readinessRes = await fetchData("daily_readiness", token);
+      const newToken = await refreshOuraToken();
+      readinessRes = await fetchData("daily_readiness", newToken);
     }
     if (!readinessRes.ok)
       throw new Error(`fetch daily_readiness ${readinessRes.status}`);
@@ -120,16 +117,16 @@ export default async function handler(
 
     let sleepRes = await fetchData("daily_sleep", token);
     if (sleepRes.status === 401) {
-      token = await refreshOuraToken();
-      sleepRes = await fetchData("daily_sleep", token);
+      const newToken = await refreshOuraToken();
+      sleepRes = await fetchData("daily_sleep", newToken);
     }
     if (!sleepRes.ok) throw new Error(`fetch daily_sleep ${sleepRes.status}`);
     const sleepData = await sleepRes.json();
 
     let hrRes = await fetchData("heartrate", token);
     if (hrRes.status === 401) {
-      token = await refreshOuraToken();
-      hrRes = await fetchData("heartrate", token);
+      const newToken = await refreshOuraToken();
+      hrRes = await fetchData("heartrate", newToken);
     }
     if (!hrRes.ok) throw new Error(`fetch heartrate ${hrRes.status}`);
     const hrData = await hrRes.json();
@@ -142,7 +139,7 @@ export default async function handler(
       inserts.push(
         {
           source: "oura",
-          metric: "readiness_score",
+          variable_id: "readiness_score",
           date: item.day,
           value: item.score,
           raw: item,
@@ -150,7 +147,7 @@ export default async function handler(
         },
         {
           source: "oura",
-          metric: "temperature_deviation",
+          variable_id: "temperature_deviation",
           date: item.day,
           value: item.temperature_deviation,
           raw: item,
@@ -158,7 +155,7 @@ export default async function handler(
         },
         {
           source: "oura",
-          metric: "temperature_trend_deviation",
+          variable_id: "temperature_trend_deviation",
           date: item.day,
           value: item.temperature_trend_deviation,
           raw: item,
@@ -171,7 +168,7 @@ export default async function handler(
       inserts.push(
         {
           source: "oura",
-          metric: "sleep_score",
+          variable_id: "sleep_score",
           date: item.day,
           value: item.score,
           raw: item,
@@ -179,7 +176,7 @@ export default async function handler(
         },
         {
           source: "oura",
-          metric: "total_sleep_duration",
+          variable_id: "total_sleep_duration",
           date: item.day,
           value: item.total_sleep_duration,
           raw: item,
@@ -187,7 +184,7 @@ export default async function handler(
         },
         {
           source: "oura",
-          metric: "rem_sleep_duration",
+          variable_id: "rem_sleep_duration",
           date: item.day,
           value: item.rem_sleep_duration,
           raw: item,
@@ -195,7 +192,7 @@ export default async function handler(
         },
         {
           source: "oura",
-          metric: "deep_sleep_duration",
+          variable_id: "deep_sleep_duration",
           date: item.day,
           value: item.deep_sleep_duration,
           raw: item,
@@ -203,7 +200,7 @@ export default async function handler(
         },
         {
           source: "oura",
-          metric: "efficiency",
+          variable_id: "efficiency",
           date: item.day,
           value: item.efficiency,
           raw: item,
@@ -211,7 +208,7 @@ export default async function handler(
         },
         {
           source: "oura",
-          metric: "sleep_latency",
+          variable_id: "sleep_latency",
           date: item.day,
           value: item.sleep_latency,
           raw: item,
@@ -220,14 +217,13 @@ export default async function handler(
       );
     }
 
-    const hrByDay: Record<string, number[]> = {};
-    hrData.data.forEach((pt: HRData) => {
-      const day = pt.timestamp.split("T")[0];
+    // Process heart rate data by day
+    const hrByDay: { [key: string]: number[] } = {};
+    for (const hr of hrData.data) {
+      const day = hr.timestamp.split("T")[0];
       if (!hrByDay[day]) hrByDay[day] = [];
-      if (typeof pt.bpm === "number") {
-        hrByDay[day].push(pt.bpm);
-      }
-    });
+      hrByDay[day].push(hr.bpm);
+    }
 
     for (const [day, arr] of Object.entries(hrByDay)) {
       if (arr.length === 0) continue;
@@ -236,7 +232,7 @@ export default async function handler(
       inserts.push(
         {
           source: "oura",
-          metric: "hr_lowest_true",
+          variable_id: "hr_lowest_true",
           date: day,
           value: minHR,
           raw: null,
@@ -244,27 +240,19 @@ export default async function handler(
         },
         {
           source: "oura",
-          metric: "hr_average_true",
+          variable_id: "hr_average_true",
           date: day,
           value: avgHR,
           raw: null,
-          user_id,
-        },
-        {
-          source: "oura",
-          metric: "hr_raw_data",
-          date: day,
-          value: null,
-          raw: hrData.data.filter((d: HRData) => d.timestamp.startsWith(day)),
           user_id,
         }
       );
     }
 
-    console.log(`📝 Inserting ${inserts.length} items to oura_measurements...`);
+    console.log(`📝 Inserting ${inserts.length} items to oura_variable_logs...`);
     const { error: insertErr } = await supabase
-      .from("oura_measurements")
-      .upsert(inserts, { onConflict: "user_id,metric,date" });
+      .from("oura_variable_logs")
+      .upsert(inserts, { onConflict: "user_id,variable_id,date" });
     if (insertErr) {
       console.error("Supabase insert error:", insertErr);
       return res.status(500).json({ error: insertErr.message });

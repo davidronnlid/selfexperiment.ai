@@ -293,34 +293,29 @@ async function reimportAllWithingsData(
     JSON.stringify(validRows.slice(0, 3), null, 2)
   );
 
-  // Delete existing data for this user first
-  console.log(`[Withings Reimport] Deleting existing data for user ${user_id}`);
-  await supabase.from("withings_weights").delete().eq("user_id", user_id);
+  // Clear existing data for this user
+  await supabase.from("withings_variable_logs").delete().eq("user_id", user_id);
 
-  // Upsert all rows in batches of 100
-  let upserted = 0;
-  for (let i = 0; i < validRows.length; i += 100) {
-    const batch = validRows.slice(i, i + 100);
-    const { error } = await supabase.from("withings_weights").upsert(batch, {
-      onConflict: "user_id,date",
-    });
-
-    if (error) {
-      console.error(
-        `[Withings Reimport] Error upserting batch ${i}-${i + 100}:`,
-        error
-      );
-    } else {
-      upserted += batch.length;
-      console.log(
-        `[Withings Reimport] Upserted batch ${i}-${i + 100}: ${
-          batch.length
-        } rows`
-      );
+  // Transform to match withings_variable_logs structure
+  const transformedBatch = validRows.flatMap(row => {
+    const entries = [];
+    for (const [key, value] of Object.entries(row)) {
+      if (key !== 'user_id' && key !== 'date' && key !== 'raw_data' && 
+          typeof value === 'number' && !isNaN(value) && value > 0) {
+        entries.push({
+          user_id: row.user_id,
+          date: row.date,
+          variable: key,
+          value: value
+        });
+      }
     }
-  }
+    return entries;
+  });
 
-  console.log(`[Withings Reimport] Total upserted: ${upserted} rows`);
+  const { error } = await supabase.from("withings_variable_logs").upsert(transformedBatch, {
+    onConflict: "user_id,date,variable",
+  });
 
   // After all import logic, fetch the total available measurement groups from Withings
   async function getWithingsTotalCount(
@@ -352,7 +347,7 @@ async function reimportAllWithingsData(
     endDate
   );
   return {
-    upserted,
+    upserted: transformedBatch.length, // This will be the number of valid rows transformed
     totalBatches,
     batchesCompleted: batchIndex,
     rowsFetched: allRows.length,

@@ -22,6 +22,7 @@ import Link from "next/link";
 import { useUser } from "@/pages/_app";
 import FavoriteBorderIcon from "@mui/icons-material/FavoriteBorder";
 import FavoriteIcon from "@mui/icons-material/Favorite";
+import RoadmapManager from "@/components/RoadmapManager";
 
 function formatFriendlyDate(dateString: string) {
   const date = new Date(dateString);
@@ -176,6 +177,9 @@ export default function CommunityPage() {
           )}
         </List>
       </Paper>
+
+      {/* Roadmap Section */}
+      <RoadmapManager />
       {user && (
         <Box sx={{ mt: 6 }}>
           <Typography variant="h5" sx={{ mb: 2 }}>

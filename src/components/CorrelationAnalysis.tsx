@@ -335,6 +335,66 @@ export default function CorrelationAnalysis({
     );
   }, [logs]);
 
+  // Function to analyze data availability for variables
+  const getDataAnalysis = () => {
+    const numericVariables = getNumericVariables();
+    const analysis = {
+      totalVariables: numericVariables.length,
+      variableData: [] as Array<{
+        variableId: string;
+        variableName: string;
+        totalLogs: number;
+        dateRange: { start: string; end: string } | null;
+      }>,
+      overlappingPairs: [] as Array<{
+        var1: string;
+        var2: string;
+        var1Name: string;
+        var2Name: string;
+        overlappingDates: number;
+      }>,
+    };
+
+    // Analyze each variable's data
+    numericVariables.forEach((variableId) => {
+      const variableLogs = logs.filter(
+        (log) => log.variable_id === variableId && isNumeric(log.value)
+      );
+
+      if (variableLogs.length > 0) {
+        const dates = variableLogs.map((log) => log.date).sort();
+        analysis.variableData.push({
+          variableId,
+          variableName: variables[variableId] || variableId,
+          totalLogs: variableLogs.length,
+          dateRange: {
+            start: dates[0],
+            end: dates[dates.length - 1],
+          },
+        });
+      }
+    });
+
+    // Analyze overlapping data between pairs
+    for (let i = 0; i < numericVariables.length; i++) {
+      for (let j = i + 1; j < numericVariables.length; j++) {
+        const var1 = numericVariables[i];
+        const var2 = numericVariables[j];
+        const matchedData = getMatchedDataPoints(var1, var2);
+
+        analysis.overlappingPairs.push({
+          var1,
+          var2,
+          var1Name: variables[var1] || var1,
+          var2Name: variables[var2] || var2,
+          overlappingDates: matchedData.length,
+        });
+      }
+    }
+
+    return analysis;
+  };
+
   const selectedCorrelation = useMemo(() => {
     if (!selectedVar1 || !selectedVar2 || selectedVar1 === selectedVar2)
       return null;
@@ -608,8 +668,105 @@ export default function CorrelationAnalysis({
                 </Typography>
                 {allCorrelations.length === 0 ? (
                   <Alert severity="info">
-                    No correlations found. Make sure you have overlapping data
-                    for multiple variables.
+                    <Box>
+                      <Typography
+                        variant="body1"
+                        sx={{ fontWeight: 600, mb: 1 }}
+                      >
+                        No correlations found. Here's why:
+                      </Typography>
+                      {(() => {
+                        const analysis = getDataAnalysis();
+                        const insufficientData =
+                          analysis.overlappingPairs.filter(
+                            (pair) => pair.overlappingDates < 3
+                          );
+                        const hasData = analysis.variableData.length > 0;
+
+                        return (
+                          <Box>
+                            {!hasData ? (
+                              <Typography variant="body2" sx={{ mb: 1 }}>
+                                • <strong>No numeric data found</strong> in the
+                                selected time range. Make sure you have logged
+                                numeric values for your variables.
+                              </Typography>
+                            ) : (
+                              <>
+                                <Typography variant="body2" sx={{ mb: 1 }}>
+                                  • <strong>Data availability:</strong> You have{" "}
+                                  {analysis.totalVariables} numeric variables
+                                  with data
+                                </Typography>
+                                {analysis.variableData.map((varData, index) => (
+                                  <Typography
+                                    key={index}
+                                    variant="body2"
+                                    sx={{ ml: 2, mb: 0.5 }}
+                                  >
+                                    - {varData.variableName}:{" "}
+                                    {varData.totalLogs} logs (
+                                    {varData.dateRange
+                                      ? `${format(
+                                          parseISO(varData.dateRange.start),
+                                          "MMM d"
+                                        )} - ${format(
+                                          parseISO(varData.dateRange.end),
+                                          "MMM d"
+                                        )}`
+                                      : "no date range"}
+                                    )
+                                  </Typography>
+                                ))}
+                                <Typography
+                                  variant="body2"
+                                  sx={{ mt: 1, mb: 1 }}
+                                >
+                                  • <strong>Overlapping data:</strong> Need at
+                                  least 3 matching dates between variables for
+                                  correlation analysis
+                                </Typography>
+                                {insufficientData.length > 0 && (
+                                  <Box sx={{ ml: 2 }}>
+                                    {insufficientData
+                                      .slice(0, 3)
+                                      .map((pair, index) => (
+                                        <Typography
+                                          key={index}
+                                          variant="body2"
+                                          sx={{ mb: 0.5 }}
+                                        >
+                                          - {pair.var1Name} & {pair.var2Name}:{" "}
+                                          {pair.overlappingDates} overlapping
+                                          dates
+                                        </Typography>
+                                      ))}
+                                    {insufficientData.length > 3 && (
+                                      <Typography
+                                        variant="body2"
+                                        sx={{ fontStyle: "italic" }}
+                                      >
+                                        ... and {insufficientData.length - 3}{" "}
+                                        more pairs
+                                      </Typography>
+                                    )}
+                                  </Box>
+                                )}
+                                <Typography
+                                  variant="body2"
+                                  sx={{ mt: 1, fontWeight: 600 }}
+                                >
+                                  💡 <strong>Tip:</strong> Try logging both
+                                  variables on the same days, or expand your
+                                  time range to get more overlapping data
+                                  points.
+                                </Typography>
+                              </>
+                            )}
+                          </Box>
+                        );
+                      })()}
+                    </Box>
                   </Alert>
                 ) : (
                   <TableContainer component={Paper} sx={{ maxHeight: 400 }}>

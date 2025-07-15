@@ -11,7 +11,7 @@ export const getUserPreferences = async (userId: string) => {
     if (error) {
       console.error("Error fetching user preferences:", error);
       throw error;
-    }
+      }
 
     return data || [];
   } catch (error) {
