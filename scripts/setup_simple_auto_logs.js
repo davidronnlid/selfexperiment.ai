@@ -1,15 +1,18 @@
 const { createClient } = require("@supabase/supabase-js");
 const fs = require("fs");
 
-// Fallback values for environment variables
-const supabaseUrl =
-  process.env.NEXT_PUBLIC_SUPABASE_URL ||
-  "https://ecstnwwcplbofbwbhbck.supabase.co";
-const supabaseAnonKey =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVjc3Rud3djcGxib2Zid2JoYmNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTExNzY5NjMsImV4cCI6MjA2Njc1Mjk2M30.iTZ65IW6iEKug6VMdg4zIADF7QF69LCaGpDxh4FORDc";
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error(
+    "Missing Supabase credentials. Please set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables."
+  );
+  process.exit(1);
+}
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 async function setupSimpleAutoLogs() {
   try {
@@ -41,8 +44,8 @@ async function setupSimpleAutoLogs() {
         const response = await fetch(`${supabaseUrl}/rest/v1/rpc/exec_sql`, {
           method: "POST",
           headers: {
-            apikey: supabaseAnonKey,
-            Authorization: `Bearer ${supabaseAnonKey}`,
+            apikey: supabaseServiceKey,
+            Authorization: `Bearer ${supabaseServiceKey}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ sql: statement + ";" }),

@@ -1,35 +1,16 @@
 const { createClient } = require("@supabase/supabase-js");
 
-const supabaseUrl =
-  process.env.NEXT_PUBLIC_SUPABASE_URL ||
-  "https://ecstnwwcplbofbwbhbck.supabase.com";
-const supabaseAnonKey =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVjc3Rud3djcGxib2Zid2JoYmNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTExNzY5NjMsImV4cCI6MjA2Njc1Mjk2M30.iTZ65IW6iEKug6VMdg4zIADF7QF69LCaGpDxh4FORDc";
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!supabaseUrl) {
-  console.error("Missing Supabase URL");
-  console.log("Please set NEXT_PUBLIC_SUPABASE_URL environment variable");
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error(
+    "Missing Supabase credentials. Please set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables."
+  );
   process.exit(1);
 }
 
-if (!supabaseServiceKey) {
-  console.warn(
-    "⚠️  No service role key found. Using anon key (some operations may fail)"
-  );
-  console.log(
-    "For full functionality, set SUPABASE_SERVICE_ROLE_KEY environment variable"
-  );
-  console.log(
-    "You can get it from your Supabase dashboard: Settings > API > service_role key"
-  );
-}
-
-const supabase = createClient(
-  supabaseUrl,
-  supabaseServiceKey || supabaseAnonKey
-);
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 async function simplifyDatabase() {
   console.log("🔄 Starting database simplification...");

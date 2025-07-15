@@ -1,9 +1,15 @@
 const { createClient } = require("@supabase/supabase-js");
 
-// You'll need to set these environment variables or replace with your actual values
-const supabaseUrl = "https://ecstnwwcplbofbwbhbck.supabase.co";
-const supabaseServiceKey =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVjc3Rud3djcGxib2Zid2JoYmNrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MTE3Njk2MywiZXhwIjoyMDY2NzUyOTYzfQ.ZdYKYgbQRQN6EGOKHHgvv7BtXFtJNPsKPiQGTVHCbz8"; // Replace with your service role key
+// Supabase credentials should be provided via environment variables for security reasons
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error(
+    "Missing Supabase credentials. Please set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables."
+  );
+  process.exit(1);
+}
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
