@@ -29,6 +29,7 @@ import {
   FavoriteBorder as FavoriteBorderIcon,
   Edit as EditIcon,
   History as HistoryIcon,
+  AdminPanelSettings as AdminIcon,
 } from "@mui/icons-material";
 import {
   RoadmapPost,
@@ -64,7 +65,7 @@ const PRIORITY_COLORS: Record<
 };
 
 export default function RoadmapManager() {
-  const { user } = useUser();
+  const { user, username } = useUser();
   const [posts, setPosts] = useState<RoadmapPost[]>([]);
   const [filteredPosts, setFilteredPosts] = useState<RoadmapPost[]>([]);
   const [loading, setLoading] = useState(false);
@@ -75,6 +76,9 @@ export default function RoadmapManager() {
   const [likeStates, setLikeStates] = useState<{
     [postId: string]: RoadmapLikeInfo;
   }>({});
+
+  // Check if current user is admin
+  const isAdmin = username === "davidronnlidmh";
 
   // Form state
   const [newPost, setNewPost] = useState<CreateRoadmapPostRequest>({
@@ -121,7 +125,9 @@ export default function RoadmapManager() {
   // Fetch like info for a specific post
   const fetchLikeInfo = async (postId: string) => {
     try {
-      const response = await fetch(`/api/roadmap/likes?postId=${postId}`);
+      const response = await fetch(
+        `/api/roadmap/likes?postId=${postId}&userId=${user?.id}`
+      );
       if (response.ok) {
         const data = await response.json();
         setLikeStates((prev) => ({
@@ -168,13 +174,21 @@ export default function RoadmapManager() {
     if (!editPost.title?.trim() || !user) return;
 
     try {
+      const requestBody: any = {
+        ...editPost,
+        userId: user.id,
+      };
+
+      // Only include status and priority if user is admin
+      if (!isAdmin) {
+        delete requestBody.status;
+        delete requestBody.priority;
+      }
+
       const response = await fetch("/api/roadmap/posts", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...editPost,
-          userId: user.id,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (response.ok) {
@@ -184,6 +198,10 @@ export default function RoadmapManager() {
         );
         setEditDialogOpen(false);
         setEditingPost(null);
+      } else {
+        const errorData = await response.json();
+        console.error("Error editing post:", errorData);
+        alert(errorData.error || "Failed to edit post");
       }
     } catch (error) {
       console.error("Error editing post:", error);
@@ -270,9 +288,16 @@ export default function RoadmapManager() {
           mb: 3,
         }}
       >
-        <Typography variant="h5" fontWeight="bold">
-          Public Roadmap
-        </Typography>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <Typography variant="h5" fontWeight="bold">
+            Public Roadmap
+          </Typography>
+          {isAdmin && (
+            <Tooltip title="Admin User">
+              <AdminIcon color="primary" />
+            </Tooltip>
+          )}
+        </Box>
         {user && (
           <Button
             variant="contained"
@@ -287,6 +312,14 @@ export default function RoadmapManager() {
       <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
         Suggest features, vote on ideas, and collaborate on the future of the
         app.
+        {isAdmin && (
+          <Typography
+            component="span"
+            sx={{ ml: 1, fontWeight: "bold", color: "primary.main" }}
+          >
+            As admin, you can manage status and priority.
+          </Typography>
+        )}
       </Typography>
 
       {/* Tag Filter Tabs */}
@@ -499,7 +532,19 @@ export default function RoadmapManager() {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>Edit Feature Request</DialogTitle>
+        <DialogTitle>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            Edit Feature Request
+            {isAdmin && (
+              <Chip
+                icon={<AdminIcon />}
+                label="Admin"
+                color="primary"
+                size="small"
+              />
+            )}
+          </Box>
+        </DialogTitle>
         <DialogContent>
           <TextField
             label="Title"
@@ -536,39 +581,52 @@ export default function RoadmapManager() {
               ))}
             </Select>
           </FormControl>
-          <FormControl fullWidth sx={{ mb: 2 }}>
-            <InputLabel>Status</InputLabel>
-            <Select
-              value={editPost.status}
-              onChange={(e) =>
-                setEditPost((prev) => ({
-                  ...prev,
-                  status: e.target.value as any,
-                }))
-              }
-            >
-              <MenuItem value="proposed">Proposed</MenuItem>
-              <MenuItem value="in_progress">In Progress</MenuItem>
-              <MenuItem value="completed">Completed</MenuItem>
-              <MenuItem value="rejected">Rejected</MenuItem>
-            </Select>
-          </FormControl>
-          <FormControl fullWidth>
-            <InputLabel>Priority</InputLabel>
-            <Select
-              value={editPost.priority}
-              onChange={(e) =>
-                setEditPost((prev) => ({
-                  ...prev,
-                  priority: e.target.value as any,
-                }))
-              }
-            >
-              <MenuItem value="low">Low</MenuItem>
-              <MenuItem value="medium">Medium</MenuItem>
-              <MenuItem value="high">High</MenuItem>
-            </Select>
-          </FormControl>
+
+          {/* Admin-only fields */}
+          {isAdmin && (
+            <>
+              <FormControl fullWidth sx={{ mb: 2 }}>
+                <InputLabel>Status</InputLabel>
+                <Select
+                  value={editPost.status}
+                  onChange={(e) =>
+                    setEditPost((prev) => ({
+                      ...prev,
+                      status: e.target.value as any,
+                    }))
+                  }
+                >
+                  <MenuItem value="proposed">Proposed</MenuItem>
+                  <MenuItem value="in_progress">In Progress</MenuItem>
+                  <MenuItem value="completed">Completed</MenuItem>
+                  <MenuItem value="rejected">Rejected</MenuItem>
+                </Select>
+              </FormControl>
+              <FormControl fullWidth>
+                <InputLabel>Priority</InputLabel>
+                <Select
+                  value={editPost.priority}
+                  onChange={(e) =>
+                    setEditPost((prev) => ({
+                      ...prev,
+                      priority: e.target.value as any,
+                    }))
+                  }
+                >
+                  <MenuItem value="low">Low</MenuItem>
+                  <MenuItem value="medium">Medium</MenuItem>
+                  <MenuItem value="high">High</MenuItem>
+                </Select>
+              </FormControl>
+            </>
+          )}
+
+          {/* Non-admin notice */}
+          {!isAdmin && (
+            <Typography variant="body2" color="textSecondary" sx={{ mt: 2 }}>
+              Status and priority can only be changed by the admin.
+            </Typography>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditDialogOpen(false)}>Cancel</Button>

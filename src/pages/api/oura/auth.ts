@@ -15,7 +15,8 @@ export default async function handler(
       return res.status(400).json({ error: "userId is required" });
     }
 
-    const clientId = process.env.NEXT_PUBLIC_OURA_CLIENT_ID;
+    // Use server-side OURA_CLIENT_ID instead of NEXT_PUBLIC_OURA_CLIENT_ID
+    const clientId = process.env.OURA_CLIENT_ID;
     
     if (!clientId) {
       console.error("OURA_CLIENT_ID environment variable is not set");

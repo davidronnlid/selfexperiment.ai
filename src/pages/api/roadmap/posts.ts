@@ -131,16 +131,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(401).json({ error: 'User ID is required' });
       }
 
+      // Check if user is admin for status/priority changes
+      const { data: userProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('username')
+        .eq('id', userId)
+        .single();
+
+      const isAdmin = userProfile?.username === 'davidronnlidmh';
+
       const updateData: any = {
         last_edited_by: userId,
         updated_at: new Date().toISOString()
       };
 
+      // Anyone can edit title, description, and tag
       if (title !== undefined) updateData.title = title.trim();
       if (description !== undefined) updateData.description = description?.trim() || null;
       if (tag !== undefined) updateData.tag = tag;
-      if (status !== undefined) updateData.status = status;
-      if (priority !== undefined) updateData.priority = priority;
+
+      // Only admin can edit status and priority
+      if (status !== undefined) {
+        if (isAdmin) {
+          updateData.status = status;
+        } else {
+          return res.status(403).json({ error: 'Only admin can change status' });
+        }
+      }
+
+      if (priority !== undefined) {
+        if (isAdmin) {
+          updateData.priority = priority;
+        } else {
+          return res.status(403).json({ error: 'Only admin can change priority' });
+        }
+      }
 
       const { data: post, error } = await supabaseAdmin
         .from('roadmap_posts')
