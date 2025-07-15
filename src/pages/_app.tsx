@@ -548,6 +548,35 @@ export default function App({ Component, pageProps }: AppProps) {
     setAutoLogNotification({ ...autoLogNotification, open: false });
   };
 
+  useEffect(() => {
+    // Handle OAuth redirects from production to localhost in development
+    if (
+      process.env.NODE_ENV === "development" &&
+      typeof window !== "undefined"
+    ) {
+      const url = window.location.href;
+      if (
+        url.includes("modularhealth.netlify.app") &&
+        url.includes("access_token")
+      ) {
+        // Extract the token and redirect to localhost
+        const tokenMatch = url.match(/access_token=([^&]+)/);
+        const expiresMatch = url.match(/expires_at=([^&]+)/);
+        const refreshMatch = url.match(/refresh_token=([^&]+)/);
+
+        if (tokenMatch) {
+          const accessToken = tokenMatch[1];
+          const expiresAt = expiresMatch ? expiresMatch[1] : "";
+          const refreshToken = refreshMatch ? refreshMatch[1] : "";
+
+          // Redirect to localhost with the token
+          const localhostUrl = `http://localhost:3000/log/now#access_token=${accessToken}&expires_at=${expiresAt}&refresh_token=${refreshToken}`;
+          window.location.href = localhostUrl;
+        }
+      }
+    }
+  }, []);
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />

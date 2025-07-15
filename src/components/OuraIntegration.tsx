@@ -20,6 +20,17 @@ import {
   Collapse,
 } from "@mui/material";
 import { Line } from "react-chartjs-2";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip as ChartTooltip,
+  Legend,
+  Filler,
+} from "chart.js";
 import { supabase } from "@/utils/supaBase";
 import { format, parseISO } from "date-fns";
 import {
@@ -31,6 +42,18 @@ import {
   FitnessCenter as FitnessIcon,
   Thermostat as ThermostatIcon,
 } from "@mui/icons-material";
+
+// Register Chart.js components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  ChartTooltip,
+  Legend,
+  Filler
+);
 
 interface OuraData {
   id: string;
@@ -102,22 +125,50 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
   // Check connection status
   const checkConnection = useCallback(async () => {
     try {
-      const { data: tokens } = await supabase
+      // Get current user session first
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.user?.id) {
+        console.log("[Oura Integration] No authenticated user");
+        setConnected(false);
+        setLoading(false);
+        return;
+      }
+
+      const actualUserId = session.user.id;
+      console.log("[Oura Integration] Checking tokens for user:", actualUserId);
+
+      const { data: tokens, error } = await supabase
         .from("oura_tokens")
         .select("access_token, created_at")
-        .eq("user_id", userId)
+        .eq("user_id", actualUserId)
         .order("created_at", { ascending: false })
         .limit(1);
 
-      setConnected(!!tokens && tokens.length > 0);
-      if (tokens && tokens.length > 0) {
+      if (error) {
+        console.error("Error checking Oura tokens:", error);
+        setConnected(false);
+        setLoading(false);
+        return;
+      }
+
+      console.log("[Oura Integration] Found tokens:", tokens?.length || 0);
+      const hasValidToken =
+        tokens && tokens.length > 0 && tokens[0].access_token;
+      setConnected(!!hasValidToken);
+
+      if (hasValidToken) {
         setLastSync(tokens[0].created_at);
       }
+
+      setLoading(false);
     } catch (error) {
       console.error("Error checking Oura connection:", error);
       setConnected(false);
+      setLoading(false);
     }
-  }, [userId]);
+  }, []);
 
   // Fetch Oura data
   const fetchData = useCallback(async () => {
@@ -150,10 +201,21 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
 
     try {
       setSyncing(true);
+
+      // Get the current session token
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        console.error("No session token available");
+        return;
+      }
+
       const response = await fetch("/api/oura/fetch", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
         },
       });
 
@@ -174,12 +236,25 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
   const handleConnect = async () => {
     try {
       setError(null);
+
+      // Get current user session
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.user?.id) {
+        setError("Please log in to connect your Oura account");
+        return;
+      }
+
+      const actualUserId = session.user.id;
+      console.log("[Oura Integration] Connecting Oura for user:", actualUserId);
+
       const response = await fetch("/api/oura/auth", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId: actualUserId }),
       });
 
       if (!response.ok) {
@@ -230,6 +305,10 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
   }, {} as { [key: string]: OuraData[] });
 
   const formatValue = (metric: string, value: number) => {
+    if (value === null || value === undefined || isNaN(value)) {
+      return "N/A";
+    }
+
     if (metric.includes("duration")) {
       return `${Math.round(value / 60)} min`;
     }
@@ -246,7 +325,14 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
   };
 
   const getMetricStats = (metricData: OuraData[]) => {
-    const values = metricData.map((d) => d.value);
+    const values = metricData
+      .map((d) => d.value)
+      .filter((v) => v !== null && v !== undefined && !isNaN(v));
+
+    if (values.length === 0) {
+      return { avg: 0, min: 0, max: 0, latest: 0 };
+    }
+
     const avg = values.reduce((a, b) => a + b, 0) / values.length;
     const min = Math.min(...values);
     const max = Math.max(...values);
@@ -420,13 +506,27 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
                             <Box sx={{ height: 200 }}>
                               <Line
                                 data={{
-                                  labels: metricData.map((d) =>
-                                    format(parseISO(d.date), "MMM dd")
-                                  ),
+                                  labels: metricData
+                                    .filter(
+                                      (d) =>
+                                        d.value !== null &&
+                                        d.value !== undefined &&
+                                        !isNaN(d.value)
+                                    )
+                                    .map((d) =>
+                                      format(parseISO(d.date), "MMM dd")
+                                    ),
                                   datasets: [
                                     {
                                       label: METRIC_LABELS[metric] || metric,
-                                      data: metricData.map((d) => d.value),
+                                      data: metricData
+                                        .filter(
+                                          (d) =>
+                                            d.value !== null &&
+                                            d.value !== undefined &&
+                                            !isNaN(d.value)
+                                        )
+                                        .map((d) => d.value),
                                       borderColor:
                                         METRIC_COLORS[metric] || "#3b82f6",
                                       backgroundColor: `${

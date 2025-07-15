@@ -91,6 +91,7 @@ export default function CorrelationAnalysis({
   const [selectedVar2, setSelectedVar2] = useState<string>("");
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [variables, setVariables] = useState<Record<string, string>>({}); // variable_id -> label
+  const [showExplanation, setShowExplanation] = useState(false); // Toggle for explanation
 
   useEffect(() => {
     // Fetch all variables for mapping
@@ -667,107 +668,140 @@ export default function CorrelationAnalysis({
                   Ranked by correlation strength
                 </Typography>
                 {allCorrelations.length === 0 ? (
-                  <Alert severity="info">
-                    <Box>
-                      <Typography
-                        variant="body1"
-                        sx={{ fontWeight: 600, mb: 1 }}
-                      >
-                        No correlations found. Here's why:
+                  <Box>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 1,
+                        mb: 1,
+                      }}
+                    >
+                      <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                        No correlations found
                       </Typography>
-                      {(() => {
-                        const analysis = getDataAnalysis();
-                        const insufficientData =
-                          analysis.overlappingPairs.filter(
-                            (pair) => pair.overlappingDates < 3
-                          );
-                        const hasData = analysis.variableData.length > 0;
+                      <IconButton
+                        size="small"
+                        onClick={() => setShowExplanation(!showExplanation)}
+                        sx={{ ml: 1 }}
+                      >
+                        {showExplanation ? (
+                          <ExpandLessIcon />
+                        ) : (
+                          <ExpandMoreIcon />
+                        )}
+                      </IconButton>
+                    </Box>
+                    <Collapse in={showExplanation}>
+                      <Alert severity="info">
+                        <Box>
+                          <Typography
+                            variant="body1"
+                            sx={{ fontWeight: 600, mb: 1 }}
+                          >
+                            Here's why:
+                          </Typography>
+                          {(() => {
+                            const analysis = getDataAnalysis();
+                            const insufficientData =
+                              analysis.overlappingPairs.filter(
+                                (pair) => pair.overlappingDates < 3
+                              );
+                            const hasData = analysis.variableData.length > 0;
 
-                        return (
-                          <Box>
-                            {!hasData ? (
-                              <Typography variant="body2" sx={{ mb: 1 }}>
-                                • <strong>No numeric data found</strong> in the
-                                selected time range. Make sure you have logged
-                                numeric values for your variables.
-                              </Typography>
-                            ) : (
-                              <>
-                                <Typography variant="body2" sx={{ mb: 1 }}>
-                                  • <strong>Data availability:</strong> You have{" "}
-                                  {analysis.totalVariables} numeric variables
-                                  with data
-                                </Typography>
-                                {analysis.variableData.map((varData, index) => (
-                                  <Typography
-                                    key={index}
-                                    variant="body2"
-                                    sx={{ ml: 2, mb: 0.5 }}
-                                  >
-                                    - {varData.variableName}:{" "}
-                                    {varData.totalLogs} logs (
-                                    {varData.dateRange
-                                      ? `${format(
-                                          parseISO(varData.dateRange.start),
-                                          "MMM d"
-                                        )} - ${format(
-                                          parseISO(varData.dateRange.end),
-                                          "MMM d"
-                                        )}`
-                                      : "no date range"}
-                                    )
+                            return (
+                              <Box>
+                                {!hasData ? (
+                                  <Typography variant="body2" sx={{ mb: 1 }}>
+                                    • <strong>No numeric data found</strong> in
+                                    the selected time range. Make sure you have
+                                    logged numeric values for your variables.
                                   </Typography>
-                                ))}
-                                <Typography
-                                  variant="body2"
-                                  sx={{ mt: 1, mb: 1 }}
-                                >
-                                  • <strong>Overlapping data:</strong> Need at
-                                  least 3 matching dates between variables for
-                                  correlation analysis
-                                </Typography>
-                                {insufficientData.length > 0 && (
-                                  <Box sx={{ ml: 2 }}>
-                                    {insufficientData
-                                      .slice(0, 3)
-                                      .map((pair, index) => (
+                                ) : (
+                                  <>
+                                    <Typography variant="body2" sx={{ mb: 1 }}>
+                                      • <strong>Data availability:</strong> You
+                                      have {analysis.totalVariables} numeric
+                                      variables with data
+                                    </Typography>
+                                    {analysis.variableData.map(
+                                      (varData, index) => (
                                         <Typography
                                           key={index}
                                           variant="body2"
-                                          sx={{ mb: 0.5 }}
+                                          sx={{ ml: 2, mb: 0.5 }}
                                         >
-                                          - {pair.var1Name} & {pair.var2Name}:{" "}
-                                          {pair.overlappingDates} overlapping
-                                          dates
+                                          - {varData.variableName}:{" "}
+                                          {varData.totalLogs} logs (
+                                          {varData.dateRange
+                                            ? `${format(
+                                                parseISO(
+                                                  varData.dateRange.start
+                                                ),
+                                                "MMM d"
+                                              )} - ${format(
+                                                parseISO(varData.dateRange.end),
+                                                "MMM d"
+                                              )}`
+                                            : "no date range"}
+                                          )
                                         </Typography>
-                                      ))}
-                                    {insufficientData.length > 3 && (
-                                      <Typography
-                                        variant="body2"
-                                        sx={{ fontStyle: "italic" }}
-                                      >
-                                        ... and {insufficientData.length - 3}{" "}
-                                        more pairs
-                                      </Typography>
+                                      )
                                     )}
-                                  </Box>
+                                    <Typography
+                                      variant="body2"
+                                      sx={{ mt: 1, mb: 1 }}
+                                    >
+                                      • <strong>Overlapping data:</strong> Need
+                                      at least 3 matching dates between
+                                      variables for correlation analysis
+                                    </Typography>
+                                    {insufficientData.length > 0 && (
+                                      <Box sx={{ ml: 2 }}>
+                                        {insufficientData
+                                          .slice(0, 3)
+                                          .map((pair, index) => (
+                                            <Typography
+                                              key={index}
+                                              variant="body2"
+                                              sx={{ mb: 0.5 }}
+                                            >
+                                              - {pair.var1Name} &{" "}
+                                              {pair.var2Name}:{" "}
+                                              {pair.overlappingDates}{" "}
+                                              overlapping dates
+                                            </Typography>
+                                          ))}
+                                        {insufficientData.length > 3 && (
+                                          <Typography
+                                            variant="body2"
+                                            sx={{ fontStyle: "italic" }}
+                                          >
+                                            ... and{" "}
+                                            {insufficientData.length - 3} more
+                                            pairs
+                                          </Typography>
+                                        )}
+                                      </Box>
+                                    )}
+                                    <Typography
+                                      variant="body2"
+                                      sx={{ mt: 1, fontWeight: 600 }}
+                                    >
+                                      💡 <strong>Tip:</strong> Try logging both
+                                      variables on the same days, or expand your
+                                      time range to get more overlapping data
+                                      points.
+                                    </Typography>
+                                  </>
                                 )}
-                                <Typography
-                                  variant="body2"
-                                  sx={{ mt: 1, fontWeight: 600 }}
-                                >
-                                  💡 <strong>Tip:</strong> Try logging both
-                                  variables on the same days, or expand your
-                                  time range to get more overlapping data
-                                  points.
-                                </Typography>
-                              </>
-                            )}
-                          </Box>
-                        );
-                      })()}
-                    </Box>
-                  </Alert>
+                              </Box>
+                            );
+                          })()}
+                        </Box>
+                      </Alert>
+                    </Collapse>
+                  </Box>
                 ) : (
                   <TableContainer component={Paper} sx={{ maxHeight: 400 }}>
                     <Table size="small" stickyHeader>

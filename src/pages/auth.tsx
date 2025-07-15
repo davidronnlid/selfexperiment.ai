@@ -42,10 +42,25 @@ export default function Auth() {
   }, [router]);
 
   const handleGoogleSignIn = async () => {
+    console.log("Starting Google OAuth...");
+    console.log("Current origin:", window.location.origin);
+    console.log("NODE_ENV:", process.env.NODE_ENV);
+
+    const redirectUrl =
+      process.env.NODE_ENV === "development"
+        ? "http://localhost:3000/log/now"
+        : `${window.location.origin}/log/now`;
+
+    console.log("Redirect URL:", redirectUrl);
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/log/now`,
+        redirectTo: redirectUrl,
+        queryParams: {
+          access_type: "offline",
+          prompt: "consent",
+        },
       },
     });
     if (error) {
@@ -78,7 +93,10 @@ export default function Auth() {
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/log/now`,
+            emailRedirectTo:
+              process.env.NODE_ENV === "development"
+                ? "http://localhost:3000/log/now"
+                : `${window.location.origin}/log/now`,
           },
         });
         if (error) {

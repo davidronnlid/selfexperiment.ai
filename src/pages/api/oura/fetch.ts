@@ -1,20 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { supabase } from "@/utils/supaBase";
+import { createClient } from "@supabase/supabase-js";
 
 interface HRData {
   bpm: number;
   source?: string;
   timestamp: string;
-}
-
-// Helper to get user_id from Supabase JWT in API route
-function getUserIdFromRequest(req: NextApiRequest): string | null {
-  const token = req.headers["authorization"]?.replace("Bearer ", "");
-  if (!token) return null;
-  const payload = JSON.parse(
-    Buffer.from(token.split(".")[1], "base64").toString()
-  );
-  return payload.sub || null;
 }
 
 export default async function handler(
@@ -23,15 +13,40 @@ export default async function handler(
 ) {
   console.log("[Oura Fetch] Handler started");
 
-  // Get user_id from JWT
-  const user_id = getUserIdFromRequest(req);
-  console.log("[Oura Fetch] user_id:", user_id);
-  if (!user_id) {
-    console.error("[Oura Fetch] No user_id in JWT");
-    return res.status(401).json({ error: "No user_id in JWT" });
+  // Get the JWT token from Authorization header
+  const authHeader = req.headers["authorization"];
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    console.error("[Oura Fetch] No authorization header");
+    return res.status(401).json({ error: "No authorization header" });
+  }
+  
+  const token = authHeader.replace("Bearer ", "");
+  
+  // Create an authenticated Supabase client using the JWT token
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    }
+  );
+
+  // Get the authenticated user
+  const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+  
+  if (userError || !user) {
+    console.error("[Oura Fetch] Authentication failed:", userError);
+    return res.status(401).json({ error: "Authentication failed" });
   }
 
-  // Fetch the Oura token for the current user
+  const user_id = user.id;
+  console.log("[Oura Fetch] user_id:", user_id);
+
+  // Fetch the Oura token for the current user (RLS will now work)
   const { data: tokens, error: tokenFetchError } = await supabase
     .from("oura_tokens")
     .select("access_token, refresh_token, id")
@@ -49,19 +64,19 @@ export default async function handler(
     return res.status(500).json({ error: "No token for user" });
   }
 
-  const token = tokens[0].access_token;
+  const ouraToken = tokens[0].access_token;
   const refresh_token = tokens[0].refresh_token;
   const token_id = tokens[0].id;
   console.log(
     "[Oura Fetch] token, refresh_token, token_id:",
-    token,
+    ouraToken,
     refresh_token,
     token_id
   );
 
   const end = new Date();
   const start = new Date();
-  start.setDate(end.getDate() - 6);
+  start.setDate(end.getDate() - 90);
 
   const fmt = (d: Date) => d.toISOString().split("T")[0];
   const startDate = fmt(start);
@@ -105,7 +120,7 @@ export default async function handler(
   try {
     console.log("[Oura Fetch] Fetching Oura data for user:", user_id);
     // Try fetching data with the current token
-    let readinessRes = await fetchData("daily_readiness", token);
+    let readinessRes = await fetchData("daily_readiness", ouraToken);
     if (readinessRes.status === 401) {
       // Token expired, refresh and retry
       const newToken = await refreshOuraToken();
@@ -115,7 +130,7 @@ export default async function handler(
       throw new Error(`fetch daily_readiness ${readinessRes.status}`);
     const readinessData = await readinessRes.json();
 
-    let sleepRes = await fetchData("daily_sleep", token);
+    let sleepRes = await fetchData("daily_sleep", ouraToken);
     if (sleepRes.status === 401) {
       const newToken = await refreshOuraToken();
       sleepRes = await fetchData("daily_sleep", newToken);
@@ -123,7 +138,7 @@ export default async function handler(
     if (!sleepRes.ok) throw new Error(`fetch daily_sleep ${sleepRes.status}`);
     const sleepData = await sleepRes.json();
 
-    let hrRes = await fetchData("heartrate", token);
+    let hrRes = await fetchData("heartrate", ouraToken);
     if (hrRes.status === 401) {
       const newToken = await refreshOuraToken();
       hrRes = await fetchData("heartrate", newToken);
