@@ -15,7 +15,6 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Paper,
   FormControl,
   InputLabel,
   Select,
@@ -42,9 +41,7 @@ import {
   TrendingUp as TrendingUpIcon,
   TrendingDown as TrendingDownIcon,
   TrendingFlat as TrendingFlatIcon,
-  Bedtime as BedtimeIcon,
   FitnessCenter as FitnessIcon,
-  Thermostat as ThermostatIcon,
   Timeline as TimelineIcon,
   LocalFireDepartment as LocalFireDepartmentIcon,
   BarChart as BarChartIcon,
@@ -68,7 +65,7 @@ interface OuraData {
   variable_id: string;
   date: string;
   value: number;
-  raw?: any;
+  raw?: Record<string, unknown>;
   created_at: string;
 }
 
