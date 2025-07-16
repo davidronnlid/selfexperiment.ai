@@ -193,19 +193,25 @@ const ManualLogsChart = memo(function ManualLogsChart({
       }
 
       // Calculate current streak (consecutive days with data)
-      const sortedLogs = [...numericLogs].sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      // Group logs by unique dates first
+      const uniqueDates = [...new Set(numericLogs.map((log) => log.date))].sort(
+        (a, b) => new Date(b).getTime() - new Date(a).getTime()
       );
+
       let streak = 0;
-      let lastDate = new Date();
+      let expectedDate = new Date();
+      expectedDate.setHours(0, 0, 0, 0); // Reset time to start of day
 
-      for (const log of sortedLogs) {
-        const logDate = new Date(log.date);
-        const daysDiff = differenceInDays(lastDate, logDate);
+      for (const dateStr of uniqueDates) {
+        const logDate = new Date(dateStr);
+        logDate.setHours(0, 0, 0, 0); // Reset time to start of day
 
-        if (daysDiff <= 1) {
+        const daysDiff = differenceInDays(expectedDate, logDate);
+
+        if (daysDiff === 0 || daysDiff === 1) {
           streak++;
-          lastDate = logDate;
+          expectedDate = new Date(logDate);
+          expectedDate.setDate(expectedDate.getDate() - 1); // Expect previous day next
         } else {
           break;
         }

@@ -34,6 +34,7 @@ import {
   CategoryScale,
   LinearScale,
   PointElement,
+  LineElement,
   Title,
   Tooltip as ChartTooltip,
   Legend,
@@ -57,6 +58,7 @@ ChartJS.register(
   CategoryScale,
   LinearScale,
   PointElement,
+  LineElement,
   Title,
   ChartTooltip,
   Legend
@@ -359,6 +361,8 @@ export default function CorrelationAnalysis({
       date: string;
       var1Value: number;
       var2Value: number;
+      var1Date: string;
+      var2Date: string;
     }[] = [];
 
     var1Logs.forEach((log1) => {
@@ -368,11 +372,37 @@ export default function CorrelationAnalysis({
           date: log1.date,
           var1Value: parseFloat(log1.value),
           var2Value: parseFloat(matchingLog2.value),
+          var1Date: log1.created_at || log1.date,
+          var2Date: matchingLog2.created_at || matchingLog2.date,
         });
       }
     });
 
     return matchedData;
+  };
+
+  // Calculate linear regression line
+  const calculateRegressionLine = (x: number[], y: number[]) => {
+    const n = x.length;
+    const sumX = x.reduce((a, b) => a + b, 0);
+    const sumY = y.reduce((a, b) => a + b, 0);
+    const sumXY = x.reduce((acc, xi, i) => acc + xi * y[i], 0);
+    const sumXX = x.reduce((acc, xi) => acc + xi * xi, 0);
+
+    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+    const intercept = (sumY - slope * sumX) / n;
+
+    const minX = Math.min(...x);
+    const maxX = Math.max(...x);
+
+    return {
+      slope,
+      intercept,
+      points: [
+        { x: minX, y: slope * minX + intercept },
+        { x: maxX, y: slope * maxX + intercept },
+      ],
+    };
   };
 
   const handleRowToggle = (variable1: string, variable2: string) => {
@@ -391,6 +421,7 @@ export default function CorrelationAnalysis({
     const x = matchedData.map((d) => d.var1Value);
     const y = matchedData.map((d) => d.var2Value);
     const correlation = calculateCorrelation(x, y);
+    const regressionLine = calculateRegressionLine(x, y);
 
     const chartData = {
       datasets: [
@@ -401,11 +432,29 @@ export default function CorrelationAnalysis({
           data: matchedData.map((d) => ({
             x: d.var1Value,
             y: d.var2Value,
+            date: d.date,
+            var1Date: d.var1Date,
+            var2Date: d.var2Date,
           })),
           backgroundColor: getCorrelationColor(correlation),
           borderColor: getCorrelationColor(correlation),
           pointRadius: 5,
           pointHoverRadius: 7,
+          type: "scatter" as const,
+          showLine: false,
+        },
+        {
+          label: "Trend Line",
+          data: regressionLine.points,
+          backgroundColor: "rgba(255, 255, 255, 0)",
+          borderColor: getCorrelationColor(correlation),
+          borderWidth: 2,
+          borderDash: [5, 5],
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          type: "line" as const,
+          showLine: true,
+          tension: 0,
         },
       ],
     };
@@ -423,15 +472,30 @@ export default function CorrelationAnalysis({
         },
       },
       plugins: {
-        legend: { display: false },
+        legend: {
+          display: true,
+          labels: {
+            filter: function (legendItem: any) {
+              return legendItem.text !== "Trend Line";
+            },
+          },
+        },
         tooltip: {
           mode: "nearest" as const,
           intersect: false,
           callbacks: {
             label: function (context: any) {
-              return `${getVariableDisplayName(variable1)}: ${
-                context.parsed.x
-              }, ${getVariableDisplayName(variable2)}: ${context.parsed.y}`;
+              if (context.datasetIndex === 1) return null; // Hide tooltip for trend line
+              const dataPoint = context.raw;
+              return [
+                `${getVariableDisplayName(variable1)}: ${dataPoint.x}`,
+                `${getVariableDisplayName(variable2)}: ${dataPoint.y}`,
+                `Date: ${format(parseISO(dataPoint.date), "MMM dd, yyyy")}`,
+              ];
+            },
+            title: function (context: any) {
+              if (context[0]?.datasetIndex === 1) return ""; // Hide title for trend line
+              return "Data Point";
             },
           },
         },
@@ -471,7 +535,13 @@ export default function CorrelationAnalysis({
       },
     };
 
-    return { chartData, chartOptions, correlation, matchedData };
+    return {
+      chartData,
+      chartOptions,
+      correlation,
+      matchedData,
+      regressionLine,
+    };
   };
 
   const allCorrelations = useMemo(() => {
@@ -588,6 +658,10 @@ export default function CorrelationAnalysis({
   const scatterChartData = useMemo(() => {
     if (!selectedCorrelation) return null;
 
+    const x = selectedCorrelation.data.map((d) => d.var1Value);
+    const y = selectedCorrelation.data.map((d) => d.var2Value);
+    const regressionLine = calculateRegressionLine(x, y);
+
     return {
       datasets: [
         {
@@ -597,11 +671,29 @@ export default function CorrelationAnalysis({
           data: selectedCorrelation.data.map((d) => ({
             x: d.var1Value,
             y: d.var2Value,
+            date: d.date,
+            var1Date: d.var1Date,
+            var2Date: d.var2Date,
           })),
           backgroundColor: getCorrelationColor(selectedCorrelation.correlation),
           borderColor: getCorrelationColor(selectedCorrelation.correlation),
           pointRadius: 5,
           pointHoverRadius: 7,
+          type: "scatter" as const,
+          showLine: false,
+        },
+        {
+          label: "Trend Line",
+          data: regressionLine.points,
+          backgroundColor: "rgba(255, 255, 255, 0)",
+          borderColor: getCorrelationColor(selectedCorrelation.correlation),
+          borderWidth: 2,
+          borderDash: [5, 5],
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          type: "line" as const,
+          showLine: true,
+          tension: 0,
         },
       ],
     };
@@ -620,15 +712,30 @@ export default function CorrelationAnalysis({
       },
     },
     plugins: {
-      legend: { display: false },
+      legend: {
+        display: true,
+        labels: {
+          filter: function (legendItem: any) {
+            return legendItem.text !== "Trend Line";
+          },
+        },
+      },
       tooltip: {
         mode: "nearest" as const,
         intersect: false,
         callbacks: {
           label: function (context: any) {
-            return `${getVariableDisplayName(selectedVar1)}: ${
-              context.parsed.x
-            }, ${getVariableDisplayName(selectedVar2)}: ${context.parsed.y}`;
+            if (context.datasetIndex === 1) return null; // Hide tooltip for trend line
+            const dataPoint = context.raw;
+            return [
+              `${getVariableDisplayName(selectedVar1)}: ${dataPoint.x}`,
+              `${getVariableDisplayName(selectedVar2)}: ${dataPoint.y}`,
+              `Date: ${format(parseISO(dataPoint.date), "MMM dd, yyyy")}`,
+            ];
+          },
+          title: function (context: any) {
+            if (context[0]?.datasetIndex === 1) return ""; // Hide title for trend line
+            return "Data Point";
           },
         },
       },
