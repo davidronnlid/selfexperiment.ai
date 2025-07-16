@@ -121,20 +121,16 @@ function VariableNameLink({
     <Link
       href={`/variable/${encodeURIComponent(variableSlug)}`}
       passHref
-      legacyBehavior
+      style={{
+        color: "#FFD700",
+        textDecoration: "underline",
+        fontWeight: 500,
+        fontSize: "0.85em",
+        marginLeft: 4,
+      }}
+      title={`View variable: ${variableLabel}`}
     >
-      <a
-        style={{
-          color: "#FFD700",
-          textDecoration: "underline",
-          fontWeight: 500,
-          fontSize: "0.85em",
-          marginLeft: 4,
-        }}
-        title={`View variable: ${variableLabel}`}
-      >
-        {variableLabel}
-      </a>
+      {variableLabel}
     </Link>
   );
 }

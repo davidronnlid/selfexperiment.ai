@@ -35,7 +35,14 @@ export default function Analytics() {
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
+    <Container
+      maxWidth="lg"
+      sx={{
+        py: 4,
+        minHeight: "100vh",
+        overflow: "visible",
+      }}
+    >
       <Typography variant="h3" component="h1" gutterBottom align="center">
         📊 Analytics & Insights
       </Typography>
@@ -46,20 +53,28 @@ export default function Analytics() {
         align="center"
         sx={{ mb: 4 }}
       >
-        Analyze your app data to discover patterns and insights
+        Analyze your health data to discover patterns and insights
       </Typography>
 
       {/* Data Analysis - No tabs needed since it's the only section */}
-      <Paper elevation={3} sx={{ p: 4 }}>
+      <Paper elevation={3} sx={{ p: 4, overflow: "visible" }}>
         <Typography variant="h5" gutterBottom>
           🔬 Data Analysis
         </Typography>
         <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-          Analyze your app data to discover patterns and insights.
+          Analyze your health data to discover patterns and insights.
         </Typography>
 
         {user && (
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+              overflow: "visible",
+              minHeight: "fit-content",
+            }}
+          >
             {showOuraSuccess && (
               <Alert severity="success" sx={{ mb: 2 }}>
                 Oura Ring connected successfully! Your data is now being

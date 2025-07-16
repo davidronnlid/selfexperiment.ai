@@ -25,6 +25,10 @@ import {
 import { FaGlobe, FaLock, FaPlus, FaQuestion, FaSmile } from "react-icons/fa";
 import { supabase } from "@/utils/supaBase";
 import UnitInput from "./UnitInput";
+import {
+  generateVariableUnitConfig,
+  getUnitDisplayInfo,
+} from "../utils/unitGroupUtils";
 
 interface VariableCreationDialogProps {
   open: boolean;
@@ -434,6 +438,34 @@ export default function VariableCreationDialog({
     return null;
   };
 
+  // Helper function to get unit conversion group
+  const getUnitConversionInfo = (unitValue: string) => {
+    const conversionGroups: Record<string, { group: string; units: string[] }> =
+      {
+        kg: { group: "mass", units: ["kg", "lb", "g", "oz"] },
+        lb: { group: "mass", units: ["kg", "lb", "g", "oz"] },
+        g: { group: "mass", units: ["kg", "lb", "g", "oz"] },
+        mg: { group: "mass", units: ["mg", "mcg"] },
+        L: { group: "volume", units: ["L", "ml", "cups", "fl oz"] },
+        ml: { group: "volume", units: ["L", "ml", "cups", "fl oz"] },
+        hours: {
+          group: "time",
+          units: ["hours", "minutes", "seconds", "days"],
+        },
+        minutes: { group: "time", units: ["hours", "minutes", "seconds"] },
+        "°C": { group: "temperature", units: ["°C", "°F"] },
+        "°F": { group: "temperature", units: ["°C", "°F"] },
+        "true/false": {
+          group: "boolean",
+          units: ["true/false", "yes/no", "0/1"],
+        },
+        "yes/no": { group: "boolean", units: ["true/false", "yes/no", "0/1"] },
+        "0/1": { group: "boolean", units: ["true/false", "yes/no", "0/1"] },
+      };
+
+    return conversionGroups[unitValue] || null;
+  };
+
   const handleSubmit = async () => {
     if (!variableName.trim()) {
       setError("Variable name is required");
@@ -488,18 +520,11 @@ export default function VariableCreationDialog({
       // Get category based on unit selection
       const unitCategory = getUnitCategory(unit);
 
-      // Set default units for boolean variables
-      let canonicalUnit = unit || null;
-      let unitGroup = null;
-      let convertibleUnits = null;
-      let defaultDisplayUnit = null;
-
-      if (constraints.type === "boolean") {
-        canonicalUnit = canonicalUnit || "true/false";
-        unitGroup = "boolean";
-        convertibleUnits = ["true/false", "yes/no", "0/1"];
-        defaultDisplayUnit = "true/false";
-      }
+      // Generate unit configuration using the new utility
+      const unitConfig = generateVariableUnitConfig(
+        unit || "units",
+        constraints.type
+      );
 
       const variableData = {
         slug,
@@ -509,10 +534,10 @@ export default function VariableCreationDialog({
         data_type: constraints.type,
         validation_rules:
           Object.keys(validationRules).length > 0 ? validationRules : null,
-        canonical_unit: canonicalUnit,
-        unit_group: unitGroup,
-        convertible_units: convertibleUnits,
-        default_display_unit: defaultDisplayUnit,
+        canonical_unit: unitConfig.canonical_unit,
+        unit_group: unitConfig.unit_group,
+        convertible_units: unitConfig.convertible_units,
+        default_display_unit: unitConfig.default_display_unit,
         source_type: source,
         category: unitCategory,
         is_public: isShared,
@@ -691,33 +716,147 @@ export default function VariableCreationDialog({
                 gap: 2,
               }}
             >
-              <FormControl fullWidth>
-                <InputLabel>Data Type</InputLabel>
-                <Select
-                  value={constraints.type}
-                  label="Data Type"
-                  onChange={(e) =>
-                    setConstraints((prev) => ({
-                      ...prev,
-                      type: e.target.value,
-                    }))
-                  }
-                >
-                  <MenuItem value="continuous">Continuous (Numbers)</MenuItem>
-                  <MenuItem value="categorical">Categorical (Options)</MenuItem>
-                  <MenuItem value="boolean">Boolean (Yes/No)</MenuItem>
-                  <MenuItem value="text">Text</MenuItem>
-                </Select>
-              </FormControl>
+              <Box>
+                <FormControl fullWidth>
+                  <InputLabel>Data Type</InputLabel>
+                  <Select
+                    value={constraints.type}
+                    label="Data Type"
+                    onChange={(e) =>
+                      setConstraints((prev) => ({
+                        ...prev,
+                        type: e.target.value,
+                      }))
+                    }
+                  >
+                    <MenuItem value="continuous">
+                      📊 Continuous (Numbers)
+                    </MenuItem>
+                    <MenuItem value="categorical">
+                      📋 Categorical (Options)
+                    </MenuItem>
+                    <MenuItem value="boolean">🔘 Boolean (Yes/No)</MenuItem>
+                    <MenuItem value="text">📝 Text</MenuItem>
+                  </Select>
+                </FormControl>
 
-              <UnitInput
-                value={unit}
-                onChange={handleUnitChange}
-                dataType={constraints.type}
-                label="Unit"
-                placeholder="Select or type a unit..."
-                fullWidth
-              />
+                {/* Data Type Info */}
+                <Box sx={{ mt: 1, p: 1, bgcolor: "grey.50", borderRadius: 1 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    {constraints.type === "continuous" && (
+                      <>
+                        📊 <strong>Continuous:</strong> Numeric values with
+                        units (weight, time, rating, etc.)
+                      </>
+                    )}
+                    {constraints.type === "categorical" && (
+                      <>
+                        📋 <strong>Categorical:</strong> Select from predefined
+                        options (mood level, exercise type, etc.)
+                      </>
+                    )}
+                    {constraints.type === "boolean" && (
+                      <>
+                        🔘 <strong>Boolean:</strong> Yes/No, True/False, or 0/1
+                        values
+                      </>
+                    )}
+                    {constraints.type === "text" && (
+                      <>
+                        📝 <strong>Text:</strong> Free-form text entries (notes,
+                        descriptions, etc.)
+                      </>
+                    )}
+                  </Typography>
+                </Box>
+              </Box>
+
+              <Box>
+                <UnitInput
+                  value={unit}
+                  onChange={handleUnitChange}
+                  dataType={constraints.type}
+                  label="Unit"
+                  placeholder="Select or type a unit..."
+                  fullWidth
+                />
+
+                {/* Unit Compatibility Info */}
+                {unit && (
+                  <Box
+                    sx={{ mt: 1, p: 1, bgcolor: "grey.50", borderRadius: 1 }}
+                  >
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: "block", mb: 0.5 }}
+                    >
+                      💡 <strong>Selected Unit:</strong> {unit}
+                    </Typography>
+
+                    {getUnitCategory(unit) && (
+                      <Typography
+                        variant="caption"
+                        color="primary.main"
+                        sx={{ display: "block", mb: 0.5 }}
+                      >
+                        📁 Category: {getUnitCategory(unit)}
+                      </Typography>
+                    )}
+
+                    {(() => {
+                      const unitDisplayInfo = getUnitDisplayInfo(unit);
+                      if (unitDisplayInfo.isConvertible) {
+                        return (
+                          <Box sx={{ mt: 0.5 }}>
+                            <Typography
+                              variant="caption"
+                              color="success.main"
+                              sx={{ display: "block", mb: 0.5 }}
+                            >
+                              🔄 <strong>Convertible to:</strong>{" "}
+                              {unitDisplayInfo.convertibleUnits.join(", ")}
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ fontSize: "0.65rem" }}
+                            >
+                              ℹ️ Users can switch between these units and values
+                              will convert automatically
+                            </Typography>
+                            {unitDisplayInfo.group && (
+                              <Typography
+                                variant="caption"
+                                color="info.main"
+                                sx={{
+                                  display: "block",
+                                  fontSize: "0.65rem",
+                                  mt: 0.5,
+                                }}
+                              >
+                                {unitDisplayInfo.icon} <strong>Group:</strong>{" "}
+                                {unitDisplayInfo.group.name}
+                              </Typography>
+                            )}
+                          </Box>
+                        );
+                      } else {
+                        return (
+                          <Typography
+                            variant="caption"
+                            color="warning.main"
+                            sx={{ display: "block", fontSize: "0.65rem" }}
+                          >
+                            ⚠️ This unit may not have automatic conversions
+                            available
+                          </Typography>
+                        );
+                      }
+                    })()}
+                  </Box>
+                )}
+              </Box>
             </Box>
 
             {constraints.type === "continuous" && (

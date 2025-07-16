@@ -73,16 +73,20 @@ interface LogEntry {
 
 interface VariableInfo {
   id: string;
+  slug: string;
   label: string;
   description?: string;
   icon?: string;
-  data_type: string;
+  data_type: "continuous" | "categorical" | "boolean" | "time" | "text";
   source_type: string;
   category?: string;
   validation_rules?: any;
   canonical_unit?: string;
   is_public: boolean;
   convertible_units?: string[]; // Added for unit conversion
+  created_at: string;
+  updated_at: string;
+  is_active: boolean;
 }
 
 export default function VariableLogsPage() {
@@ -145,8 +149,9 @@ export default function VariableLogsPage() {
 
   const fetchVariableInfo = async () => {
     try {
-      // Always use slug for lookup
       if (typeof variableName !== "string") return;
+
+      // Regular variable lookup by slug
       const slug = variableName.toLowerCase();
       const { data: variableData, error } = await supabase
         .from("variables")
@@ -176,43 +181,81 @@ export default function VariableLogsPage() {
       return;
     }
     try {
-      console.log("[DEBUG] fetchLogs: Starting UUID-based query", {
+      console.log("[DEBUG] fetchLogs: Starting query", {
         userId: user.id,
         variableId: variableInfo.id,
         variableName: variableInfo.label,
+        sourceType: variableInfo.source_type,
       });
 
-      // Only fetch logs using variable_id (UUID)
-      const { data: uuidLogs, error: uuidError } = await supabase
-        .from("logs")
-        .select("id, created_at, date, variable_id, value, notes, user_id")
-        .eq("user_id", user.id)
-        .eq("variable_id", variableInfo.id)
-        .order("created_at", { ascending: false })
-        .limit(50);
+      let mappedLogs: LogEntry[] = [];
 
-      console.log("[DEBUG] UUID-based logs query result:", {
-        data: uuidLogs,
-        error: uuidError,
-        count: uuidLogs?.length || 0,
-      });
+      // Check if this is an Oura variable
+      if (variableInfo.source_type === "oura") {
+        console.log(
+          "[DEBUG] Fetching Oura variable logs for:",
+          variableInfo.slug
+        );
 
-      if (uuidError) {
-        console.error("[DEBUG] Error fetching logs:", uuidError);
-        return;
+        const { data: ouraLogs, error: ouraError } = await supabase
+          .from("oura_variable_logs")
+          .select("id, date, variable_id, value, raw, created_at")
+          .eq("user_id", user.id)
+          .eq("variable_id", variableInfo.slug) // Oura uses slug as variable_id
+          .order("date", { ascending: false })
+          .limit(50);
+
+        console.log("[DEBUG] Oura logs query result:", {
+          data: ouraLogs,
+          error: ouraError,
+          count: ouraLogs?.length || 0,
+        });
+
+        if (ouraError) {
+          console.error("[DEBUG] Error fetching Oura logs:", ouraError);
+        } else {
+          mappedLogs = (ouraLogs || []).map((log: any) => ({
+            id: log.id,
+            date: log.date,
+            variable: variableInfo?.label || "Unknown Variable",
+            value: log.value?.toString() || "0",
+            notes: "Oura Ring data", // Clean, simple note for Oura data
+            created_at: log.created_at,
+            user_id: user.id,
+            variable_id: log.variable_id,
+          }));
+        }
+      } else {
+        // Regular variable - fetch from logs table using variable_id (UUID)
+        const { data: uuidLogs, error: uuidError } = await supabase
+          .from("logs")
+          .select("id, created_at, date, variable_id, value, notes, user_id")
+          .eq("user_id", user.id)
+          .eq("variable_id", variableInfo.id)
+          .order("created_at", { ascending: false })
+          .limit(50);
+
+        console.log("[DEBUG] Regular logs query result:", {
+          data: uuidLogs,
+          error: uuidError,
+          count: uuidLogs?.length || 0,
+        });
+
+        if (uuidError) {
+          console.error("[DEBUG] Error fetching regular logs:", uuidError);
+        } else {
+          mappedLogs = (uuidLogs || []).map((log: any) => ({
+            id: log.id,
+            date: log.date || log.created_at, // Use date field (local time) if available, fallback to created_at
+            variable: variableInfo?.label || "Unknown Variable",
+            value: log.value,
+            notes: log.notes,
+            created_at: log.created_at,
+            user_id: log.user_id,
+            variable_id: log.variable_id,
+          }));
+        }
       }
-
-      // Map to LogEntry shape
-      const mappedLogs = (uuidLogs || []).map((log: any) => ({
-        id: log.id,
-        date: log.date || log.created_at, // Use date field (local time) if available, fallback to created_at
-        variable: variableInfo?.label || "Unknown Variable",
-        value: log.value,
-        notes: log.notes,
-        created_at: log.created_at,
-        user_id: log.user_id,
-        variable_id: log.variable_id,
-      }));
 
       console.log("[DEBUG] Final mapped logs:", mappedLogs);
       setLogs(mappedLogs);
@@ -599,6 +642,24 @@ export default function VariableLogsPage() {
     );
   }
 
+  if (!variableInfo) {
+    return (
+      <Container maxWidth="lg" sx={{ py: 4 }}>
+        <Button
+          startIcon={<FaArrowLeft />}
+          onClick={() => router.back()}
+          sx={{ mb: 2 }}
+        >
+          Back
+        </Button>
+        <Alert severity="error">
+          Variable not found. This might be an Oura variable which has its own
+          dedicated page.
+        </Alert>
+      </Container>
+    );
+  }
+
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       {/* Header */}
@@ -621,461 +682,75 @@ export default function VariableLogsPage() {
       </Box>
 
       {/* Variable Information Card */}
-      {variableInfo && (
-        <Card sx={{ mb: 4 }}>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Variable Information
-            </Typography>
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Variable Information
+          </Typography>
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6}>
+              <Typography variant="body2" color="textSecondary">
+                Description:
+              </Typography>
+              <Typography variant="body1">
+                {variableInfo?.description || "No description available"}
+              </Typography>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <Typography variant="body2" color="textSecondary">
+                Data Type:
+              </Typography>
+              <Typography variant="body1">
+                {variableInfo?.data_type || "Unknown"}
+              </Typography>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <Typography variant="body2" color="textSecondary">
+                Unit:
+              </Typography>
+              <Typography variant="body1">
+                {displayUnit || variableInfo?.canonical_unit || "No unit"}
+              </Typography>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <Typography variant="body2" color="textSecondary">
+                Total Logs:
+              </Typography>
+              <Typography variant="body1">{logs.length}</Typography>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
 
-            <Box
-              sx={{
-                display: "flex",
-                flexDirection: { xs: "column", md: "row" },
-                gap: 3,
-              }}
-            >
-              <Box sx={{ flex: 1 }}>
-                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, mb: 2 }}>
-                  {variableInfo.description && (
-                    <Box sx={{ flex: "1 1 300px" }}>
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        gutterBottom
-                      >
-                        Description
-                      </Typography>
-                      <Typography variant="body1">
-                        {variableInfo.description}
-                      </Typography>
-                    </Box>
-                  )}
-
-                  {variableInfo.validation_rules &&
-                    (variableInfo.validation_rules.min !== undefined ||
-                      variableInfo.validation_rules.max !== undefined ||
-                      variableInfo.validation_rules.scaleMin !== undefined ||
-                      variableInfo.validation_rules.scaleMax !== undefined ||
-                      variableInfo.validation_rules.unit) && (
-                      <Box sx={{ flex: "1 1 200px" }}>
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                          gutterBottom
-                        >
-                          Rules
-                        </Typography>
-                        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-                          {variableInfo.validation_rules.min !== undefined &&
-                            variableInfo.validation_rules.max !== undefined && (
-                              <Chip
-                                label={`Range: ${
-                                  variableInfo.validation_rules.min
-                                }-${variableInfo.validation_rules.max}${
-                                  variableInfo.validation_rules.unit
-                                    ? ` ${variableInfo.validation_rules.unit}`
-                                    : ""
-                                }`}
-                                size="small"
-                                color="primary"
-                                variant="outlined"
-                              />
-                            )}
-                          {variableInfo.validation_rules.scaleMin !==
-                            undefined &&
-                            variableInfo.validation_rules.scaleMax !==
-                              undefined && (
-                              <Chip
-                                label={`Scale: ${variableInfo.validation_rules.scaleMin}-${variableInfo.validation_rules.scaleMax}`}
-                                size="small"
-                                color="primary"
-                                variant="outlined"
-                              />
-                            )}
-                          {variableInfo.validation_rules.unit && (
-                            <Chip
-                              label={`Unit: ${variableInfo.validation_rules.unit}`}
-                              size="small"
-                              color="secondary"
-                              variant="outlined"
-                            />
-                          )}
-                        </Box>
-                      </Box>
-                    )}
-                </Box>
-
-                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-                  <Chip
-                    label={`Source: ${
-                      variableInfo.source_type === "manual"
-                        ? "Manual Entry"
-                        : variableInfo.source_type
-                    }`}
-                    size="small"
-                    color="info"
-                    variant="outlined"
-                  />
-                  <Chip
-                    label={`Type: ${variableInfo.data_type || "Continuous"}`}
-                    size="small"
-                    color="success"
-                    variant="outlined"
-                  />
-                  {variableInfo.category && (
-                    <Chip
-                      label={`Category: ${variableInfo.category}`}
-                      size="small"
-                      color="default"
-                      variant="outlined"
-                    />
-                  )}
-                </Box>
-              </Box>
-
-              <Box sx={{ flex: "0 0 auto", minWidth: 300 }}>
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={isShared}
-                        onChange={(e) => handleSharingToggle(e.target.checked)}
-                        color="primary"
-                        disabled={sharingUpdateLoading}
-                      />
-                    }
-                    label={
-                      <Box
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 1,
-                        }}
-                      >
-                        {isShared ? <FaGlobe /> : <FaLock />}
-                        <Typography variant="body2">
-                          {isShared ? "Share with community" : "Keep private"}
-                        </Typography>
-                      </Box>
-                    }
-                  />
-
-                  {/* Unit Preference Selector */}
-                  {variableInfo.convertible_units &&
-                    variableInfo.convertible_units.length > 1 && (
-                      <FormControl size="small" sx={{ minWidth: 200 }}>
-                        <InputLabel>Preferred Display Unit</InputLabel>
-                        <Select
-                          value={displayUnit}
-                          onChange={(e) => updateDisplayUnit(e.target.value)}
-                          label="Preferred Display Unit"
-                          disabled={displayUnitLoading}
-                        >
-                          {variableInfo.convertible_units.map((unit) => (
-                            <MenuItem key={unit} value={unit}>
-                              {unit}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    )}
-
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    startIcon={<FaChartBar />}
-                    onClick={toggleDistribution}
-                    disabled={distributionLoading}
-                  >
-                    {showDistribution ? "Hide" : "Show"} Community Distribution
-                  </Button>
-                </Box>
-              </Box>
-            </Box>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Distribution Chart */}
-      {showDistribution && (
-        <Card sx={{ mb: 4 }}>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Community Distribution
-            </Typography>
-            {distributionLoading ? (
-              <Box display="flex" justifyContent="center" py={4}>
-                <CircularProgress />
-              </Box>
-            ) : distributionData.length === 0 ? (
-              <Alert severity="info">
-                No shared data available for this variable. Be the first to
-                share your data with the community!
-              </Alert>
-            ) : (
-              <Box sx={{ height: 300, mt: 2 }}>
-                <Bar
-                  data={{
-                    labels: distributionData.map((item) => item.range),
-                    datasets: [
-                      {
-                        label: "Number of Users",
-                        data: distributionData.map((item) => item.count),
-                        backgroundColor: "rgba(54, 162, 235, 0.6)",
-                        borderColor: "rgba(54, 162, 235, 1)",
-                        borderWidth: 1,
-                      },
-                    ],
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      title: {
-                        display: true,
-                        text: `Distribution of Average ${variableName} values across ${distributionData.reduce(
-                          (sum, item) => sum + item.count,
-                          0
-                        )} users`,
-                      },
-                      legend: {
-                        display: false,
-                      },
-                    },
-                    scales: {
-                      y: {
-                        beginAtZero: true,
-                        title: {
-                          display: true,
-                          text: "Number of Users",
-                        },
-                      },
-                      x: {
-                        title: {
-                          display: true,
-                          text: `${variableName}${
-                            variableInfo?.canonical_unit
-                              ? ` (${variableInfo.canonical_unit})`
-                              : ""
-                          }`,
-                        },
-                      },
-                    },
-                  }}
-                />
-              </Box>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* User Logs */}
+      {/* Recent Logs Table */}
       <Card>
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            Your Logs ({logs.length})
+            Recent Logs
           </Typography>
-
-          {/* Summary Statistics */}
-          {logs.length > 0 &&
-            (() => {
-              const stats = calculateStatistics();
-              return stats ? (
-                <Card
-                  sx={{
-                    mb: 3,
-                    bgcolor: "#1a1a1a",
-                    border: "1px solid #333",
-                    color: "#fff",
-                  }}
-                  elevation={2}
-                >
-                  <CardContent sx={{ pb: "16px !important" }}>
-                    <Typography
-                      variant="subtitle1"
-                      gutterBottom
-                      sx={{ color: "#ffd700", fontWeight: 600 }}
-                    >
-                      📊 Summary Statistics
-                    </Typography>
-                    <Box
-                      sx={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: 3,
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <Box sx={{ textAlign: "center", minWidth: "120px" }}>
-                        <Typography
-                          variant="h6"
-                          sx={{ color: "#ffd700", fontWeight: 700 }}
-                        >
-                          {stats.mean}
-                        </Typography>
-                        <Typography
-                          variant="caption"
-                          sx={{ color: "#cccccc", fontSize: "0.75rem" }}
-                        >
-                          Average
-                        </Typography>
-                      </Box>
-                      <Box sx={{ textAlign: "center", minWidth: "120px" }}>
-                        <Typography
-                          variant="h6"
-                          sx={{ color: "#4fc3f7", fontWeight: 700 }}
-                        >
-                          {stats.median}
-                        </Typography>
-                        <Typography
-                          variant="caption"
-                          sx={{ color: "#cccccc", fontSize: "0.75rem" }}
-                        >
-                          Median
-                        </Typography>
-                      </Box>
-                      <Box sx={{ textAlign: "center", minWidth: "120px" }}>
-                        <Typography
-                          variant="h6"
-                          sx={{ color: "#81c784", fontWeight: 700 }}
-                        >
-                          {stats.min}
-                        </Typography>
-                        <Typography
-                          variant="caption"
-                          sx={{ color: "#cccccc", fontSize: "0.75rem" }}
-                        >
-                          Min
-                        </Typography>
-                      </Box>
-                      <Box sx={{ textAlign: "center", minWidth: "120px" }}>
-                        <Typography
-                          variant="h6"
-                          sx={{ color: "#e57373", fontWeight: 700 }}
-                        >
-                          {stats.max}
-                        </Typography>
-                        <Typography
-                          variant="caption"
-                          sx={{ color: "#cccccc", fontSize: "0.75rem" }}
-                        >
-                          Max
-                        </Typography>
-                      </Box>
-                      <Box sx={{ textAlign: "center", minWidth: "120px" }}>
-                        <Typography
-                          variant="h6"
-                          sx={{ color: "#ffb74d", fontWeight: 700 }}
-                        >
-                          {stats.standardDeviation}
-                        </Typography>
-                        <Typography
-                          variant="caption"
-                          sx={{ color: "#cccccc", fontSize: "0.75rem" }}
-                        >
-                          Std Dev
-                        </Typography>
-                      </Box>
-                      <Box sx={{ textAlign: "center", minWidth: "120px" }}>
-                        <Typography
-                          variant="h6"
-                          sx={{ color: "#ba68c8", fontWeight: 700 }}
-                        >
-                          {stats.range}
-                        </Typography>
-                        <Typography
-                          variant="caption"
-                          sx={{ color: "#cccccc", fontSize: "0.75rem" }}
-                        >
-                          Range
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </CardContent>
-                </Card>
-              ) : null;
-            })()}
-
           {logs.length === 0 ? (
             <Alert severity="info">
-              No logs found for this variable. Start logging to see your data
-              here!
+              No logs found for this variable. Start logging data to see it
+              here.
             </Alert>
           ) : (
-            <TableContainer component={Paper} elevation={0}>
+            <TableContainer component={Paper}>
               <Table>
                 <TableHead>
                   <TableRow>
                     <TableCell>Date</TableCell>
                     <TableCell>Value</TableCell>
                     <TableCell>Notes</TableCell>
-                    <TableCell>Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {logs.map((log) => (
+                  {logs.slice(0, 20).map((log) => (
                     <TableRow key={log.id}>
-                      <TableCell>{formatDate(log.date)}</TableCell>
-                      {editingLogId === log.id ? (
-                        <>
-                          <TableCell>
-                            <TextField
-                              size="small"
-                              value={editValue}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              fullWidth
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <TextField
-                              size="small"
-                              value={editNotes}
-                              onChange={(e) => setEditNotes(e.target.value)}
-                              fullWidth
-                              multiline
-                              rows={1}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <IconButton
-                              onClick={() => updateLog(log.id)}
-                              color="primary"
-                              size="small"
-                            >
-                              <FaCheck />
-                            </IconButton>
-                            <IconButton
-                              onClick={cancelEdit}
-                              color="secondary"
-                              size="small"
-                            >
-                              <FaTimes />
-                            </IconButton>
-                          </TableCell>
-                        </>
-                      ) : (
-                        <>
-                          <TableCell>{log.value}</TableCell>
-                          <TableCell>{log.notes || "-"}</TableCell>
-                          <TableCell>
-                            <IconButton
-                              onClick={() => startEdit(log)}
-                              color="primary"
-                              size="small"
-                            >
-                              <FaEdit />
-                            </IconButton>
-                            <IconButton
-                              onClick={() => deleteLog(log.id)}
-                              color="error"
-                              size="small"
-                            >
-                              <FaTrash />
-                            </IconButton>
-                          </TableCell>
-                        </>
-                      )}
+                      <TableCell>
+                        {new Date(log.date).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>{log.value}</TableCell>
+                      <TableCell>{log.notes || "-"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

@@ -40,6 +40,10 @@ import {
 } from "chart.js";
 import { supabase } from "@/utils/supaBase";
 import { format, parseISO, differenceInDays } from "date-fns";
+import {
+  getOuraVariableLabel,
+  isOuraVariable,
+} from "@/utils/ouraVariableUtils";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TrendingDownIcon from "@mui/icons-material/TrendingDown";
 import AnalyticsIcon from "@mui/icons-material/Analytics";
@@ -59,12 +63,13 @@ ChartJS.register(
 );
 
 interface ManualLog {
-  id: number;
+  id: number | string;
   date: string;
   variable_id: string;
   value: string;
   notes?: string;
   created_at: string;
+  source?: string; // Added source field
 }
 
 interface CorrelationAnalysisProps {
@@ -92,6 +97,17 @@ export default function CorrelationAnalysis({
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [variables, setVariables] = useState<Record<string, string>>({}); // variable_id -> label
   const [showExplanation, setShowExplanation] = useState(false); // Toggle for explanation
+  const [showCorrelationAnalysis, setShowCorrelationAnalysis] = useState(true); // Toggle for correlation section
+
+  // Helper function to get the best display name for any variable
+  const getVariableDisplayName = (variableId: string): string => {
+    // First check if it's an Oura variable
+    if (isOuraVariable(variableId)) {
+      return getOuraVariableLabel(variableId);
+    }
+    // Then check if we have it in our variables mapping
+    return variables[variableId] || variableId;
+  };
 
   useEffect(() => {
     // Fetch all variables for mapping
@@ -132,19 +148,117 @@ export default function CorrelationAnalysis({
       const daysBack = parseInt(timeRange);
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - daysBack);
+      const cutoffDateString = cutoffDate.toISOString();
 
-      const { data, error } = await supabase
-        .from("logs")
-        .select("id, date, variable_id, value, notes, created_at")
-        .eq("user_id", userId)
-        .gte("date", cutoffDate.toISOString())
-        .order("date", { ascending: true });
+      // Fetch from all data sources in parallel
+      const [manualLogsResult, ouraLogsResult, withingsLogsResult] =
+        await Promise.all([
+          // Manual logs from logs table
+          supabase
+            .from("logs")
+            .select("id, date, variable_id, value, notes, created_at, source")
+            .eq("user_id", userId)
+            .gte("date", cutoffDateString)
+            .order("date", { ascending: true }),
 
-      if (error) throw error;
-      setLogs(data || []);
+          // Oura data from oura_variable_logs table
+          supabase
+            .from("oura_variable_logs")
+            .select("id, date, variable_id, value, source, created_at")
+            .eq("user_id", userId)
+            .gte("date", cutoffDate.toISOString().split("T")[0])
+            .order("date", { ascending: true }),
+
+          // Withings data from withings_variable_logs table
+          supabase
+            .from("withings_variable_logs")
+            .select("id, date, variable, value")
+            .eq("user_id", userId)
+            .gte("date", cutoffDate.toISOString().split("T")[0])
+            .order("date", { ascending: true }),
+        ]);
+
+      // Check for errors
+      if (manualLogsResult.error) {
+        console.error("Error fetching manual logs:", manualLogsResult.error);
+      }
+      if (ouraLogsResult.error) {
+        console.error("Error fetching Oura logs:", ouraLogsResult.error);
+      }
+      if (withingsLogsResult.error) {
+        console.error(
+          "Error fetching Withings logs:",
+          withingsLogsResult.error
+        );
+      }
+
+      // Combine all data into a unified format
+      const allLogs: ManualLog[] = [];
+
+      // Add manual logs (already in correct format)
+      if (manualLogsResult.data) {
+        allLogs.push(
+          ...manualLogsResult.data.map((log: any) => ({
+            id: log.id,
+            date: log.date,
+            variable_id: log.variable_id,
+            value: log.value,
+            notes: log.notes || "",
+            created_at: log.created_at,
+            source: log.source || "manual",
+          }))
+        );
+      }
+
+      // Add Oura logs (convert to manual log format)
+      if (ouraLogsResult.data) {
+        allLogs.push(
+          ...ouraLogsResult.data.map((log: any) => ({
+            id: `oura_${log.id}`,
+            date: log.date,
+            variable_id: log.variable_id, // Oura uses 'variable_id' field
+            value: log.value?.toString() || "0",
+            notes: `Oura data (${log.source || "oura"})`,
+            created_at: log.created_at,
+            source: log.source || "oura",
+          }))
+        );
+      }
+
+      // Add Withings logs (convert to manual log format)
+      if (withingsLogsResult.data) {
+        allLogs.push(
+          ...withingsLogsResult.data.map((log: any) => ({
+            id: `withings_${log.id}`,
+            date: log.date,
+            variable_id: log.variable, // Withings uses 'variable' field
+            value: log.value?.toString() || "0",
+            notes: "Withings data",
+            created_at: log.created_at || new Date().toISOString(), // Fallback if created_at doesn't exist
+            source: "withings",
+          }))
+        );
+      }
+
+      // Sort all logs by date
+      allLogs.sort(
+        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+      );
+
+      console.log(
+        `📊 Correlation analysis loaded ${allLogs.length} data points from all sources:`,
+        {
+          manual: manualLogsResult.data?.length || 0,
+          oura: ouraLogsResult.data?.length || 0,
+          withings: withingsLogsResult.data?.length || 0,
+          total: allLogs.length,
+        }
+      );
+
+      setLogs(allLogs);
     } catch (err) {
-      console.error("Error fetching manual logs:", err);
-      setError("Failed to load manual logs");
+      console.error("Error fetching logs from all sources:", err);
+      setError("Failed to load data from all sources");
     } finally {
       setLoading(false);
     }
@@ -166,11 +280,33 @@ export default function CorrelationAnalysis({
     return !isNaN(parseFloat(value)) && isFinite(parseFloat(value));
   };
 
-  const getNumericVariables = () => {
-    const variables = new Set(
-      logs.filter((log) => isNumeric(log.value)).map((log) => log.variable_id)
+  // Check if a variable has all zero values
+  const hasAllZeroValues = (variableId: string): boolean => {
+    const variableLogs = logs.filter(
+      (log) => log.variable_id === variableId && isNumeric(log.value)
     );
-    return Array.from(variables).sort();
+
+    if (variableLogs.length === 0) return true; // No data is like having all zeros
+
+    return variableLogs.every((log) => parseFloat(log.value) === 0);
+  };
+
+  const getNumericVariables = (): string[] => {
+    const variableGroups = logs.reduce((acc, log) => {
+      if (isNumeric(log.value)) {
+        if (!acc[log.variable_id]) {
+          acc[log.variable_id] = [];
+        }
+        acc[log.variable_id].push(parseFloat(log.value));
+      }
+      return acc;
+    }, {} as Record<string, number[]>);
+
+    return Object.keys(variableGroups).filter((variableId) => {
+      const values = variableGroups[variableId];
+      // Filter out variables with less than 3 data points or all zero values
+      return values.length >= 3 && !hasAllZeroValues(variableId);
+    });
   };
 
   // Calculate Pearson correlation coefficient
@@ -259,9 +395,9 @@ export default function CorrelationAnalysis({
     const chartData = {
       datasets: [
         {
-          label: `${variables[variable1] || variable1} vs ${
-            variables[variable2] || variable2
-          }`,
+          label: `${getVariableDisplayName(
+            variable1
+          )} vs ${getVariableDisplayName(variable2)}`,
           data: matchedData.map((d) => ({
             x: d.var1Value,
             y: d.var2Value,
@@ -277,14 +413,25 @@ export default function CorrelationAnalysis({
     const chartOptions = {
       responsive: true,
       maintainAspectRatio: false,
+      resizeDelay: 0,
+      layout: {
+        padding: {
+          left: 10,
+          right: 10,
+          top: 10,
+          bottom: 20,
+        },
+      },
       plugins: {
         legend: { display: false },
         tooltip: {
+          mode: "nearest" as const,
+          intersect: false,
           callbacks: {
             label: function (context: any) {
-              return `${variables[variable1] || variable1}: ${
+              return `${getVariableDisplayName(variable1)}: ${
                 context.parsed.x
-              }, ${variables[variable2] || variable2}: ${context.parsed.y}`;
+              }, ${getVariableDisplayName(variable2)}: ${context.parsed.y}`;
             },
           },
         },
@@ -292,12 +439,35 @@ export default function CorrelationAnalysis({
       scales: {
         x: {
           display: true,
-          title: { display: true, text: variables[variable1] || variable1 },
+          title: {
+            display: true,
+            text: getVariableDisplayName(variable1),
+            font: { size: 12 },
+            padding: { top: 10 },
+          },
+          ticks: {
+            font: { size: 11 },
+            padding: 5,
+          },
         },
         y: {
           display: true,
-          title: { display: true, text: variables[variable2] || variable2 },
+          title: {
+            display: true,
+            text: getVariableDisplayName(variable2),
+            font: { size: 12 },
+            padding: { bottom: 10 },
+          },
+          ticks: {
+            font: { size: 11 },
+            padding: 5,
+          },
         },
+      },
+      interaction: {
+        mode: "nearest" as const,
+        axis: "xy" as const,
+        intersect: false,
       },
     };
 
@@ -366,7 +536,7 @@ export default function CorrelationAnalysis({
         const dates = variableLogs.map((log) => log.date).sort();
         analysis.variableData.push({
           variableId,
-          variableName: variables[variableId] || variableId,
+          variableName: getVariableDisplayName(variableId),
           totalLogs: variableLogs.length,
           dateRange: {
             start: dates[0],
@@ -386,8 +556,8 @@ export default function CorrelationAnalysis({
         analysis.overlappingPairs.push({
           var1,
           var2,
-          var1Name: variables[var1] || var1,
-          var2Name: variables[var2] || var2,
+          var1Name: getVariableDisplayName(var1),
+          var2Name: getVariableDisplayName(var2),
           overlappingDates: matchedData.length,
         });
       }
@@ -421,9 +591,9 @@ export default function CorrelationAnalysis({
     return {
       datasets: [
         {
-          label: `${variables[selectedVar1] || selectedVar1} vs ${
-            variables[selectedVar2] || selectedVar2
-          }`,
+          label: `${getVariableDisplayName(
+            selectedVar1
+          )} vs ${getVariableDisplayName(selectedVar2)}`,
           data: selectedCorrelation.data.map((d) => ({
             x: d.var1Value,
             y: d.var2Value,
@@ -440,14 +610,25 @@ export default function CorrelationAnalysis({
   const scatterChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    resizeDelay: 0,
+    layout: {
+      padding: {
+        left: 10,
+        right: 10,
+        top: 10,
+        bottom: 20,
+      },
+    },
     plugins: {
       legend: { display: false },
       tooltip: {
+        mode: "nearest" as const,
+        intersect: false,
         callbacks: {
           label: function (context: any) {
-            return `${variables[selectedVar1] || selectedVar1}: ${
+            return `${getVariableDisplayName(selectedVar1)}: ${
               context.parsed.x
-            }, ${variables[selectedVar2] || selectedVar2}: ${context.parsed.y}`;
+            }, ${getVariableDisplayName(selectedVar2)}: ${context.parsed.y}`;
           },
         },
       },
@@ -455,13 +636,54 @@ export default function CorrelationAnalysis({
     scales: {
       x: {
         display: true,
-        title: { display: true, text: variables[selectedVar1] || selectedVar1 },
+        title: {
+          display: true,
+          text: getVariableDisplayName(selectedVar1),
+          font: { size: 12 },
+          padding: { top: 10 },
+        },
+        ticks: {
+          font: { size: 11 },
+          padding: 5,
+        },
       },
       y: {
         display: true,
-        title: { display: true, text: variables[selectedVar2] || selectedVar2 },
+        title: {
+          display: true,
+          text: getVariableDisplayName(selectedVar2),
+          font: { size: 12 },
+          padding: { bottom: 10 },
+        },
+        ticks: {
+          font: { size: 11 },
+          padding: 5,
+        },
       },
     },
+    interaction: {
+      mode: "nearest" as const,
+      axis: "xy" as const,
+      intersect: false,
+    },
+  };
+
+  // Function to get data source breakdown
+  const getDataSourceBreakdown = () => {
+    const breakdown = {
+      manual: logs.filter((log) => !log.source || log.source === "manual")
+        .length,
+      oura: logs.filter((log) => log.source === "oura").length,
+      withings: logs.filter((log) => log.source === "withings").length,
+      other: logs.filter(
+        (log) =>
+          log.source && !["manual", "oura", "withings"].includes(log.source)
+      ).length,
+      total: 0,
+    };
+    breakdown.total =
+      breakdown.manual + breakdown.oura + breakdown.withings + breakdown.other;
+    return breakdown;
   };
 
   if (loading) {
@@ -480,7 +702,7 @@ export default function CorrelationAnalysis({
   if (error) {
     return (
       <Alert severity="error" sx={{ mt: 2 }}>
-        {error}
+        {error}. Unable to load data from all sources for correlation analysis.
       </Alert>
     );
   }
@@ -491,545 +713,832 @@ export default function CorrelationAnalysis({
     return (
       <Alert severity="info" sx={{ mt: 2 }}>
         You need at least 2 numeric variables to perform correlation analysis.
-        Start logging more different types of data to see correlations!
+        Start logging more different types of data across all sources (manual,
+        Oura, Withings, etc.) to see correlations!
       </Alert>
     );
   }
 
   return (
     <Box>
-      <Box
-        sx={{
-          mb: 3,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: 2,
-        }}
-      >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <AnalyticsIcon color="primary" />
-          <Typography variant="h6" component="h3">
-            Correlation Analysis
-          </Typography>
-        </Box>
-        <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-          <FormControl size="small" sx={{ minWidth: 120 }}>
-            <InputLabel>Time Range</InputLabel>
-            <Select
-              value={timeRange}
-              label="Time Range"
-              onChange={handleTimeRangeChange}
-            >
-              <MenuItem value="30">Last 30 days</MenuItem>
-              <MenuItem value="90">Last 90 days</MenuItem>
-              <MenuItem value="180">Last 6 months</MenuItem>
-              <MenuItem value="365">Last year</MenuItem>
-            </Select>
-          </FormControl>
-          <FormControl size="small" sx={{ minWidth: 150 }}>
-            <InputLabel>Variable 1</InputLabel>
-            <Select
-              value={selectedVar1}
-              label="Variable 1"
-              onChange={handleVar1Change}
-            >
-              {numericVariables.map((variable) => (
-                <MenuItem key={variable} value={variable}>
-                  <VariableLinkSimple
-                    variableId={variable}
-                    variables={variables}
-                    variant="inherit"
-                    underline={false}
-                    onClick={() => {}} // Prevent navigation when in dropdown
-                    forceAsText={true}
-                  />
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <FormControl size="small" sx={{ minWidth: 150 }}>
-            <InputLabel>Variable 2</InputLabel>
-            <Select
-              value={selectedVar2}
-              label="Variable 2"
-              onChange={handleVar2Change}
-            >
-              {numericVariables
-                .filter((v) => v !== selectedVar1)
-                .map((variable) => (
-                  <MenuItem key={variable} value={variable}>
-                    <VariableLinkSimple
-                      variableId={variable}
-                      variables={variables}
-                      variant="inherit"
-                      underline={false}
-                      onClick={() => {}} // Prevent navigation when in dropdown
-                      forceAsText={true}
-                    />
-                  </MenuItem>
-                ))}
-            </Select>
-          </FormControl>
-        </Box>
-      </Box>
-
-      <Stack spacing={3}>
-        {/* Scatter Plot and Table */}
-        <Box
-          sx={{
-            display: "flex",
-            gap: 3,
-            flexDirection: { xs: "column", md: "row" },
-          }}
-        >
-          {selectedCorrelation && scatterChartData && (
-            <Box sx={{ flex: selectedCorrelation ? 2 : 1 }}>
-              <Card>
-                <CardContent>
-                  <Typography variant="h6" component="h4" gutterBottom>
-                    {variables[selectedVar1] || selectedVar1} vs{" "}
-                    {variables[selectedVar2] || selectedVar2}
-                  </Typography>
-                  <Box
-                    sx={{ display: "flex", gap: 1, mb: 2, flexWrap: "wrap" }}
-                  >
-                    <Chip
-                      label={`Correlation: ${selectedCorrelation.correlation}`}
-                      size="small"
-                      sx={{
-                        bgcolor: getCorrelationColor(
-                          selectedCorrelation.correlation
-                        ),
-                        color: "white",
-                      }}
-                    />
-                    <Chip
-                      label={`${selectedCorrelation.strength} ${selectedCorrelation.direction}`}
-                      size="small"
-                      variant="outlined"
-                    />
-                    <Chip
-                      label={`${selectedCorrelation.data.length} data points`}
-                      size="small"
-                      color="primary"
-                    />
-                  </Box>
-
-                  {/* Educational Information */}
-                  <Alert
-                    severity="info"
-                    icon={<InfoIcon />}
-                    sx={{ mb: 2, bgcolor: "#e3f2fd" }}
-                  >
-                    <Typography
-                      variant="body2"
-                      sx={{ fontWeight: 600, mb: 0.5 }}
-                    >
-                      Understanding Correlation (r ={" "}
-                      {selectedCorrelation.correlation}):
-                    </Typography>
-                    <Typography variant="body2" component="div">
-                      • <strong>Correlation ≠ Causation:</strong> A correlation
-                      doesn't mean one variable causes the other
-                      <br />• <strong>Range:</strong> Values from -1 (perfect
-                      negative) to +1 (perfect positive)
-                      <br />• <strong>Strength:</strong> |0.7+| = strong,
-                      |0.3-0.7| = moderate, |0.1-0.3| = weak
-                      <br />• <strong>Confounding:</strong> Other variables may
-                      influence both measurements
-                    </Typography>
-                  </Alert>
-
-                  <Box sx={{ height: 400 }}>
-                    <Scatter
-                      data={scatterChartData}
-                      options={scatterChartOptions}
-                    />
-                  </Box>
-                </CardContent>
-              </Card>
-            </Box>
-          )}
-
-          {/* Correlation Table */}
-          <Box sx={{ flex: selectedCorrelation ? 1 : 1 }}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" component="h4" gutterBottom>
-                  All Correlations
-                </Typography>
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{ mb: 2 }}
-                >
-                  Ranked by correlation strength
-                </Typography>
-                {allCorrelations.length === 0 ? (
-                  <Box>
-                    <Box
-                      sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 1,
-                        mb: 1,
-                      }}
-                    >
-                      <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                        No correlations found
-                      </Typography>
-                      <IconButton
+      {/* Data Source Breakdown */}
+      {logs.length > 0 && (
+        <Box sx={{ mb: 3 }}>
+          <Card variant="outlined">
+            <CardContent sx={{ py: 2 }}>
+              <Typography
+                variant="subtitle2"
+                gutterBottom
+                color="textSecondary"
+              >
+                Data Sources Included in Analysis
+              </Typography>
+              <Box
+                sx={{
+                  display: "flex",
+                  gap: 1,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                {(() => {
+                  const breakdown = getDataSourceBreakdown();
+                  return (
+                    <>
+                      <Chip
+                        label={`Manual: ${breakdown.manual}`}
                         size="small"
-                        onClick={() => setShowExplanation(!showExplanation)}
+                        color={breakdown.manual > 0 ? "primary" : "default"}
+                        variant={breakdown.manual > 0 ? "filled" : "outlined"}
+                      />
+                      <Chip
+                        label={`Oura: ${breakdown.oura}`}
+                        size="small"
+                        color={breakdown.oura > 0 ? "secondary" : "default"}
+                        variant={breakdown.oura > 0 ? "filled" : "outlined"}
+                      />
+                      <Chip
+                        label={`Withings: ${breakdown.withings}`}
+                        size="small"
+                        color={breakdown.withings > 0 ? "success" : "default"}
+                        variant={breakdown.withings > 0 ? "filled" : "outlined"}
+                      />
+                      {breakdown.other > 0 && (
+                        <Chip
+                          label={`Other: ${breakdown.other}`}
+                          size="small"
+                          color="info"
+                          variant="filled"
+                        />
+                      )}
+                      <Typography
+                        variant="body2"
+                        color="textSecondary"
                         sx={{ ml: 1 }}
                       >
-                        {showExplanation ? (
-                          <ExpandLessIcon />
-                        ) : (
-                          <ExpandMoreIcon />
-                        )}
-                      </IconButton>
-                    </Box>
-                    <Collapse in={showExplanation}>
-                      <Alert severity="info">
-                        <Box>
-                          <Typography
-                            variant="body1"
-                            sx={{ fontWeight: 600, mb: 1 }}
-                          >
-                            Here's why:
-                          </Typography>
-                          {(() => {
-                            const analysis = getDataAnalysis();
-                            const insufficientData =
-                              analysis.overlappingPairs.filter(
-                                (pair) => pair.overlappingDates < 3
-                              );
-                            const hasData = analysis.variableData.length > 0;
+                        Total: {breakdown.total} data points
+                      </Typography>
+                    </>
+                  );
+                })()}
+              </Box>
+            </CardContent>
+          </Card>
+        </Box>
+      )}
 
-                            return (
+      <Stack spacing={3}>
+        {/* Expandable Comprehensive Correlation Analysis Section */}
+        <Accordion
+          expanded={showCorrelationAnalysis}
+          onChange={() => setShowCorrelationAnalysis(!showCorrelationAnalysis)}
+          elevation={2}
+        >
+          <AccordionSummary
+            expandIcon={<ExpandMoreIcon />}
+            aria-controls="correlation-analysis-content"
+            id="correlation-analysis-header"
+            sx={{
+              bgcolor: "primary.main",
+              color: "primary.contrastText",
+              "& .MuiAccordionSummary-expandIconWrapper": {
+                color: "primary.contrastText",
+              },
+            }}
+          >
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <AnalyticsIcon />
+              <Typography variant="h6" component="h3" sx={{ fontWeight: 600 }}>
+                📊 Comprehensive Correlation Analysis
+              </Typography>
+              <Chip
+                label={`${allCorrelations.length} correlations found`}
+                size="small"
+                variant="outlined"
+                sx={{
+                  ml: 2,
+                  color: "primary.contrastText",
+                  borderColor: "primary.contrastText",
+                }}
+              />
+            </Box>
+          </AccordionSummary>
+          <AccordionDetails sx={{ p: 0 }}>
+            <Box sx={{ p: 3 }}>
+              {/* Analysis Controls */}
+              <Box
+                sx={{
+                  mb: 3,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 2,
+                }}
+              >
+                <Typography variant="h6" component="h4">
+                  Variable Analysis Settings
+                </Typography>
+                <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+                  <FormControl size="small" sx={{ minWidth: 120 }}>
+                    <InputLabel>Time Range</InputLabel>
+                    <Select
+                      value={timeRange}
+                      label="Time Range"
+                      onChange={handleTimeRangeChange}
+                    >
+                      <MenuItem value="30">Last 30 days</MenuItem>
+                      <MenuItem value="90">Last 90 days</MenuItem>
+                      <MenuItem value="180">Last 6 months</MenuItem>
+                      <MenuItem value="365">Last year</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <FormControl size="small" sx={{ minWidth: 150 }}>
+                    <InputLabel>Variable 1</InputLabel>
+                    <Select
+                      value={selectedVar1}
+                      label="Variable 1"
+                      onChange={handleVar1Change}
+                    >
+                      {numericVariables.map((variable) => (
+                        <MenuItem key={variable} value={variable}>
+                          <VariableLinkSimple
+                            variableId={variable}
+                            variables={variables}
+                            variant="inherit"
+                            underline={false}
+                            onClick={() => {}} // Prevent navigation when in dropdown
+                            forceAsText={true}
+                          />
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <FormControl size="small" sx={{ minWidth: 150 }}>
+                    <InputLabel>Variable 2</InputLabel>
+                    <Select
+                      value={selectedVar2}
+                      label="Variable 2"
+                      onChange={handleVar2Change}
+                    >
+                      {numericVariables
+                        .filter((v) => v !== selectedVar1)
+                        .map((variable) => (
+                          <MenuItem key={variable} value={variable}>
+                            <VariableLinkSimple
+                              variableId={variable}
+                              variables={variables}
+                              variant="inherit"
+                              underline={false}
+                              onClick={() => {}} // Prevent navigation when in dropdown
+                              forceAsText={true}
+                            />
+                          </MenuItem>
+                        ))}
+                    </Select>
+                  </FormControl>
+                </Box>
+              </Box>
+
+              {/* Variable Filtering Information */}
+              {(() => {
+                const allVariableIds = [
+                  ...new Set(
+                    logs
+                      .filter((log) => isNumeric(log.value))
+                      .map((log) => log.variable_id)
+                  ),
+                ];
+                const filteredOutVariables = allVariableIds.filter((varId) =>
+                  hasAllZeroValues(varId)
+                );
+
+                if (filteredOutVariables.length > 0) {
+                  return (
+                    <Alert severity="info" sx={{ mb: 3 }}>
+                      <Typography
+                        variant="body2"
+                        sx={{ fontWeight: 600, mb: 0.5 }}
+                      >
+                        📊 Data Quality Filter Active
+                      </Typography>
+                      <Typography variant="body2">
+                        {filteredOutVariables.length} variable(s) excluded from
+                        correlation analysis because they contain only zero
+                        values:{" "}
+                        {filteredOutVariables
+                          .slice(0, 3)
+                          .map((varId) => getVariableDisplayName(varId))
+                          .join(", ")}
+                        {filteredOutVariables.length > 3 &&
+                          ` and ${filteredOutVariables.length - 3} more`}
+                        . Variables with all zero values cannot show meaningful
+                        correlations.
+                      </Typography>
+                    </Alert>
+                  );
+                }
+                return null;
+              })()}
+
+              {/* Scatter Plot and Table */}
+              <Box
+                sx={{
+                  display: "flex",
+                  gap: 3,
+                  flexDirection: { xs: "column", lg: "row" },
+                  overflow: "visible",
+                  minHeight: "fit-content",
+                }}
+              >
+                {selectedCorrelation && scatterChartData && (
+                  <Box sx={{ flex: selectedCorrelation ? 2 : 1 }}>
+                    <Card>
+                      <CardContent>
+                        <Typography variant="h6" component="h4" gutterBottom>
+                          {getVariableDisplayName(selectedVar1)} vs{" "}
+                          {getVariableDisplayName(selectedVar2)}
+                        </Typography>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            gap: 1,
+                            mb: 2,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <Chip
+                            label={`Correlation: ${selectedCorrelation.correlation}`}
+                            size="small"
+                            sx={{
+                              bgcolor: getCorrelationColor(
+                                selectedCorrelation.correlation
+                              ),
+                              color: "white",
+                            }}
+                          />
+                          <Chip
+                            label={`${selectedCorrelation.strength} ${selectedCorrelation.direction}`}
+                            size="small"
+                            variant="outlined"
+                          />
+                          <Chip
+                            label={`${selectedCorrelation.data.length} data points`}
+                            size="small"
+                            color="primary"
+                          />
+                        </Box>
+
+                        {/* Educational Information */}
+                        <Alert
+                          severity="info"
+                          icon={<InfoIcon />}
+                          sx={{ mb: 2, bgcolor: "#e3f2fd" }}
+                        >
+                          <Typography
+                            variant="body2"
+                            sx={{ fontWeight: 600, mb: 0.5 }}
+                          >
+                            Understanding Correlation (r ={" "}
+                            {selectedCorrelation.correlation}):
+                          </Typography>
+                          <Typography variant="body2" component="div">
+                            • <strong>Correlation ≠ Causation:</strong> A
+                            correlation doesn't mean one variable causes the
+                            other
+                            <br />• <strong>Range:</strong> Values from -1
+                            (perfect negative) to +1 (perfect positive)
+                            <br />• <strong>Strength:</strong> |0.7+| = strong,
+                            |0.3-0.7| = moderate, |0.1-0.3| = weak
+                            <br />• <strong>Confounding:</strong> Other
+                            variables may influence both measurements
+                          </Typography>
+                        </Alert>
+
+                        <Box
+                          sx={{
+                            height: "auto",
+                            minHeight: { xs: 500, sm: 600, md: 700 },
+                            maxHeight: "90vh",
+                            width: "100%",
+                            position: "relative",
+                            pb: 2,
+                            overflow: "visible",
+                            display: "flex",
+                            flexDirection: "column",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: "100%",
+                              height: "500px",
+                              minHeight: "500px",
+                              position: "relative",
+                            }}
+                          >
+                            <Scatter
+                              data={scatterChartData}
+                              options={scatterChartOptions}
+                            />
+                          </div>
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  </Box>
+                )}
+
+                {/* Correlation Table */}
+                <Box sx={{ flex: selectedCorrelation ? 1 : 1 }}>
+                  <Card>
+                    <CardContent>
+                      <Typography variant="h6" component="h4" gutterBottom>
+                        All Correlations
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ mb: 2 }}
+                      >
+                        Ranked by correlation strength
+                      </Typography>
+                      {allCorrelations.length === 0 ? (
+                        <Box sx={{ p: 3, pt: 0 }}>
+                          <Box
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 1,
+                              mb: 1,
+                            }}
+                          >
+                            <Typography
+                              variant="body1"
+                              sx={{ fontWeight: 600 }}
+                            >
+                              No correlations found
+                            </Typography>
+                            <IconButton
+                              size="small"
+                              onClick={() =>
+                                setShowExplanation(!showExplanation)
+                              }
+                              sx={{ ml: 1 }}
+                            >
+                              {showExplanation ? (
+                                <ExpandLessIcon />
+                              ) : (
+                                <ExpandMoreIcon />
+                              )}
+                            </IconButton>
+                          </Box>
+                          <Collapse in={showExplanation}>
+                            <Alert severity="info">
                               <Box>
-                                {!hasData ? (
-                                  <Typography variant="body2" sx={{ mb: 1 }}>
-                                    • <strong>No numeric data found</strong> in
-                                    the selected time range. Make sure you have
-                                    logged numeric values for your variables.
-                                  </Typography>
-                                ) : (
-                                  <>
-                                    <Typography variant="body2" sx={{ mb: 1 }}>
-                                      • <strong>Data availability:</strong> You
-                                      have {analysis.totalVariables} numeric
-                                      variables with data
-                                    </Typography>
-                                    {analysis.variableData.map(
-                                      (varData, index) => (
+                                <Typography
+                                  variant="body1"
+                                  sx={{ fontWeight: 600, mb: 1 }}
+                                >
+                                  Here's why:
+                                </Typography>
+                                {(() => {
+                                  const analysis = getDataAnalysis();
+                                  const insufficientData =
+                                    analysis.overlappingPairs.filter(
+                                      (pair) => pair.overlappingDates < 3
+                                    );
+                                  const hasData =
+                                    analysis.variableData.length > 0;
+
+                                  return (
+                                    <Box>
+                                      {!hasData ? (
                                         <Typography
-                                          key={index}
                                           variant="body2"
-                                          sx={{ ml: 2, mb: 0.5 }}
+                                          sx={{ mb: 1 }}
                                         >
-                                          - {varData.variableName}:{" "}
-                                          {varData.totalLogs} logs (
-                                          {varData.dateRange
-                                            ? `${format(
-                                                parseISO(
-                                                  varData.dateRange.start
-                                                ),
-                                                "MMM d"
-                                              )} - ${format(
-                                                parseISO(varData.dateRange.end),
-                                                "MMM d"
-                                              )}`
-                                            : "no date range"}
-                                          )
+                                          •{" "}
+                                          <strong>No numeric data found</strong>{" "}
+                                          in the selected time range. Make sure
+                                          you have logged numeric values for
+                                          your variables.
                                         </Typography>
-                                      )
-                                    )}
-                                    <Typography
-                                      variant="body2"
-                                      sx={{ mt: 1, mb: 1 }}
-                                    >
-                                      • <strong>Overlapping data:</strong> Need
-                                      at least 3 matching dates between
-                                      variables for correlation analysis
-                                    </Typography>
-                                    {insufficientData.length > 0 && (
-                                      <Box sx={{ ml: 2 }}>
-                                        {insufficientData
-                                          .slice(0, 3)
-                                          .map((pair, index) => (
-                                            <Typography
-                                              key={index}
-                                              variant="body2"
-                                              sx={{ mb: 0.5 }}
-                                            >
-                                              - {pair.var1Name} &{" "}
-                                              {pair.var2Name}:{" "}
-                                              {pair.overlappingDates}{" "}
-                                              overlapping dates
-                                            </Typography>
-                                          ))}
-                                        {insufficientData.length > 3 && (
+                                      ) : (
+                                        <>
                                           <Typography
                                             variant="body2"
-                                            sx={{ fontStyle: "italic" }}
+                                            sx={{ mb: 1 }}
                                           >
-                                            ... and{" "}
-                                            {insufficientData.length - 3} more
-                                            pairs
+                                            •{" "}
+                                            <strong>Data availability:</strong>{" "}
+                                            You have {analysis.totalVariables}{" "}
+                                            numeric variables with data
                                           </Typography>
-                                        )}
-                                      </Box>
-                                    )}
-                                    <Typography
-                                      variant="body2"
-                                      sx={{ mt: 1, fontWeight: 600 }}
-                                    >
-                                      💡 <strong>Tip:</strong> Try logging both
-                                      variables on the same days, or expand your
-                                      time range to get more overlapping data
-                                      points.
-                                    </Typography>
-                                  </>
-                                )}
-                              </Box>
-                            );
-                          })()}
-                        </Box>
-                      </Alert>
-                    </Collapse>
-                  </Box>
-                ) : (
-                  <TableContainer component={Paper} sx={{ maxHeight: 400 }}>
-                    <Table size="small" stickyHeader>
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>Variables</TableCell>
-                          <TableCell align="right">Correlation</TableCell>
-                          <TableCell align="right">Strength</TableCell>
-                          <TableCell align="right">Points</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {allCorrelations.map((corr, index) => {
-                          const rowKey = `${corr.variable1}_${corr.variable2}`;
-                          const isExpanded = expandedRows[rowKey] || false;
-                          const chartData = isExpanded
-                            ? getChartDataForCorrelation(
-                                corr.variable1,
-                                corr.variable2
-                              )
-                            : null;
-
-                          return (
-                            <React.Fragment key={index}>
-                              <TableRow hover sx={{ cursor: "pointer" }}>
-                                <TableCell
-                                  onClick={() =>
-                                    handleRowToggle(
-                                      corr.variable1,
-                                      corr.variable2
-                                    )
-                                  }
-                                >
-                                  <Box
-                                    sx={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: 1,
-                                    }}
-                                  >
-                                    <IconButton
-                                      size="small"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleRowToggle(
-                                          corr.variable1,
-                                          corr.variable2
-                                        );
-                                      }}
-                                    >
-                                      {isExpanded ? (
-                                        <ExpandLessIcon />
-                                      ) : (
-                                        <ExpandMoreIcon />
-                                      )}
-                                    </IconButton>
-                                    <Typography variant="body2">
-                                      {variables[corr.variable1] ||
-                                        corr.variable1}{" "}
-                                      ×{" "}
-                                      {variables[corr.variable2] ||
-                                        corr.variable2}
-                                    </Typography>
-                                  </Box>
-                                </TableCell>
-                                <TableCell
-                                  align="right"
-                                  onClick={() =>
-                                    handleRowToggle(
-                                      corr.variable1,
-                                      corr.variable2
-                                    )
-                                  }
-                                >
-                                  <Box
-                                    sx={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      justifyContent: "flex-end",
-                                      gap: 0.5,
-                                    }}
-                                  >
-                                    {corr.direction === "positive" ? (
-                                      <TrendingUpIcon
-                                        fontSize="small"
-                                        color="success"
-                                      />
-                                    ) : (
-                                      <TrendingDownIcon
-                                        fontSize="small"
-                                        color="error"
-                                      />
-                                    )}
-                                    <Typography
-                                      variant="body2"
-                                      sx={{ fontWeight: "bold" }}
-                                    >
-                                      {corr.correlation}
-                                    </Typography>
-                                  </Box>
-                                </TableCell>
-                                <TableCell
-                                  align="right"
-                                  onClick={() =>
-                                    handleRowToggle(
-                                      corr.variable1,
-                                      corr.variable2
-                                    )
-                                  }
-                                >
-                                  <Chip
-                                    label={corr.strength}
-                                    size="small"
-                                    variant="outlined"
-                                    sx={{
-                                      fontSize: "0.75rem",
-                                      color: getCorrelationColor(
-                                        corr.correlation
-                                      ),
-                                      borderColor: getCorrelationColor(
-                                        corr.correlation
-                                      ),
-                                    }}
-                                  />
-                                </TableCell>
-                                <TableCell
-                                  align="right"
-                                  onClick={() =>
-                                    handleRowToggle(
-                                      corr.variable1,
-                                      corr.variable2
-                                    )
-                                  }
-                                >
-                                  <Typography variant="body2">
-                                    {corr.dataPoints}
-                                  </Typography>
-                                </TableCell>
-                              </TableRow>
-                              <TableRow>
-                                <TableCell
-                                  colSpan={4}
-                                  sx={{ py: 0, border: 0 }}
-                                >
-                                  <Collapse
-                                    in={isExpanded}
-                                    timeout="auto"
-                                    unmountOnExit
-                                  >
-                                    <Box sx={{ p: 2, bgcolor: "action.hover" }}>
-                                      {chartData ? (
-                                        <Card elevation={1}>
-                                          <CardContent>
-                                            <Typography
-                                              variant="subtitle1"
-                                              gutterBottom
-                                            >
-                                              {variables[corr.variable1] ||
-                                                corr.variable1}{" "}
-                                              vs{" "}
-                                              {variables[corr.variable2] ||
-                                                corr.variable2}{" "}
-                                              Chart
-                                            </Typography>
-                                            <Box
-                                              sx={{
-                                                display: "flex",
-                                                gap: 1,
-                                                mb: 2,
-                                              }}
-                                            >
-                                              <Chip
-                                                label={`Correlation: ${chartData.correlation.toFixed(
-                                                  3
-                                                )}`}
-                                                size="small"
-                                                sx={{
-                                                  bgcolor: getCorrelationColor(
-                                                    chartData.correlation
-                                                  ),
-                                                  color: "white",
-                                                }}
-                                              />
-                                              <Chip
-                                                label={`${corr.strength} ${corr.direction}`}
-                                                size="small"
-                                                variant="outlined"
-                                              />
-                                              <Chip
-                                                label={`${chartData.matchedData.length} data points`}
-                                                size="small"
-                                                color="primary"
-                                              />
+                                          {analysis.variableData.map(
+                                            (varData, index) => (
+                                              <Typography
+                                                key={index}
+                                                variant="body2"
+                                                sx={{ ml: 2, mb: 0.5 }}
+                                              >
+                                                - {varData.variableName}:{" "}
+                                                {varData.totalLogs} logs (
+                                                {varData.dateRange
+                                                  ? `${format(
+                                                      parseISO(
+                                                        varData.dateRange.start
+                                                      ),
+                                                      "MMM d"
+                                                    )} - ${format(
+                                                      parseISO(
+                                                        varData.dateRange.end
+                                                      ),
+                                                      "MMM d"
+                                                    )}`
+                                                  : "no date range"}
+                                                )
+                                              </Typography>
+                                            )
+                                          )}
+                                          <Typography
+                                            variant="body2"
+                                            sx={{ mt: 1, mb: 1 }}
+                                          >
+                                            • <strong>Overlapping data:</strong>{" "}
+                                            Need at least 3 matching dates
+                                            between variables for correlation
+                                            analysis
+                                          </Typography>
+                                          {insufficientData.length > 0 && (
+                                            <Box sx={{ ml: 2 }}>
+                                              {insufficientData
+                                                .slice(0, 3)
+                                                .map((pair, index) => (
+                                                  <Typography
+                                                    key={index}
+                                                    variant="body2"
+                                                    sx={{ mb: 0.5 }}
+                                                  >
+                                                    - {pair.var1Name} &{" "}
+                                                    {pair.var2Name}:{" "}
+                                                    {pair.overlappingDates}{" "}
+                                                    overlapping dates
+                                                  </Typography>
+                                                ))}
+                                              {insufficientData.length > 3 && (
+                                                <Typography
+                                                  variant="body2"
+                                                  sx={{ fontStyle: "italic" }}
+                                                >
+                                                  ... and{" "}
+                                                  {insufficientData.length - 3}{" "}
+                                                  more pairs
+                                                </Typography>
+                                              )}
                                             </Box>
-                                            <Box
-                                              sx={{
-                                                height: 300,
-                                                width: "100%",
-                                              }}
-                                            >
-                                              <Scatter
-                                                data={chartData.chartData}
-                                                options={chartData.chartOptions}
-                                              />
-                                            </Box>
-                                          </CardContent>
-                                        </Card>
-                                      ) : (
-                                        <Alert severity="info">
-                                          Not enough data points to display
-                                          chart for this correlation.
-                                        </Alert>
+                                          )}
+                                          <Typography
+                                            variant="body2"
+                                            sx={{ mt: 1, fontWeight: 600 }}
+                                          >
+                                            💡 <strong>Tip:</strong> Try logging
+                                            both variables on the same days, or
+                                            expand your time range to get more
+                                            overlapping data points.
+                                          </Typography>
+                                        </>
                                       )}
                                     </Box>
-                                  </Collapse>
-                                </TableCell>
+                                  );
+                                })()}
+                              </Box>
+                            </Alert>
+                          </Collapse>
+                        </Box>
+                      ) : (
+                        <TableContainer
+                          component={Paper}
+                          sx={{
+                            maxHeight: "none",
+                            height: "auto",
+                            overflow: "visible",
+                            "& .MuiTable-root": {
+                              minWidth: 650,
+                              overflow: "visible",
+                            },
+                            "& .MuiCollapse-root": {
+                              overflow: "visible !important",
+                            },
+                            "& .MuiTableCell-root": {
+                              overflow: "visible",
+                            },
+                            "& .MuiTableRow-root": {
+                              overflow: "visible",
+                            },
+                            "&::-webkit-scrollbar": {
+                              width: "8px",
+                            },
+                            "&::-webkit-scrollbar-track": {
+                              background: "#f1f1f1",
+                              borderRadius: "4px",
+                            },
+                            "&::-webkit-scrollbar-thumb": {
+                              background: "#888",
+                              borderRadius: "4px",
+                            },
+                            "&::-webkit-scrollbar-thumb:hover": {
+                              background: "#555",
+                            },
+                          }}
+                        >
+                          <Table size="small" stickyHeader>
+                            <TableHead>
+                              <TableRow>
+                                <TableCell>Variables</TableCell>
+                                <TableCell align="right">Correlation</TableCell>
+                                <TableCell align="right">Strength</TableCell>
+                                <TableCell align="right">Points</TableCell>
                               </TableRow>
-                            </React.Fragment>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                )}
-              </CardContent>
-            </Card>
-          </Box>
-        </Box>
+                            </TableHead>
+                            <TableBody>
+                              {allCorrelations.map((corr, index) => {
+                                const rowKey = `${corr.variable1}_${corr.variable2}`;
+                                const isExpanded =
+                                  expandedRows[rowKey] || false;
+                                const chartData = isExpanded
+                                  ? getChartDataForCorrelation(
+                                      corr.variable1,
+                                      corr.variable2
+                                    )
+                                  : null;
+
+                                return (
+                                  <React.Fragment key={index}>
+                                    <TableRow hover sx={{ cursor: "pointer" }}>
+                                      <TableCell
+                                        onClick={() =>
+                                          handleRowToggle(
+                                            corr.variable1,
+                                            corr.variable2
+                                          )
+                                        }
+                                      >
+                                        <Box
+                                          sx={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 1,
+                                          }}
+                                        >
+                                          <IconButton
+                                            size="small"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleRowToggle(
+                                                corr.variable1,
+                                                corr.variable2
+                                              );
+                                            }}
+                                          >
+                                            {isExpanded ? (
+                                              <ExpandLessIcon />
+                                            ) : (
+                                              <ExpandMoreIcon />
+                                            )}
+                                          </IconButton>
+                                          <Typography variant="body2">
+                                            {getVariableDisplayName(
+                                              corr.variable1
+                                            )}{" "}
+                                            ×{" "}
+                                            {getVariableDisplayName(
+                                              corr.variable2
+                                            )}
+                                          </Typography>
+                                        </Box>
+                                      </TableCell>
+                                      <TableCell
+                                        align="right"
+                                        onClick={() =>
+                                          handleRowToggle(
+                                            corr.variable1,
+                                            corr.variable2
+                                          )
+                                        }
+                                      >
+                                        <Box
+                                          sx={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "flex-end",
+                                            gap: 0.5,
+                                          }}
+                                        >
+                                          {corr.direction === "positive" ? (
+                                            <TrendingUpIcon
+                                              fontSize="small"
+                                              color="success"
+                                            />
+                                          ) : (
+                                            <TrendingDownIcon
+                                              fontSize="small"
+                                              color="error"
+                                            />
+                                          )}
+                                          <Typography
+                                            variant="body2"
+                                            sx={{ fontWeight: "bold" }}
+                                          >
+                                            {corr.correlation}
+                                          </Typography>
+                                        </Box>
+                                      </TableCell>
+                                      <TableCell
+                                        align="right"
+                                        onClick={() =>
+                                          handleRowToggle(
+                                            corr.variable1,
+                                            corr.variable2
+                                          )
+                                        }
+                                      >
+                                        <Chip
+                                          label={corr.strength}
+                                          size="small"
+                                          variant="outlined"
+                                          sx={{
+                                            fontSize: "0.75rem",
+                                            color: getCorrelationColor(
+                                              corr.correlation
+                                            ),
+                                            borderColor: getCorrelationColor(
+                                              corr.correlation
+                                            ),
+                                          }}
+                                        />
+                                      </TableCell>
+                                      <TableCell
+                                        align="right"
+                                        onClick={() =>
+                                          handleRowToggle(
+                                            corr.variable1,
+                                            corr.variable2
+                                          )
+                                        }
+                                      >
+                                        <Typography variant="body2">
+                                          {corr.dataPoints}
+                                        </Typography>
+                                      </TableCell>
+                                    </TableRow>
+                                    <TableRow>
+                                      <TableCell
+                                        colSpan={4}
+                                        sx={{ py: 0, border: 0 }}
+                                      >
+                                        <Collapse
+                                          in={isExpanded}
+                                          timeout="auto"
+                                          unmountOnExit
+                                          sx={{
+                                            overflow: "visible !important",
+                                            width: "100%",
+                                          }}
+                                        >
+                                          <Box
+                                            sx={{
+                                              p: 2,
+                                              bgcolor: "action.hover",
+                                              position: "relative",
+                                              zIndex: 10,
+                                              width: "100%",
+                                              overflow: "visible",
+                                              minHeight: "fit-content",
+                                            }}
+                                          >
+                                            {chartData ? (
+                                              <Card
+                                                elevation={3}
+                                                sx={{
+                                                  position: "relative",
+                                                  zIndex: 11,
+                                                  overflow: "visible",
+                                                  width: "100%",
+                                                  minHeight: "fit-content",
+                                                }}
+                                              >
+                                                <CardContent
+                                                  sx={{
+                                                    overflow: "visible",
+                                                    width: "100%",
+                                                    "&:last-child": {
+                                                      pb: 3,
+                                                    },
+                                                  }}
+                                                >
+                                                  <Typography
+                                                    variant="subtitle1"
+                                                    gutterBottom
+                                                  >
+                                                    {getVariableDisplayName(
+                                                      corr.variable1
+                                                    )}{" "}
+                                                    vs{" "}
+                                                    {getVariableDisplayName(
+                                                      corr.variable2
+                                                    )}{" "}
+                                                    Chart
+                                                  </Typography>
+                                                  <Box
+                                                    sx={{
+                                                      display: "flex",
+                                                      gap: 1,
+                                                      mb: 2,
+                                                      flexWrap: "wrap",
+                                                    }}
+                                                  >
+                                                    <Chip
+                                                      label={`Correlation: ${chartData.correlation.toFixed(
+                                                        3
+                                                      )}`}
+                                                      size="small"
+                                                      sx={{
+                                                        bgcolor:
+                                                          getCorrelationColor(
+                                                            chartData.correlation
+                                                          ),
+                                                        color: "white",
+                                                      }}
+                                                    />
+                                                    <Chip
+                                                      label={`${corr.strength} ${corr.direction}`}
+                                                      size="small"
+                                                      variant="outlined"
+                                                    />
+                                                    <Chip
+                                                      label={`${chartData.matchedData.length} data points`}
+                                                      size="small"
+                                                      color="primary"
+                                                    />
+                                                  </Box>
+                                                  <Box
+                                                    sx={{
+                                                      height: "auto",
+                                                      minHeight: "500px",
+                                                      maxHeight: "80vh",
+                                                      width: "100%",
+                                                      position: "relative",
+                                                      pb: 2,
+                                                      mt: 2,
+                                                      overflow: "visible",
+                                                      display: "flex",
+                                                      flexDirection: "column",
+                                                    }}
+                                                  >
+                                                    <div
+                                                      style={{
+                                                        width: "100%",
+                                                        height: "500px",
+                                                        minHeight: "500px",
+                                                        position: "relative",
+                                                      }}
+                                                    >
+                                                      <Scatter
+                                                        data={
+                                                          chartData.chartData
+                                                        }
+                                                        options={
+                                                          chartData.chartOptions
+                                                        }
+                                                      />
+                                                    </div>
+                                                  </Box>
+                                                </CardContent>
+                                              </Card>
+                                            ) : (
+                                              <Alert severity="info">
+                                                Not enough data points to
+                                                display chart for this
+                                                correlation.
+                                              </Alert>
+                                            )}
+                                          </Box>
+                                        </Collapse>
+                                      </TableCell>
+                                    </TableRow>
+                                  </React.Fragment>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </TableContainer>
+                      )}
+                    </CardContent>
+                  </Card>
+                </Box>
+              </Box>
+            </Box>
+          </AccordionDetails>
+        </Accordion>
 
         {/* Insights */}
         {allCorrelations.length > 0 && (
@@ -1051,8 +1560,8 @@ export default function CorrelationAnalysis({
                         variant="body2"
                         sx={{ fontWeight: "bold", mb: 1 }}
                       >
-                        {variables[corr.variable1] || corr.variable1} &{" "}
-                        {variables[corr.variable2] || corr.variable2}
+                        {getVariableDisplayName(corr.variable1)} &{" "}
+                        {getVariableDisplayName(corr.variable2)}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
                         {corr.strength === "strong" &&

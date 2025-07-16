@@ -76,7 +76,7 @@ export default function Home() {
               discovering insights about yourself through intelligent analysis.
             </Typography>
             <Box className="flex flex-col gap-4 w-full max-w-sm">
-              <Link href="/auth" passHref legacyBehavior>
+              <Link href="/auth" passHref>
                 <Button
                   variant="contained"
                   className="w-full text-lg py-3 rounded-lg shadow-lg transition-all duration-200 hover:shadow-xl"
@@ -121,7 +121,7 @@ export default function Home() {
             Welcome back! What would you like to do today?
           </Typography>
           <Box className="flex flex-col gap-4 w-full max-w-sm">
-            <Link href="/experiment/builder" passHref legacyBehavior>
+            <Link href="/experiment/builder" passHref>
               <Button
                 variant="contained"
                 className="w-full text-lg py-3 rounded-lg shadow-lg transition-all duration-200 hover:shadow-xl"
@@ -131,7 +131,7 @@ export default function Home() {
                 Build Experiment
               </Button>
             </Link>
-            <Link href="/log" passHref legacyBehavior>
+            <Link href="/log" passHref>
               <Button
                 variant="outlined"
                 className="w-full text-lg py-3 rounded-lg transition-all duration-200"
@@ -141,7 +141,7 @@ export default function Home() {
                 Log Now
               </Button>
             </Link>
-            <Link href="/analytics" passHref legacyBehavior>
+            <Link href="/analytics" passHref>
               <Button
                 variant="outlined"
                 className="w-full text-lg py-3 rounded-lg transition-all duration-200"

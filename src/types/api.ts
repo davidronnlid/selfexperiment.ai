@@ -22,13 +22,14 @@ export interface OuraData {
 }
 
 export interface ManualLog {
-  id: number;
+  id: number | string;
   date: string;
-  variable: string;
+  variable_id: string; // Changed from 'variable' to 'variable_id' for consistency
   value: string;
   notes?: string;
   created_at: string;
-  user_id: string;
+  user_id?: string;
+  source?: string; // Added source field for data origin tracking
 }
 
 export interface WithingsWeight {

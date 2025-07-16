@@ -46,6 +46,14 @@ import {
   LocalFireDepartment as LocalFireDepartmentIcon,
   BarChart as BarChartIcon,
 } from "@mui/icons-material";
+import Link from "next/link";
+import {
+  getOuraVariableLabel,
+  getOuraVariableInfo,
+  formatOuraVariableValue,
+  getOuraVariableInterpretation,
+  OURA_VARIABLES,
+} from "@/utils/ouraVariableUtils";
 
 // Register Chart.js components
 ChartJS.register(
@@ -84,19 +92,8 @@ interface VariableStats {
   totalLogs: number;
 }
 
-const METRIC_LABELS: { [key: string]: string } = {
-  readiness_score: "Readiness Score",
-  sleep_score: "Sleep Score",
-  total_sleep_duration: "Total Sleep Duration (min)",
-  rem_sleep_duration: "REM Sleep Duration (min)",
-  deep_sleep_duration: "Deep Sleep Duration (min)",
-  efficiency: "Sleep Efficiency (%)",
-  sleep_latency: "Sleep Latency (min)",
-  temperature_deviation: "Temperature Deviation (°C)",
-  temperature_trend_deviation: "Temperature Trend Deviation (°C)",
-  hr_lowest_true: "Lowest Heart Rate (bpm)",
-  hr_average_true: "Average Heart Rate (bpm)",
-};
+// Use the new utility function for labels
+const getMetricLabel = (variableId: string) => getOuraVariableLabel(variableId);
 
 const METRIC_COLORS: { [key: string]: string } = {
   readiness_score: "#10b981",
@@ -242,7 +239,7 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
       labels: sortedData.map((item) => formatDate(item.date)),
       datasets: [
         {
-          label: METRIC_LABELS[selectedVariable] || selectedVariable,
+          label: getMetricLabel(selectedVariable),
           data: sortedData.map((item) => item.value),
           borderColor: getVariableColor(selectedVariable),
           backgroundColor: getVariableColor(selectedVariable) + "20",
@@ -260,22 +257,20 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
 
   const formatValue = (metric: string, value: number) => {
     if (value === null || value === undefined || isNaN(value)) {
-      return "N/A";
+      return "No data";
     }
 
-    if (metric.includes("duration")) {
-      return `${Math.round(value / 60)} min`;
+    // Use the new utility function for formatting
+    try {
+      return formatOuraVariableValue(metric, value);
+    } catch (error) {
+      console.warn("Error formatting Oura value:", error);
+      // For sleep duration metrics, show in hours if it's a large number (likely minutes)
+      if (metric.includes("duration") && value > 100) {
+        return `${(value / 60).toFixed(1)} hours`;
+      }
+      return value.toString();
     }
-    if (metric.includes("temperature")) {
-      return `${value.toFixed(2)}°C`;
-    }
-    if (metric.includes("hr_")) {
-      return `${value} bpm`;
-    }
-    if (metric === "efficiency") {
-      return `${value}%`;
-    }
-    return value.toString();
   };
 
   const chartOptions = {
@@ -374,7 +369,19 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
         .order("date", { ascending: true });
 
       if (error) throw error;
-      setData(ouraData || []);
+
+      // Filter out null values but keep records with 0 values
+      const filteredData = (ouraData || []).filter(
+        (item) => item.value !== null && item.value !== undefined
+      );
+
+      console.log(
+        `[OuraIntegration] Fetched ${ouraData?.length || 0} total records, ${
+          filteredData.length
+        } with valid values`
+      );
+
+      setData(filteredData);
     } catch (error) {
       console.error("Error fetching Oura data:", error);
     } finally {
@@ -542,8 +549,12 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
             </Button>
           </Box>
           <Alert severity="info">
-            No Oura data found. Try syncing your data or check your Oura Ring
-            connection.
+            No Oura data with valid values found. This could mean:
+            <ul style={{ marginTop: "8px", marginBottom: 0 }}>
+              <li>The ring wasn't worn during the selected time period</li>
+              <li>Data is still syncing from Oura servers</li>
+              <li>Try syncing data or check your Oura Ring connection</li>
+            </ul>
           </Alert>
         </CardContent>
       </Card>
@@ -581,6 +592,40 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
           </Button>
         </Box>
       </Box>
+
+      {/* Data Quality Information */}
+      {data.length > 0 && (
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Typography
+              variant="h6"
+              sx={{ mb: 2, display: "flex", alignItems: "center" }}
+            >
+              💡 About Your Oura Data
+            </Typography>
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                <strong>Data Availability:</strong> Oura metrics are only
+                available when the ring detects sufficient data quality.
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                <strong>Sleep Data:</strong> Requires wearing the ring for at
+                least 3+ hours during sleep periods.
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                <strong>Readiness/Temperature:</strong> Available most days when
+                the ring is worn regularly.
+              </Typography>
+              {uniqueVariables.length > 0 && (
+                <Typography variant="body2" color="text.secondary">
+                  <strong>Available metrics:</strong>{" "}
+                  {uniqueVariables.join(", ")}
+                </Typography>
+              )}
+            </Box>
+          </CardContent>
+        </Card>
+      )}
 
       {selectedVariable && (
         <Box>
@@ -704,7 +749,7 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
               >
                 {uniqueVariables.map((variable) => (
                   <MenuItem key={variable} value={variable}>
-                    {METRIC_LABELS[variable] || variable}
+                    {getMetricLabel(variable)}
                   </MenuItem>
                 ))}
               </Select>
@@ -716,7 +761,7 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
             <Card>
               <CardContent>
                 <Typography variant="h6" component="h4" sx={{ mb: 1 }}>
-                  {METRIC_LABELS[selectedVariable] || selectedVariable}
+                  {getMetricLabel(selectedVariable)}
                 </Typography>
                 <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
                   <Chip
@@ -857,7 +902,15 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
                             backgroundColor: getVariableColor(item.variable_id),
                           }}
                         />
-                        {METRIC_LABELS[item.variable_id] || item.variable_id}
+                        <Link
+                          href={`/variable/${item.variable_id}`}
+                          style={{
+                            color: "inherit",
+                            textDecoration: "none",
+                          }}
+                        >
+                          {getMetricLabel(item.variable_id)}
+                        </Link>
                       </Box>
                     </TableCell>
                     <TableCell

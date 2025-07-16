@@ -30,6 +30,7 @@ import {
   convertBooleanStringToValue,
 } from "../utils/variableUtils";
 import { useUser } from "../pages/_app";
+import UnitSelector from "./UnitSelector";
 
 interface VariableInputProps {
   variable: Variable;
@@ -361,21 +362,15 @@ export default function VariableInput({
     }
 
     return (
-      <FormControl size={size} sx={{ minWidth: 120, ml: 1 }}>
-        <InputLabel>Unit</InputLabel>
-        <Select
-          value={displayUnit}
-          onChange={(e) => handleUnitChange(e.target.value)}
-          label="Unit"
-          disabled={disabled || isConverting}
-        >
-          {availableUnits.map((unitOption) => (
-            <MenuItem key={unitOption} value={unitOption}>
-              {unitOption}
-            </MenuItem>
-          ))}
-        </Select>
-      </FormControl>
+      <UnitSelector
+        variable={variable}
+        value={displayUnit}
+        onChange={handleUnitChange}
+        disabled={disabled || isConverting}
+        size={size}
+        showPreview={true}
+        label="Unit"
+      />
     );
   };
 
