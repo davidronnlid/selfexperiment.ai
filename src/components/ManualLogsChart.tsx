@@ -199,21 +199,41 @@ const ManualLogsChart = memo(function ManualLogsChart({
       );
 
       let streak = 0;
-      let expectedDate = new Date();
-      expectedDate.setHours(0, 0, 0, 0); // Reset time to start of day
+      if (uniqueDates.length > 0) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
 
-      for (const dateStr of uniqueDates) {
-        const logDate = new Date(dateStr);
-        logDate.setHours(0, 0, 0, 0); // Reset time to start of day
+        for (let i = 0; i < uniqueDates.length; i++) {
+          const logDate = new Date(uniqueDates[i]);
+          logDate.setHours(0, 0, 0, 0);
 
-        const daysDiff = differenceInDays(expectedDate, logDate);
+          // Calculate expected date for this position in the streak
+          const expectedDate = new Date(today);
+          expectedDate.setDate(today.getDate() - i);
 
-        if (daysDiff === 0 || daysDiff === 1) {
-          streak++;
-          expectedDate = new Date(logDate);
-          expectedDate.setDate(expectedDate.getDate() - 1); // Expect previous day next
-        } else {
-          break;
+          const daysDiff = Math.abs(differenceInDays(expectedDate, logDate));
+
+          // If this log is on the expected consecutive date (or today), continue streak
+          if (daysDiff === 0) {
+            streak++;
+          } else {
+            // Check if we can start counting from yesterday instead
+            if (i === 0) {
+              const yesterday = new Date(today);
+              yesterday.setDate(today.getDate() - 1);
+              const daysDiffYesterday = Math.abs(
+                differenceInDays(yesterday, logDate)
+              );
+
+              if (daysDiffYesterday === 0) {
+                streak++;
+                // Adjust the starting point for subsequent checks
+                continue;
+              }
+            }
+            // Break the streak if this date doesn't fit the consecutive pattern
+            break;
+          }
         }
       }
 

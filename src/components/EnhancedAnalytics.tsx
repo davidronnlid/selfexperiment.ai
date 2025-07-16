@@ -320,21 +320,45 @@ export default function EnhancedAnalytics({ userId }: EnhancedAnalyticsProps) {
       trend = changePercentage > 0 ? "up" : "down";
     }
 
-    const sortedLogs = [...numericLogs].sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    // Group logs by unique dates first for streak calculation
+    const uniqueDates = [...new Set(numericLogs.map((log) => log.date))].sort(
+      (a, b) => new Date(b).getTime() - new Date(a).getTime()
     );
+
     let streak = 0;
-    let lastDate = new Date();
+    if (uniqueDates.length > 0) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
 
-    for (const log of sortedLogs) {
-      const logDate = new Date(log.date);
-      const daysDiff = differenceInDays(lastDate, logDate);
+      for (let i = 0; i < uniqueDates.length; i++) {
+        const logDate = new Date(uniqueDates[i]);
+        logDate.setHours(0, 0, 0, 0);
 
-      if (daysDiff <= 1) {
-        streak++;
-        lastDate = logDate;
-      } else {
-        break;
+        // Calculate expected date for this position in the streak
+        const expectedDate = new Date(today);
+        expectedDate.setDate(today.getDate() - i);
+
+        const daysDiff = Math.abs(differenceInDays(expectedDate, logDate));
+
+        // If this log is on the expected consecutive date, continue streak
+        if (daysDiff === 0) {
+          streak++;
+        } else {
+          // Check if we can start counting from yesterday instead
+          if (i === 0) {
+            const yesterday = new Date(today);
+            yesterday.setDate(today.getDate() - 1);
+            const daysDiffYesterday = Math.abs(
+              differenceInDays(yesterday, logDate)
+            );
+
+            if (daysDiffYesterday === 0) {
+              streak++;
+              continue;
+            }
+          }
+          break;
+        }
       }
     }
 

@@ -38,6 +38,7 @@ import {
 import { LOG_LABELS } from "@/utils/logLabels";
 import VariableSharingManager from "../components/VariableSharingManager";
 import AnalyzePrivacySection from "../components/AnalyzePrivacySection";
+import NotificationManager from "../components/NotificationManager";
 
 // Common timezone options for the autocomplete
 const COMMON_TIMEZONES = [
@@ -609,6 +610,26 @@ export default function ProfilePage() {
                 <AnalyzePrivacySection />
               </Box>
             </Box>
+          </CardContent>
+        </Card>
+
+        {/* Notification Settings */}
+        <Card>
+          <CardHeader
+            title={
+              <Box className="flex items-center gap-2">
+                <FaExclamationTriangle className="text-gold" />
+                <Typography variant="h6" className="text-white font-semibold">
+                  Notification Settings
+                </Typography>
+              </Box>
+            }
+          />
+          <CardContent className="p-4 lg:p-6">
+            <Typography variant="body2" className="text-text-secondary mb-4">
+              Configure push notifications for reminders, insights, and updates.
+            </Typography>
+            {user && <NotificationManager userId={user.id} />}
           </CardContent>
         </Card>
       </Box>

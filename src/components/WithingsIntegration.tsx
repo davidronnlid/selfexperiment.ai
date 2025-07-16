@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useNotifications } from "@/hooks/useNotifications";
 import {
   Box,
   Button,
@@ -90,6 +91,9 @@ export default function WithingsIntegration({
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [reimportProgress, setReimportProgress] = useState<any>(null);
 
+  // Add notification hook
+  const { sendDataSyncNotification } = useNotifications(userId);
+
   // Check connection status
   const checkConnection = useCallback(async () => {
     try {
@@ -156,8 +160,14 @@ export default function WithingsIntegration({
       );
 
       if (response.ok) {
+        const result = await response.json();
         await fetchData();
         setLastSync(new Date().toISOString());
+
+        // Send notification about successful sync
+        if (result.count > 0) {
+          sendDataSyncNotification("Withings", result.count);
+        }
       } else {
         console.error("Failed to sync Withings data");
       }

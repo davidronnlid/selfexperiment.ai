@@ -78,7 +78,13 @@ interface VariableInfo {
   description?: string;
   icon?: string;
   data_type: "continuous" | "categorical" | "boolean" | "time" | "text";
-  source_type: string;
+  source_type:
+    | "manual"
+    | "oura"
+    | "withings"
+    | "apple_health"
+    | "formula"
+    | "calculated";
   category?: string;
   validation_rules?: any;
   canonical_unit?: string;
@@ -688,7 +694,7 @@ export default function VariableLogsPage() {
             Variable Information
           </Typography>
           <Grid container spacing={2}>
-            <Grid item xs={12} sm={6}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <Typography variant="body2" color="textSecondary">
                 Description:
               </Typography>
@@ -696,7 +702,7 @@ export default function VariableLogsPage() {
                 {variableInfo?.description || "No description available"}
               </Typography>
             </Grid>
-            <Grid item xs={12} sm={6}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <Typography variant="body2" color="textSecondary">
                 Data Type:
               </Typography>
@@ -704,7 +710,7 @@ export default function VariableLogsPage() {
                 {variableInfo?.data_type || "Unknown"}
               </Typography>
             </Grid>
-            <Grid item xs={12} sm={6}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <Typography variant="body2" color="textSecondary">
                 Unit:
               </Typography>
@@ -712,7 +718,7 @@ export default function VariableLogsPage() {
                 {displayUnit || variableInfo?.canonical_unit || "No unit"}
               </Typography>
             </Grid>
-            <Grid item xs={12} sm={6}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <Typography variant="body2" color="textSecondary">
                 Total Logs:
               </Typography>
