@@ -13,9 +13,9 @@ import { useRouter } from "next/router";
 import ManualLogsChart from "@/components/ManualLogsChart";
 import ManualLogsTable from "@/components/ManualLogsTable";
 import CorrelationAnalysis from "@/components/CorrelationAnalysis";
-import UnifiedHealthDashboard from "@/components/UnifiedHealthDashboard";
+import ComprehensiveHealthDashboard from "@/components/ComprehensiveHealthDashboard";
 
-export default function Analytics() {
+export default function Analyze() {
   const { user } = useUser();
   const router = useRouter();
 
@@ -26,9 +26,7 @@ export default function Analytics() {
   if (!user) {
     return (
       <Container maxWidth="lg" sx={{ py: 4 }}>
-        <Alert severity="info">
-          Please log in to access analytics features.
-        </Alert>
+        <Alert severity="info">Please log in to access analyze features.</Alert>
       </Container>
     );
   }
@@ -43,7 +41,7 @@ export default function Analytics() {
       }}
     >
       <Typography variant="h3" component="h1" gutterBottom align="center">
-        📊 Analytics & Insights
+        📊 Analytics
       </Typography>
 
       <Typography
@@ -92,10 +90,7 @@ export default function Analytics() {
             <Divider />
             <ManualLogsTable userId={user.id} />
             <Divider />
-            <Typography variant="h6" sx={{ mb: 2 }}>
-              📊 Health Data Dashboard
-            </Typography>
-            <UnifiedHealthDashboard userId={user.id} />
+            <ComprehensiveHealthDashboard userId={user.id} />
           </Box>
         )}
       </Paper>

@@ -354,10 +354,10 @@ export default function OptimizedLogNow() {
                   </Button>
                   <Button
                     variant="outlined"
-                    onClick={() => router.push("/analytics")}
+                    onClick={() => router.push("/analyze")}
                     fullWidth
                   >
-                    View Analytics
+                    Analyze
                   </Button>
                 </Box>
               </CardContent>

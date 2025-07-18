@@ -131,14 +131,14 @@ export default function Home() {
                 Track Now
               </Button>
             </Link>
-            <Link href="/analytics" passHref>
+            <Link href="/analyze" passHref>
               <Button
                 variant="outlined"
                 className="w-full text-lg py-3 rounded-lg transition-all duration-200"
                 size="large"
                 fullWidth
               >
-                View Analytics
+                Analyze
               </Button>
             </Link>
           </Box>

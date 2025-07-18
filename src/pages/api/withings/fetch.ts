@@ -18,6 +18,7 @@ function getCookiesFromReq(req: NextApiRequest) {
 }
 
 const MEAS_TYPE_MAP: { [key: number]: string } = {
+  // Body Composition
   1: "weight_kg",
   5: "fat_free_mass_kg",
   6: "fat_ratio",
@@ -25,6 +26,52 @@ const MEAS_TYPE_MAP: { [key: number]: string } = {
   76: "muscle_mass_kg",
   77: "hydration_kg",
   88: "bone_mass_kg",
+  
+  // Blood Pressure
+  9: "diastolic_bp",
+  10: "systolic_bp",
+  11: "heart_pulse",
+  
+  // Heart Rate
+  12: "heart_rate",
+  13: "heart_rate_variability",
+  
+  // Activity
+  16: "steps",
+  17: "calories",
+  18: "distance",
+  19: "elevation",
+  
+  // Sleep
+  20: "sleep_duration",
+  21: "sleep_light",
+  22: "sleep_deep",
+  23: "sleep_rem",
+  24: "sleep_wake",
+  
+  // Temperature
+  71: "temperature",
+  73: "skin_temperature",
+  
+  // SpO2
+  54: "spo2",
+  
+  // ECG
+  91: "ecg",
+  
+  // Other
+  14: "pulse_wave_velocity",
+  15: "vo2_max",
+  25: "sleep_score",
+  26: "sleep_latency",
+  27: "sleep_efficiency",
+  28: "sleep_midpoint",
+  29: "sleep_hr_lowest",
+  30: "sleep_hr_average",
+  31: "sleep_hr_highest",
+  32: "sleep_hrv_lowest",
+  33: "sleep_hrv_average",
+  34: "sleep_hrv_highest",
 };
 
 export default async function handler(
@@ -194,13 +241,15 @@ export default async function handler(
       }, {} as Record<string, any>)
     );
 
-    // Filter out rows where weight_kg is not a valid, positive number
-    const validRows = deduplicatedRows.filter(
-      (row) =>
-        typeof row.weight_kg === "number" &&
-        !isNaN(row.weight_kg) &&
-        row.weight_kg > 0
-    );
+    // Filter out rows that don't have any valid measurements
+    const validRows = deduplicatedRows.filter((row) => {
+      // Check if the row has any valid measurement data
+      const hasValidData = Object.entries(row).some(([key, value]) => {
+        if (key === "user_id" || key === "date" || key === "raw_data") return false;
+        return typeof value === "number" && !isNaN(value) && value > 0;
+      });
+      return hasValidData;
+    });
     console.log(
       "[Withings Fetch] After deduplication and filtering:",
       validRows.map((r) => r.date)

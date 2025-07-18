@@ -16,7 +16,8 @@
     "test:watch": "jest --watchAll",
     "test:mood": "npx ts-node src/test/mood-variable-page.test.ts",
     "test:validation": "npx ts-node src/test/validationTest.ts",
-    "test:integration": "npx ts-node src/test/variable-page-integration.test.ts"
+    "test:integration": "npx ts-node src/test/variable-page-integration.test.ts",
+    "deploy:withings": "node scripts/deploy-withings-functions.js"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

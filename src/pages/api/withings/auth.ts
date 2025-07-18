@@ -95,11 +95,11 @@ export default async function handler(
       }
       
       if (!userData) {
-        console.log("[Withings Auth] No user found");
-        return res.status(401).json({ 
-          error: "Not authenticated",
-          message: "Please log in to connect your Withings account"
-        });
+      console.log("[Withings Auth] No user found");
+      return res.status(401).json({ 
+        error: "Not authenticated",
+        message: "Please log in to connect your Withings account"
+      });
       }
       
       user = userData;

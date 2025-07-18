@@ -152,16 +152,16 @@ async function reimportAllWithingsData(
       
       try {
         refreshRes = await fetch("https://wbsapi.withings.net/v2/oauth2", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            action: "requesttoken",
-            grant_type: "refresh_token",
-            client_id: process.env.WITHINGS_ClientID!,
-            client_secret: process.env.WITHINGS_Secret!,
-            refresh_token: currentRefreshToken,
-          }),
-        });
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          action: "requesttoken",
+          grant_type: "refresh_token",
+          client_id: process.env.WITHINGS_ClientID!,
+          client_secret: process.env.WITHINGS_Secret!,
+          refresh_token: currentRefreshToken,
+        }),
+      });
         refreshData = await refreshRes.json();
       } catch (refreshError) {
         console.error("[Withings Reimport] Token refresh fetch error:", refreshError);

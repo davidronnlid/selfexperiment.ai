@@ -97,16 +97,35 @@ export default function WithingsIntegration({
   // Check connection status
   const checkConnection = useCallback(async () => {
     try {
-      const { data: tokens } = await supabase
-        .from("withings_tokens")
-        .select("access_token, created_at")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(1);
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/withings-processor`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({
+            action: "get-status",
+            userId,
+          }),
+        }
+      );
 
-      setConnected(!!tokens && tokens.length > 0);
-      if (tokens && tokens.length > 0) {
-        setLastSync(tokens[0].created_at);
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          setConnected(result.data.connected);
+          console.log(
+            `[WithingsIntegration] Connection status: ${result.data.connected}, data count: ${result.data.dataCount}`
+          );
+        } else {
+          console.error("Failed to check Withings connection:", result.error);
+          setConnected(false);
+        }
+      } else {
+        console.error("Failed to check Withings connection");
+        setConnected(false);
       }
     } catch (error) {
       console.error("Error checking Withings connection:", error);
@@ -161,25 +180,42 @@ export default function WithingsIntegration({
       );
 
       const response = await fetch(
-        `/api/withings/fetch?startdate=${startdate}&enddate=${enddate}&meastype=1,5,6,8,76,77,88&user_id=${userId}`,
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/withings-processor`,
         {
-          method: "GET",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({
+            action: "sync",
+            userId,
+            startdate,
+            enddate,
+            meastype: [1, 5, 6, 8, 76, 77, 88],
+          }),
         }
       );
 
       if (response.ok) {
         const result = await response.json();
-        await fetchData();
-        setLastSync(new Date().toISOString());
+        if (result.success) {
+          await fetchData();
+          setLastSync(new Date().toISOString());
 
-        // Send notification about successful sync
-        if (result.count > 0) {
-          sendDataSyncNotification("Withings", result.count);
+          // Send notification about successful sync
+          if (result.data?.upserted > 0) {
+            sendDataSyncNotification("Withings", result.data.upserted);
+          }
+
+          console.log(
+            `[Withings Sync] Successfully synced ${
+              result.data?.upserted || 0
+            } data points`
+          );
+        } else {
+          console.error("Withings sync failed:", result.error);
         }
-
-        console.log(
-          `[Withings Sync] Successfully synced ${result.count} data points`
-        );
       } else {
         console.error("Failed to sync Withings data");
       }
@@ -198,36 +234,37 @@ export default function WithingsIntegration({
       setReimporting(true);
       setReimportProgress(null);
 
-      const { data: tokens } = await supabase
-        .from("withings_tokens")
-        .select("access_token")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(1);
-
-      if (!tokens || tokens.length === 0) {
-        throw new Error("No access token found");
-      }
-
-      const response = await fetch("/api/withings/reimport", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId,
-          accessToken: tokens[0].access_token,
-        }),
-      });
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/withings-processor`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({
+            action: "reimport",
+            userId,
+          }),
+        }
+      );
 
       const result = await response.json();
 
-      if (response.ok) {
-        setReimportProgress(result);
+      if (response.ok && result.success) {
+        setReimportProgress(result.data);
         await fetchData();
         setLastSync(new Date().toISOString());
+        console.log(
+          `[WithingsIntegration] Reimported ${
+            result.data?.totalUpserted || 0
+          } data points`
+        );
       } else {
-        console.error("Failed to reimport Withings data:", result);
+        console.error(
+          "Failed to reimport Withings data:",
+          result.error || result
+        );
       }
     } catch (error) {
       console.error("Error reimporting Withings data:", error);
@@ -260,34 +297,35 @@ export default function WithingsIntegration({
     try {
       setLoading(true);
 
-      // Delete tokens from database
-      const { error: tokenError } = await supabase
-        .from("withings_tokens")
-        .delete()
-        .eq("user_id", userId);
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/withings-processor`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({
+            action: "disconnect",
+            userId,
+          }),
+        }
+      );
 
-      if (tokenError) {
-        console.error("Error deleting Withings tokens:", tokenError);
-        return;
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          // Update local state
+          setConnected(false);
+          setData([]);
+          setLastSync(null);
+          console.log("Successfully disconnected from Withings");
+        } else {
+          console.error("Failed to disconnect from Withings:", result.error);
+        }
+      } else {
+        console.error("Failed to disconnect from Withings");
       }
-
-      // Delete all Withings data points
-      const { error: dataError } = await supabase
-        .from("withings_variable_data_points")
-        .delete()
-        .eq("user_id", userId);
-
-      if (dataError) {
-        console.error("Error deleting Withings data:", dataError);
-        return;
-      }
-
-      // Update local state
-      setConnected(false);
-      setData([]);
-      setLastSync(null);
-
-      console.log("Successfully disconnected from Withings");
     } catch (error) {
       console.error("Error disconnecting from Withings:", error);
     } finally {

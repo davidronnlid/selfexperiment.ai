@@ -144,13 +144,13 @@ export default function Header() {
 
   // Mobile menu items
   const mobileMenuItems = [
-    { text: "Analytics", path: "/analytics" },
+    { text: "Analyze", path: "/analyze" },
     { text: "Community", path: "/community" },
   ];
 
   const mobileLogItems = [
-    { text: "Manual Track", path: "/track/manual" },
-    { text: "Auto Track", path: "/track/auto" },
+    { text: "Track Manually", path: "/track/manual" },
+    { text: "Auto-Track", path: "/track/auto" },
   ];
 
   return (
@@ -230,17 +230,17 @@ export default function Header() {
             >
               <MenuItem onClick={handleManualLogClick} className="py-3">
                 <Typography variant="body2" className="font-medium">
-                  Manual Track
+                  Track Manually
                 </Typography>
               </MenuItem>
               <MenuItem onClick={handleAutoLogClick} className="py-3">
                 <Typography variant="body2" className="font-medium">
-                  Auto Track
+                  Auto-Track
                 </Typography>
               </MenuItem>
             </Menu>
 
-            <Link href="/analytics" passHref>
+            <Link href="/analyze" passHref>
               <Button
                 className={navLinkClass}
                 sx={{
@@ -252,7 +252,7 @@ export default function Header() {
                   padding: "8px 16px",
                 }}
               >
-                Analytics
+                Analyze
               </Button>
             </Link>
 

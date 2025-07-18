@@ -38,7 +38,6 @@ import {
   Chip,
   FormControlLabel,
   Checkbox,
-  IconButton,
 } from "@mui/material";
 import { useUser } from "../_app";
 import SearchIcon from "@mui/icons-material/Search";
@@ -59,7 +58,13 @@ import {
   CardHeader,
   CardContent,
   CardActions,
+  IconButton,
 } from "@mui/material";
+import {
+  ChevronLeft as ChevronLeftIcon,
+  ChevronRight as ChevronRightIcon,
+  Today as TodayIcon,
+} from "@mui/icons-material";
 
 // Dynamic variable options will be loaded from the database
 
@@ -150,6 +155,7 @@ export default function ManualTrackPage() {
   const [value, setValue] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
   const [date, setDate] = useState<Date>(new Date());
+  const [selectedViewDate, setSelectedViewDate] = useState<Date>(new Date());
   const [activeExperiments, setActiveExperiments] = useState<any[]>([]);
   const [experimentsLogsToday, setExperimentsLogsToday] = useState<
     Record<string, DataPointEntry[]>
@@ -667,15 +673,21 @@ export default function ManualTrackPage() {
     calculateLoggingStreak();
   }, [experimentsNeedingLogs, user]);
 
-  const fetchLogs = async () => {
+  // Fetch logs when selectedViewDate changes
+  useEffect(() => {
+    if (user) {
+      fetchLogs(selectedViewDate);
+    }
+  }, [selectedViewDate, user]);
+
+  const fetchLogs = async (targetDate?: Date) => {
     if (!user) return;
 
-    // Calculate start of today in local time as string
-    const now = new Date();
+    const dateToUse = targetDate || selectedViewDate;
     const pad = (n: number) => n.toString().padStart(2, "0");
-    const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(
-      now.getDate()
-    )}`; // Get YYYY-MM-DD format in local time
+    const dateString = `${dateToUse.getFullYear()}-${pad(
+      dateToUse.getMonth() + 1
+    )}-${pad(dateToUse.getDate())}`; // Get YYYY-MM-DD format in local time
 
     // Fetch more logs since we'll filter in JavaScript
     const { data } = await supabase
@@ -685,18 +697,18 @@ export default function ManualTrackPage() {
       .order("date", { ascending: false })
       .limit(200);
 
-    // Filter logs to today's date using JavaScript since date is stored as text
-    const todaysLogs = (data || []).filter(
-      (log) => log.date && log.date.startsWith(today)
+    // Filter logs to the selected date using JavaScript since date is stored as text
+    const selectedDateLogs = (data || []).filter(
+      (log) => log.date && log.date.startsWith(dateString)
     );
 
-    setLogs(todaysLogs);
+    setLogs(selectedDateLogs);
 
     // Also refresh experiments filtering
-    if (todaysLogs && activeExperiments.length > 0) {
+    if (selectedDateLogs && activeExperiments.length > 0) {
       const filtered = filterExperimentsNeedingLogs(
         activeExperiments,
-        todaysLogs
+        selectedDateLogs
       );
       setExperimentsNeedingLogs(filtered);
     }
@@ -782,7 +794,7 @@ export default function ManualTrackPage() {
       setNotes("");
 
       // Refresh logs
-      await fetchLogs();
+      await fetchLogs(selectedViewDate);
 
       // Refresh experiments filtering in case this log affects experiment requirements
       await refreshExperimentsFiltering();
@@ -861,7 +873,7 @@ export default function ManualTrackPage() {
       }));
 
       // Refresh today's logs and experiments
-      await fetchLogs();
+      await fetchLogs(selectedViewDate);
       setSuccessMessage(`Successfully logged ${experimentVariableName}!`);
       setShowSuccess(true);
     } catch (error) {
@@ -938,6 +950,30 @@ export default function ManualTrackPage() {
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
+  };
+
+  const handleDateChange = async (newDate: Date | null) => {
+    if (newDate) {
+      setSelectedViewDate(newDate);
+      await fetchLogs(newDate);
+    }
+  };
+
+  const goToPreviousDay = async () => {
+    const previousDay = new Date(selectedViewDate);
+    previousDay.setDate(previousDay.getDate() - 1);
+    await handleDateChange(previousDay);
+  };
+
+  const goToNextDay = async () => {
+    const nextDay = new Date(selectedViewDate);
+    nextDay.setDate(nextDay.getDate() + 1);
+    await handleDateChange(nextDay);
+  };
+
+  const goToToday = async () => {
+    const today = new Date();
+    await handleDateChange(today);
   };
 
   // Privacy settings loading temporarily disabled - using new universal variables system
@@ -1203,7 +1239,7 @@ export default function ManualTrackPage() {
       <Container maxWidth="md" sx={{ py: 4 }}>
         <Box sx={{ textAlign: "center" }}>
           <Typography variant="h6" sx={{ mb: 2 }}>
-            Loading your data...
+            Loading variables and data points...
           </Typography>
           <LinearProgress sx={{ mb: 2 }} />
           <Typography variant="body2" color="text.secondary">
@@ -1239,7 +1275,7 @@ export default function ManualTrackPage() {
           mb: { xs: 3, sm: 4, md: 5 },
         }}
       >
-        📝 Manual Tracking
+        📝 Track Manually
       </Typography>
 
       {/* Active Experiments */}
@@ -2318,20 +2354,147 @@ export default function ManualTrackPage() {
             border: "2px solid #FFD700",
           }}
         >
-          <Typography
-            variant="h5"
-            gutterBottom
+          <Box
             sx={{
-              fontSize: { xs: "1.3rem", sm: "1.5rem" },
-              fontWeight: "bold",
-              color: "#FFD700",
-              textAlign: "center",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
               mb: 3,
-              textShadow: "0 2px 4px rgba(0,0,0,0.3)",
             }}
           >
-            📊 Today's Data Points
-          </Typography>
+            <Typography
+              variant="h5"
+              gutterBottom
+              sx={{
+                fontSize: { xs: "1.3rem", sm: "1.5rem" },
+                fontWeight: "bold",
+                color: "#FFD700",
+                textAlign: "center",
+                textShadow: "0 2px 4px rgba(0,0,0,0.3)",
+                mb: 2,
+              }}
+            >
+              📊 Data Points
+            </Typography>
+
+            {/* Date Navigation */}
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 1,
+                mb: 1.5,
+                p: 1.5,
+                borderRadius: 1.5,
+                backgroundColor: "rgba(255, 215, 0, 0.08)",
+                border: "1px solid rgba(255, 215, 0, 0.2)",
+                maxWidth: "fit-content",
+                mx: "auto",
+              }}
+            >
+              <IconButton
+                onClick={goToPreviousDay}
+                size="small"
+                sx={{
+                  color: "#FFD700",
+                  p: 0.5,
+                  "&:hover": {
+                    backgroundColor: "rgba(255, 215, 0, 0.15)",
+                  },
+                }}
+              >
+                <ChevronLeftIcon fontSize="small" />
+              </IconButton>
+
+              <DatePicker
+                selected={selectedViewDate}
+                onChange={handleDateChange}
+                dateFormat="MMM dd, yyyy"
+                customInput={
+                  <TextField
+                    variant="outlined"
+                    size="small"
+                    sx={{
+                      width: "120px",
+                      "& .MuiOutlinedInput-root": {
+                        color: "#FFD700",
+                        borderColor: "rgba(255, 215, 0, 0.4)",
+                        fontSize: "0.875rem",
+                        "&:hover": {
+                          borderColor: "#FFD700",
+                        },
+                        "&.Mui-focused": {
+                          borderColor: "#FFD700",
+                        },
+                      },
+                      "& .MuiInputBase-input": {
+                        padding: "6px 12px",
+                        fontSize: "0.875rem",
+                      },
+                    }}
+                  />
+                }
+              />
+
+              <IconButton
+                onClick={goToNextDay}
+                disabled={
+                  selectedViewDate.toDateString() === new Date().toDateString()
+                }
+                size="small"
+                sx={{
+                  color: "#FFD700",
+                  p: 0.5,
+                  "&:hover": {
+                    backgroundColor: "rgba(255, 215, 0, 0.15)",
+                  },
+                  "&:disabled": {
+                    color: "rgba(255, 215, 0, 0.3)",
+                  },
+                }}
+              >
+                <ChevronRightIcon fontSize="small" />
+              </IconButton>
+
+              <IconButton
+                onClick={goToToday}
+                size="small"
+                sx={{
+                  color: "#FFD700",
+                  p: 0.5,
+                  "&:hover": {
+                    backgroundColor: "rgba(255, 215, 0, 0.15)",
+                  },
+                }}
+              >
+                <TodayIcon fontSize="small" />
+              </IconButton>
+            </Box>
+
+            {/* Date Display */}
+            <Typography
+              variant="body2"
+              sx={{
+                color: "rgba(255, 215, 0, 0.7)",
+                fontSize: "0.8rem",
+                textAlign: "center",
+                mb: 1,
+              }}
+            >
+              {selectedViewDate.toDateString() === new Date().toDateString()
+                ? "Today's Data Points"
+                : `Data Points for ${selectedViewDate.toLocaleDateString(
+                    "en-US",
+                    {
+                      weekday: "long",
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    }
+                  )}`}
+            </Typography>
+          </Box>
           <Box
             sx={{
               display: "flex",
@@ -2350,7 +2513,7 @@ export default function ManualTrackPage() {
                       variant="h6"
                       className="text-white font-semibold"
                     >
-                      ✍️ Manual Data Points
+                      ✍️ Manually Tracked Data Points
                     </Typography>
                   }
                 />
@@ -2360,23 +2523,23 @@ export default function ManualTrackPage() {
                     sx={{
                       display: "flex",
                       flexDirection: "column",
-                      gap: { xs: 2, sm: 2.5 },
+                      gap: { xs: 1.5, sm: 2 },
                     }}
                   >
                     {groupedLogs.manual.logs.map((log: any) => (
                       <Box
                         key={log.id}
                         sx={{
-                          p: { xs: 2.5, sm: 3 },
-                          border: "2px solid #FFD700",
-                          borderRadius: 3,
+                          p: { xs: 2, sm: 2.5 },
+                          border: "1px solid #FFD700",
+                          borderRadius: 2,
                           backgroundColor: "#222",
                           color: "#fff",
-                          boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
-                          transition: "all 0.3s ease",
+                          boxShadow: "0 3px 12px rgba(0,0,0,0.1)",
+                          transition: "all 0.2s ease",
                           "&:hover": {
-                            boxShadow: "0 8px 25px rgba(255,215,0,0.3)",
-                            transform: "translateY(-2px)",
+                            boxShadow: "0 4px 16px rgba(255,215,0,0.2)",
+                            transform: "translateY(-1px)",
                             borderColor: "#FFEA70",
                           },
                         }}
@@ -2702,14 +2865,14 @@ export default function ManualTrackPage() {
                                 display: "flex",
                                 justifyContent: "space-between",
                                 alignItems: "center",
-                                mb: 1.5,
+                                mb: 1,
                               }}
                             >
                               <Box
                                 sx={{
                                   display: "flex",
                                   alignItems: "center",
-                                  gap: 2,
+                                  gap: 1.5,
                                   flex: 1,
                                 }}
                               >
@@ -2738,13 +2901,13 @@ export default function ManualTrackPage() {
                                   }}
                                 >
                                   <Typography
-                                    variant="subtitle1"
+                                    variant="subtitle2"
                                     fontWeight="bold"
                                     sx={{
                                       color: "#1976d2",
                                       fontSize: {
-                                        xs: "1rem",
-                                        sm: "1.1rem",
+                                        xs: "0.9rem",
+                                        sm: "1rem",
                                       },
                                     }}
                                   >
@@ -2752,11 +2915,11 @@ export default function ManualTrackPage() {
                                   </Typography>
                                 </Link>
                                 <Typography
-                                  variant="h5"
+                                  variant="h6"
                                   sx={{
                                     color: "#00E676",
                                     fontWeight: "bold",
-                                    fontSize: { xs: "1.3rem", sm: "1.5rem" },
+                                    fontSize: { xs: "1.1rem", sm: "1.3rem" },
                                     textShadow: "0 1px 2px rgba(0,0,0,0.1)",
                                   }}
                                 >
@@ -2778,13 +2941,14 @@ export default function ManualTrackPage() {
                                         color: "#FFD700",
                                         fontWeight: 600,
                                         fontSize: {
-                                          xs: "0.75rem",
-                                          sm: "0.8rem",
+                                          xs: "0.7rem",
+                                          sm: "0.75rem",
                                         },
                                         backgroundColor:
-                                          "rgba(255, 215, 0, 0.18)",
-                                        px: 1,
-                                        borderRadius: 1,
+                                          "rgba(255, 215, 0, 0.15)",
+                                        px: 0.75,
+                                        py: 0.25,
+                                        borderRadius: 0.75,
                                         display: "inline-flex",
                                         alignItems: "center",
                                         gap: 0.5,
@@ -2964,23 +3128,23 @@ export default function ManualTrackPage() {
                             sx={{
                               display: "flex",
                               flexDirection: "column",
-                              gap: { xs: 2, sm: 2.5 },
+                              gap: { xs: 1.5, sm: 2 },
                             }}
                           >
                             {(routineData as any).logs.map((log: any) => (
                               <Box
                                 key={log.id}
                                 sx={{
-                                  p: { xs: 2.5, sm: 3 },
-                                  border: "2px solid #FFD700",
-                                  borderRadius: 3,
+                                  p: { xs: 2, sm: 2.5 },
+                                  border: "1px solid #FFD700",
+                                  borderRadius: 2,
                                   backgroundColor: "#222",
                                   color: "#fff",
-                                  boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
-                                  transition: "all 0.3s ease",
+                                  boxShadow: "0 3px 12px rgba(0,0,0,0.1)",
+                                  transition: "all 0.2s ease",
                                   "&:hover": {
-                                    boxShadow: "0 8px 25px rgba(255,215,0,0.3)",
-                                    transform: "translateY(-2px)",
+                                    boxShadow: "0 4px 16px rgba(255,215,0,0.2)",
+                                    transform: "translateY(-1px)",
                                     borderColor: "#FFEA70",
                                   },
                                 }}
@@ -3286,14 +3450,14 @@ export default function ManualTrackPage() {
                                         display: "flex",
                                         justifyContent: "space-between",
                                         alignItems: "center",
-                                        mb: 1.5,
+                                        mb: 1,
                                       }}
                                     >
                                       <Box
                                         sx={{
                                           display: "flex",
                                           alignItems: "center",
-                                          gap: 2,
+                                          gap: 1.5,
                                           flex: 1,
                                         }}
                                       >
@@ -3326,13 +3490,13 @@ export default function ManualTrackPage() {
                                           }}
                                         >
                                           <Typography
-                                            variant="subtitle1"
+                                            variant="subtitle2"
                                             fontWeight="bold"
                                             sx={{
                                               color: "#1976d2",
                                               fontSize: {
-                                                xs: "1rem",
-                                                sm: "1.1rem",
+                                                xs: "0.9rem",
+                                                sm: "1rem",
                                               },
                                             }}
                                           >
@@ -3340,13 +3504,13 @@ export default function ManualTrackPage() {
                                           </Typography>
                                         </Link>
                                         <Typography
-                                          variant="h5"
+                                          variant="h6"
                                           sx={{
                                             color: "#00E676",
                                             fontWeight: "bold",
                                             fontSize: {
-                                              xs: "1.3rem",
-                                              sm: "1.5rem",
+                                              xs: "1.1rem",
+                                              sm: "1.3rem",
                                             },
                                             textShadow:
                                               "0 1px 2px rgba(0,0,0,0.1)",
@@ -3361,13 +3525,14 @@ export default function ManualTrackPage() {
                                             color: "#FFD700",
                                             fontWeight: 600,
                                             fontSize: {
-                                              xs: "0.75rem",
-                                              sm: "0.8rem",
+                                              xs: "0.7rem",
+                                              sm: "0.75rem",
                                             },
                                             backgroundColor:
-                                              "rgba(255, 215, 0, 0.18)",
-                                            px: 1,
-                                            borderRadius: 1,
+                                              "rgba(255, 215, 0, 0.15)",
+                                            px: 0.75,
+                                            py: 0.25,
+                                            borderRadius: 0.75,
                                             display: "inline-flex",
                                             alignItems: "center",
                                             gap: 0.5,

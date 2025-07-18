@@ -97,7 +97,7 @@ export default function NotificationsTest() {
           data: {
             type: "goal_celebration",
             achievement: "7_day_streak",
-            url: "/analytics",
+            url: "/analyze",
           },
         }),
     },

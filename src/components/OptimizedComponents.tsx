@@ -19,7 +19,7 @@ import { useUser } from "../pages/_app";
 
 // Lazy load heavy components
 const LazyVariableManager = lazy(() => import("./VariableManager"));
-const LazyAnalytics = lazy(() => import("../pages/analytics"));
+const LazyAnalyze = lazy(() => import("../pages/analyze"));
 const LazyVariableDisplay = lazy(() => import("./VariableDisplay"));
 const LazyVariableInput = lazy(() => import("./VariableInput"));
 
@@ -268,7 +268,7 @@ export {
 // Export lazy-loaded components for external use
 export const LazyComponents = {
   VariableManager: LazyVariableManager,
-  Analytics: LazyAnalytics,
+  Analyze: LazyAnalyze,
   VariableDisplay: LazyVariableDisplay,
   VariableInput: LazyVariableInput,
 };

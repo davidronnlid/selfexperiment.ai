@@ -1,0 +1,7 @@
+[functions.withings-sync]
+verify_jwt = false
+import_map = "./import_map.json"
+
+[functions.withings-reimport]
+verify_jwt = false
+import_map = "./import_map.json" 

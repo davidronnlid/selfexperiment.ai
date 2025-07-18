@@ -1203,7 +1203,7 @@ export default function ManualTrackPage() {
       <Container maxWidth="md" sx={{ py: 4 }}>
         <Box sx={{ textAlign: "center" }}>
           <Typography variant="h6" sx={{ mb: 2 }}>
-            Loading your data...
+            Loading variables and data points...
           </Typography>
           <LinearProgress sx={{ mb: 2 }} />
           <Typography variant="body2" color="text.secondary">

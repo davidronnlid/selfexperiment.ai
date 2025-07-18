@@ -81,7 +81,7 @@ export default function RoutineManager() {
   // Sorting state
   const [sortBy, setSortBy] = useState<"variables" | "time">("variables");
 
-  // Batch logging state
+  // Batch tracking state
   const [batchLoggingOpen, setBatchLoggingOpen] = useState(false);
   const [batchStartDate, setBatchStartDate] = useState<Date>(new Date());
   const [batchEndDate, setBatchEndDate] = useState<Date>(() => {
@@ -92,7 +92,7 @@ export default function RoutineManager() {
   const [plannedLogs, setPlannedLogs] = useState<PlannedRoutineLog[]>([]);
   const [batchLoading, setBatchLoading] = useState(false);
 
-  // Batch logging filters
+  // Batch tracking filters
   const [selectedRoutineIds, setSelectedRoutineIds] = useState<string[]>([]);
   const [selectedVariableIds, setSelectedVariableIds] = useState<string[]>([]);
   const [selectedTimeIds, setSelectedTimeIds] = useState<string[]>([]);
@@ -571,7 +571,7 @@ export default function RoutineManager() {
     // Start with all routines
     let filteredRoutines = routines;
 
-    console.log("=== BATCH LOGGING DEBUG ===");
+    console.log("=== BATCH TRACKING DEBUG ===");
     console.log("All routines:", routines);
     console.log("Selected routine IDs:", selectedRoutineIds);
     console.log("Selected variable IDs:", selectedVariableIds);
@@ -711,7 +711,7 @@ export default function RoutineManager() {
         });
       }
     } catch (error) {
-      console.error("Error creating batch logs:", error);
+      console.error("Error creating batch data points:", error);
       setSnackbar({
         open: true,
         message: "Error creating logs. Please try again.",
@@ -833,7 +833,7 @@ export default function RoutineManager() {
                     color="primary"
                     sx={{ mt: 0.5, fontWeight: 500 }}
                   >
-                    Will auto-log:{" "}
+                    Will auto-track:{" "}
                     {routine.variables
                       .map((v: any) => v.variable_name)
                       .join(", ")}
@@ -882,7 +882,7 @@ export default function RoutineManager() {
 
                 <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, mb: 1 }}>
                   <Typography variant="body2" component="span">
-                    <strong>Auto-log value:</strong>{" "}
+                    <strong>Value:</strong>{" "}
                     {variable.default_value || "Not set"}
                     {variable.default_unit && ` ${variable.default_unit}`}
                   </Typography>
@@ -890,7 +890,7 @@ export default function RoutineManager() {
 
                 {variable.times?.length > 0 && (
                   <Typography variant="body2" sx={{ mb: 1 }}>
-                    <strong>Auto-log times:</strong>{" "}
+                    <strong>Times:</strong>{" "}
                     {variable.times
                       .map((timeObj: any) => timeString(timeObj.time))
                       .join(", ")}
@@ -924,12 +924,12 @@ export default function RoutineManager() {
       <Paper sx={{ p: 3, mt: 4, background: "#1e1e1e" }}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
           <AccessTime />
-          <Typography variant="h6">Batch Log Routines</Typography>
+          <Typography variant="h6">Batch Track Routines</Typography>
         </Box>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Create logs for selected routines, variables, and times across a date
-          range. Choose specific filters and then generate logs with default
-          values for confirmation later.
+          Create data points for selected routines, variables, and times across
+          a date range. Choose specific filters and then generate data points
+          with default values for confirmation later.
         </Typography>
 
         <Typography variant="subtitle2" sx={{ mb: 2 }}>
@@ -1095,7 +1095,7 @@ export default function RoutineManager() {
             onClick={handleOpenBatchLogging}
             startIcon={<AccessTime />}
           >
-            Preview & Generate Logs
+            Preview & Generate Data Points
           </Button>
         </Box>
       </Paper>
