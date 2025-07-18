@@ -3,169 +3,127 @@ const { createClient } = require("@supabase/supabase-js");
 // Load environment variables
 require("dotenv").config();
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// Initialize Supabase client with service role
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error("Missing required environment variables:");
-  console.error("- NEXT_PUBLIC_SUPABASE_URL");
-  console.error("- NEXT_PUBLIC_SUPABASE_ANON_KEY");
-  process.exit(1);
+// Helper function to log with colors
+function log(message, type = "info") {
+  const colors = {
+    info: "\x1b[36m", // Cyan
+    success: "\x1b[32m", // Green
+    error: "\x1b[31m", // Red
+    warning: "\x1b[33m", // Yellow
+  };
+  const reset = "\x1b[0m";
+  console.log(`${colors[type]}${message}${reset}`);
 }
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
 async function testWithingsIntegration() {
-  console.log("🧪 Testing Withings Integration...");
+  log("🧪 Testing Withings integration...");
 
   try {
-    // Test 1: Check if tables exist and are accessible
-    console.log("\n📋 Test 1: Checking table accessibility...");
-
-    const { data: tokensData, error: tokensError } = await supabase
+    // Test 1: Check if we can read from withings_tokens table
+    log("Test 1: Reading from withings_tokens table...");
+    const { data: tokens, error: tokensError } = await supabaseAdmin
       .from("withings_tokens")
-      .select("*")
-      .limit(1);
+      .select("user_id, access_token, refresh_token, expires_at")
+      .limit(5);
 
     if (tokensError) {
-      console.log("❌ withings_tokens table error:", tokensError.message);
-    } else {
-      console.log("✅ withings_tokens table is accessible");
-      console.log("📊 Found", tokensData?.length || 0, "token records");
+      log(`❌ Failed to read tokens: ${tokensError.message}`, "error");
+      return;
     }
 
-    const { data: weightsData, error: weightsError } = await supabase
+    log(`✅ Successfully read ${tokens.length} token records`, "success");
+    tokens.forEach((token) => {
+      log(`  - User: ${token.user_id}, Expires: ${token.expires_at}`, "info");
+    });
+
+    // Test 2: Check if we can read from withings_variable_logs table
+    log("Test 2: Reading from withings_variable_logs table...");
+    const { data: logs, error: logsError } = await supabaseAdmin
+      .from("withings_variable_logs")
+      .select("user_id, date, variable, value")
+      .limit(5);
+
+    if (logsError) {
+      log(`❌ Failed to read logs: ${logsError.message}`, "error");
+    } else {
+      log(`✅ Successfully read ${logs.length} log records`, "success");
+      logs.forEach((log) => {
+        log(
+          `  - User: ${log.user_id}, Date: ${log.date}, Variable: ${log.variable}, Value: ${log.value}`,
+          "info"
+        );
+      });
+    }
+
+    // Test 3: Check if we can read from withings_weights table
+    log("Test 3: Reading from withings_weights table...");
+    const { data: weights, error: weightsError } = await supabaseAdmin
       .from("withings_weights")
-      .select("*")
-      .limit(1);
+      .select("user_id, date, weight_kg, fat_ratio")
+      .limit(5);
 
     if (weightsError) {
-      console.log("❌ withings_weights table error:", weightsError.message);
+      log(`❌ Failed to read weights: ${weightsError.message}`, "error");
     } else {
-      console.log("✅ withings_weights table is accessible");
-      console.log("📊 Found", weightsData?.length || 0, "weight records");
+      log(`✅ Successfully read ${weights.length} weight records`, "success");
+      weights.forEach((weight) => {
+        log(
+          `  - User: ${weight.user_id}, Date: ${weight.date}, Weight: ${weight.weight_kg}kg, Fat: ${weight.fat_ratio}%`,
+          "info"
+        );
+      });
     }
 
-    // Test 2: Check environment variables
-    console.log("\n🔧 Test 2: Checking environment variables...");
+    // Test 4: Test API endpoints (if server is running)
+    log("Test 4: Testing API endpoints...");
 
-    const requiredEnvVars = [
-      "WITHINGS_ClientID",
-      "WITHINGS_Secret",
-      "NEXT_PUBLIC_SUPABASE_URL",
-      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-    ];
+    // Test fetch endpoint
+    try {
+      const response = await fetch(
+        "http://localhost:3000/api/withings/fetch?startdate=1751559322&enddate=1752768922&meastype=1,5,6,8,76,77,88"
+      );
+      log(
+        `Fetch API status: ${response.status}`,
+        response.ok ? "success" : "error"
+      );
 
-    const missingVars = requiredEnvVars.filter(
-      (varName) => !process.env[varName]
-    );
-
-    if (missingVars.length > 0) {
-      console.log("❌ Missing environment variables:", missingVars);
-    } else {
-      console.log("✅ All required environment variables are set");
+      if (!response.ok) {
+        const errorData = await response.json();
+        log(`Fetch API error: ${JSON.stringify(errorData)}`, "error");
+      }
+    } catch (error) {
+      log(`❌ Fetch API test failed: ${error.message}`, "error");
     }
 
-    // Test 3: Check API endpoints
-    console.log("\n🌐 Test 3: Checking API endpoints...");
-
-    const endpoints = [
-      "/api/withings/auth",
-      "/api/withings/callback",
-      "/api/withings/fetch",
-      "/api/withings/reimport",
-    ];
-
-    console.log("📋 Available Withings API endpoints:");
-    endpoints.forEach((endpoint) => {
-      console.log(`  - ${endpoint}`);
-    });
-
-    // Test 4: Check component files
-    console.log("\n📁 Test 4: Checking component files...");
-
-    const fs = require("fs");
-    const path = require("path");
-
-    const componentFiles = [
-      "src/components/WithingsIntegration.tsx",
-      "src/components/WithingsDataTable.tsx",
-    ];
-
-    componentFiles.forEach((file) => {
-      if (fs.existsSync(file)) {
-        console.log(`✅ ${file} exists`);
-      } else {
-        console.log(`❌ ${file} missing`);
-      }
-    });
-
-    // Test 5: Check analytics page
-    console.log("\n📄 Test 5: Checking analytics page...");
-
-    const analyticsFile = "src/pages/analytics.tsx";
-    if (fs.existsSync(analyticsFile)) {
-      const analyticsContent = fs.readFileSync(analyticsFile, "utf8");
-      if (analyticsContent.includes("WithingsIntegration")) {
-        console.log("✅ Analytics page includes WithingsIntegration component");
-      } else {
-        console.log("❌ Analytics page does not include WithingsIntegration");
-      }
-    } else {
-      console.log("❌ Analytics page not found");
-    }
-
-    console.log("\n🎯 Integration Status Summary:");
-    console.log("================================");
-
-    const status = {
-      tables: !tokensError && !weightsError,
-      envVars: missingVars.length === 0,
-      components: componentFiles.every((f) => fs.existsSync(f)),
-      analytics:
-        fs.existsSync(analyticsFile) &&
-        fs.readFileSync(analyticsFile, "utf8").includes("WithingsIntegration"),
-    };
-
-    console.log(`📊 Database Tables: ${status.tables ? "✅" : "❌"}`);
-    console.log(`🔧 Environment Variables: ${status.envVars ? "✅" : "❌"}`);
-    console.log(`📁 Components: ${status.components ? "✅" : "❌"}`);
-    console.log(`📄 Analytics Page: ${status.analytics ? "✅" : "❌"}`);
-
-    const overallStatus = Object.values(status).every(Boolean);
-    console.log(
-      `\n🎉 Overall Status: ${overallStatus ? "✅ READY" : "❌ NEEDS FIXES"}`
-    );
-
-    if (!overallStatus) {
-      console.log("\n🔧 To fix issues:");
-      if (!status.tables) {
-        console.log("- Create Withings tables in Supabase dashboard");
-      }
-      if (!status.envVars) {
-        console.log("- Add missing environment variables to .env file");
-      }
-      if (!status.components) {
-        console.log("- Check component files exist");
-      }
-      if (!status.analytics) {
-        console.log("- Ensure analytics page includes WithingsIntegration");
-      }
-    } else {
-      console.log("\n🚀 Withings integration is ready!");
-      console.log("📱 Visit /analytics to test the integration");
-    }
+    log("🎉 Withings integration tests completed!", "success");
   } catch (error) {
-    console.error("❌ Test failed:", error);
+    log(`❌ Test failed: ${error.message}`, "error");
+    log(`Stack trace: ${error.stack}`, "error");
   }
 }
 
-// Run the test
-testWithingsIntegration()
-  .then(() => {
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error("💥 Test failed:", error);
-    process.exit(1);
-  });
+async function main() {
+  try {
+    await testWithingsIntegration();
+  } catch (error) {
+    log(`❌ Diagnostic failed: ${error.message}`, "error");
+  }
+}
+
+if (require.main === module) {
+  main()
+    .then(() => {
+      log("\n🏁 Diagnostic complete!", "info");
+      process.exit(0);
+    })
+    .catch((error) => {
+      log(`Diagnostic failed: ${error.message}`, "error");
+      process.exit(1);
+    });
+}

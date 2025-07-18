@@ -144,7 +144,7 @@ export default function EnhancedAnalytics({ userId }: EnhancedAnalyticsProps) {
       cutoffDate.setDate(cutoffDate.getDate() - daysBack);
 
       const { data, error } = await supabase
-        .from("logs")
+        .from("data_points")
         .select("id, date, variable_id, value, notes, created_at")
         .eq("user_id", userId)
         .gte("date", cutoffDate.toISOString())
@@ -234,7 +234,7 @@ export default function EnhancedAnalytics({ userId }: EnhancedAnalyticsProps) {
         `🔥 Great consistency! ${stats.streak} days logged in a row`
       );
     } else if (stats.streak > 0) {
-      insights.push(`💪 Currently on a ${stats.streak} day logging streak`);
+      insights.push(`💪 Currently on a ${stats.streak} day tracking streak`);
     }
 
     if (stats.latest > stats.average * 1.2) {
@@ -499,8 +499,8 @@ export default function EnhancedAnalytics({ userId }: EnhancedAnalyticsProps) {
   if (logs.length === 0) {
     return (
       <Alert severity="info" sx={{ mt: 2 }}>
-        No manual logs found for the selected time range. Start logging data to
-        see your insights!
+        No manual data points found for the selected time range. Start tracking
+        data to see your insights!
       </Alert>
     );
   }

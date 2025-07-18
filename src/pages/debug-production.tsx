@@ -97,7 +97,7 @@ export default function DebugProductionPage() {
       // Test 5: Variable logs
       await runTest("Variable Logs", async () => {
         const { data, error } = await supabase
-          .from("variable_logs")
+          .from("variable_data_points")
           .select("*")
           .eq("user_id", user.id)
           .limit(10);

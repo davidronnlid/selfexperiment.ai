@@ -186,7 +186,7 @@ export default function BatchRoutineLoggingModal({
       <DialogTitle>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <AccessTime />
-          <Typography variant="h6">Batch Routine Logging</Typography>
+          <Typography variant="h6">Batch Routine Tracking</Typography>
         </Box>
         <Typography variant="body2" color="text.secondary">
           Review and confirm the logs to be created ({enabledCount} of{" "}

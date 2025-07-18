@@ -5,8 +5,8 @@ export default function LogPage() {
   const router = useRouter();
 
   useEffect(() => {
-    // Redirect to the new log page location
-    router.replace("/log/now");
+    // Redirect to the new manual tracking page
+    router.replace("/track/manual");
   }, [router]);
 
   return null; // Component will redirect immediately

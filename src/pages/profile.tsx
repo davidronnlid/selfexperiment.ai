@@ -534,7 +534,7 @@ export default function ProfilePage() {
                         <TextField
                           {...params}
                           label="Timezone"
-                          helperText="Your timezone for accurate logging times"
+                          helperText="Your timezone for accurate tracking times"
                           className="mb-4"
                         />
                       )}

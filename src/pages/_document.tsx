@@ -14,7 +14,7 @@ export default function Document() {
         <meta name="apple-mobile-web-app-title" content="Modular Health" />
         <meta
           name="description"
-          content="Understand yourself better with AI - Track your health metrics and daily logs"
+          content="Understand yourself better with AI - Track your health metrics and daily data points"
         />
         <meta name="format-detection" content="telephone=no" />
         <meta name="mobile-web-app-capable" content="yes" />

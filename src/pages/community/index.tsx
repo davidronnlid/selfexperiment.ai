@@ -48,7 +48,7 @@ export default function CommunityPage() {
   const [feed, setFeed] = useState<any[]>([]);
   const [feedLoading, setFeedLoading] = useState(false);
   const [likeStates, setLikeStates] = useState<{
-    [logId: string]: { liked: boolean; count: number };
+    [dataPointId: string]: { liked: boolean; count: number };
   }>({});
 
   const handleSearch = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -87,7 +87,7 @@ export default function CommunityPage() {
       }
       // Get recent shared logs from followed users
       const { data: logs, error: logsError } = await supabase
-        .from("logs")
+        .from("data_points")
         .select(
           "id, date, value, notes, label, user_id, profiles: user_id (username)"
         )
@@ -117,18 +117,19 @@ export default function CommunityPage() {
     const fetchLikes = async () => {
       // 1. Fetch all likes for these logs
       const { data: allLikes } = await supabase
-        .from("log_likes")
-        .select("log_id, user_id")
-        .in("log_id", logIds);
+        .from("data_point_likes")
+        .select("data_point_id, user_id")
+        .in("data_point_id", logIds);
       // 2. Build likeStates
       const likeStatesObj: {
-        [logId: string]: { liked: boolean; count: number };
+        [dataPointId: string]: { liked: boolean; count: number };
       } = {};
       for (const log of feed) {
         if (!log.id) continue;
         const likesForLog =
           allLikes?.filter(
-            (lc: { log_id: any; user_id: any }) => lc.log_id === log.id
+            (lc: { data_point_id: any; user_id: any }) =>
+              lc.data_point_id === log.id
           ) || [];
         const liked = !!likesForLog.find((like) => like.user_id === user.id);
         likeStatesObj[log.id] = {
@@ -216,18 +217,18 @@ export default function CommunityPage() {
                       if (!likeState.liked) {
                         // Like: upsert
                         const { error } = await supabase
-                          .from("log_likes")
+                          .from("data_point_likes")
                           .upsert(
-                            { log_id: logId, user_id: user.id },
-                            { onConflict: "log_id,user_id" }
+                            { data_point_id: logId, user_id: user.id },
+                            { onConflict: "data_point_id,user_id" }
                           );
                         if (error) console.error("Like error:", error);
                       } else {
                         // Unlike: delete
                         const { error } = await supabase
-                          .from("log_likes")
+                          .from("data_point_likes")
                           .delete()
-                          .eq("log_id", logId)
+                          .eq("data_point_id", logId)
                           .eq("user_id", user.id);
                         if (error) console.error("Unlike error:", error);
                       }
@@ -236,20 +237,23 @@ export default function CommunityPage() {
                       if (logIds.length === 0) return;
                       const { data: allLikes, error: fetchError } =
                         await supabase
-                          .from("log_likes")
-                          .select("log_id, user_id")
-                          .in("log_id", logIds);
+                          .from("data_point_likes")
+                          .select("data_point_id, user_id")
+                          .in("data_point_id", logIds);
                       if (fetchError)
                         console.error("Fetch likes error:", fetchError);
                       const likeStatesObj: {
-                        [logId: string]: { liked: boolean; count: number };
+                        [dataPointId: string]: {
+                          liked: boolean;
+                          count: number;
+                        };
                       } = {};
                       for (const l of feed) {
                         if (!l.id) continue;
                         const likesForLog =
                           allLikes?.filter(
-                            (lc: { log_id: any; user_id: any }) =>
-                              lc.log_id === l.id
+                            (lc: { data_point_id: any; user_id: any }) =>
+                              lc.data_point_id === l.id
                           ) || [];
                         const liked = !!likesForLog.find(
                           (like) => like.user_id === user.id
@@ -271,7 +275,13 @@ export default function CommunityPage() {
                     >
                       <CardHeader
                         avatar={
-                          <Avatar src={log.profiles?.avatar_url || undefined}>
+                          <Avatar
+                            src={log.profiles?.avatar_url || undefined}
+                            onError={(e) => {
+                              // Hide the image if it fails to load
+                              e.currentTarget.style.display = "none";
+                            }}
+                          >
                             {log.profiles?.username?.[0]?.toUpperCase() || "?"}
                           </Avatar>
                         }

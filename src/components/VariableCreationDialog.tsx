@@ -977,7 +977,7 @@ export default function VariableCreationDialog({
               />
               <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                 {isShared
-                  ? "Other users will be able to select and use this variable for their own logging. This helps build a comprehensive community database."
+                  ? "Other users will be able to select and use this variable for their own tracking. This helps build a comprehensive community database."
                   : "Only you will be able to use this variable. You can make it public later if you change your mind."}
               </Typography>
             </Box>

@@ -82,12 +82,9 @@ export default function Header() {
     " after:content-[''] after:absolute after:left-0 after:bottom-0 after:w-0 after:h-0.5 after:bg-gold after:transition-all after:duration-300 hover:after:w-full focus:after:w-full";
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const [experimentAnchorEl, setExperimentAnchorEl] =
-    useState<null | HTMLElement>(null);
-  const [logAnchorEl, setLogAnchorEl] = useState<null | HTMLElement>(null);
+  const [trackAnchorEl, setTrackAnchorEl] = useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
-  const experimentOpen = Boolean(experimentAnchorEl);
-  const logOpen = Boolean(logAnchorEl);
+  const trackOpen = Boolean(trackAnchorEl);
 
   const handleAvatarClick = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -96,46 +93,24 @@ export default function Header() {
     setAnchorEl(null);
   };
 
-  const handleExperimentClick = (event: React.MouseEvent<HTMLElement>) => {
-    setExperimentAnchorEl(event.currentTarget);
-  };
-  const handleExperimentMenuClose = () => {
-    setExperimentAnchorEl(null);
-  };
-
-  // Log dropdown handlers
+  // Track dropdown handlers
   const handleLogClick = (event: React.MouseEvent<HTMLElement>) => {
-    setLogAnchorEl(event.currentTarget);
+    setTrackAnchorEl(event.currentTarget);
   };
   const handleLogMenuClose = () => {
-    setLogAnchorEl(null);
+    setTrackAnchorEl(null);
   };
-  const handleLogNowClick = () => {
-    router.push("/log/now");
-    setLogAnchorEl(null);
+  const handleManualLogClick = () => {
+    router.push("/track/manual");
+    setTrackAnchorEl(null);
     setMobileOpen(false);
   };
-  const handleLogRoutinesClick = () => {
-    router.push("/log/routines");
-    setLogAnchorEl(null);
+  const handleAutoLogClick = () => {
+    router.push("/track/auto");
+    setTrackAnchorEl(null);
     setMobileOpen(false);
   };
 
-  const handleBuildClick = () => {
-    router.push("/experiment/builder");
-    setExperimentAnchorEl(null);
-    setMobileOpen(false);
-  };
-  const handleActiveClick = () => {
-    router.push("/experiment/active-experiments");
-    setExperimentAnchorEl(null);
-    setMobileOpen(false);
-  };
-  const handleCompletedClick = () => {
-    router.push("/experiment/completed-experiments");
-    setExperimentAnchorEl(null);
-    setMobileOpen(false);
-  };
   const handleProfile = () => {
     router.push("/profile");
     setAnchorEl(null);
@@ -173,18 +148,9 @@ export default function Header() {
     { text: "Community", path: "/community" },
   ];
 
-  const mobileExperimentItems = [
-    { text: "Build Experiment", path: "/experiment/builder" },
-    { text: "Active Experiments", path: "/experiment/active-experiments" },
-    {
-      text: "Completed Experiments",
-      path: "/experiment/completed-experiments",
-    },
-  ];
-
   const mobileLogItems = [
-    { text: "Log Now", path: "/log/now" },
-    { text: "Log Routines", path: "/log/routines" },
+    { text: "Manual Track", path: "/track/manual" },
+    { text: "Auto Track", path: "/track/auto" },
   ];
 
   return (
@@ -246,11 +212,11 @@ export default function Header() {
               }}
               endIcon={<ArrowDropDownIcon />}
             >
-              Log
+              Track
             </Button>
             <Menu
-              anchorEl={logAnchorEl}
-              open={logOpen}
+              anchorEl={trackAnchorEl}
+              open={trackOpen}
               onClose={handleLogMenuClose}
               PaperProps={{
                 className: "mt-2",
@@ -262,19 +228,19 @@ export default function Header() {
                 },
               }}
             >
-              <MenuItem onClick={handleLogNowClick} className="py-3">
+              <MenuItem onClick={handleManualLogClick} className="py-3">
                 <Typography variant="body2" className="font-medium">
-                  Log Now
+                  Manual Track
                 </Typography>
               </MenuItem>
-              <MenuItem onClick={handleLogRoutinesClick} className="py-3">
+              <MenuItem onClick={handleAutoLogClick} className="py-3">
                 <Typography variant="body2" className="font-medium">
-                  Log Routines
+                  Auto Track
                 </Typography>
               </MenuItem>
             </Menu>
 
-            <Link href="/analytics" passHref legacyBehavior>
+            <Link href="/analytics" passHref>
               <Button
                 className={navLinkClass}
                 sx={{
@@ -290,7 +256,7 @@ export default function Header() {
               </Button>
             </Link>
 
-            <Link href="/community" passHref legacyBehavior>
+            <Link href="/community" passHref>
               <Button
                 className={navLinkClass}
                 sx={{
@@ -323,6 +289,10 @@ export default function Header() {
                     src={profilePic || undefined}
                     alt={displayName}
                     className="w-8 h-8 border-2 border-gold"
+                    onError={(e) => {
+                      // Hide the image if it fails to load
+                      e.currentTarget.style.display = "none";
+                    }}
                     sx={{
                       width: 32,
                       height: 32,
@@ -382,6 +352,10 @@ export default function Header() {
                 src={profilePic || undefined}
                 alt={displayName}
                 className="w-8 h-8 border-2 border-gold"
+                onError={(e) => {
+                  // Hide the image if it fails to load
+                  e.currentTarget.style.display = "none";
+                }}
                 sx={{
                   width: 32,
                   height: 32,
@@ -460,7 +434,7 @@ export default function Header() {
               variant="subtitle2"
               className="text-gold font-semibold mb-2"
             >
-              Log
+              Track
             </Typography>
             {mobileLogItems.map((item) => (
               <ListItem

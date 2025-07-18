@@ -88,32 +88,36 @@ export default function CommunityProfilePage() {
       console.log("Fetching logs for variable:", variable);
       // Fetch logs for this variable for this user
       const { data: logs, error } = await supabase
-        .from("logs")
-        .select("id, date, value, notes")
+        .from("data_points")
+        .select("data_point_id, user_id, date, value, notes")
         .eq("user_id", profile.id)
         .ilike("label", variable)
         .order("date", { ascending: false })
         .limit(20); // Reduced from 50 to 20 for faster loading
       console.log("Fetched logs:", logs, error);
       // Fetch likes for these logs
-      const logIds = (logs || []).map((log: any) => log.id).filter(Boolean);
+      const logIds = (logs || [])
+        .map((log: any) => log.data_point_id)
+        .filter(Boolean);
       let allLikes: any[] = [];
       if (logIds.length > 0) {
         const { data: likesData } = await supabase
-          .from("log_likes")
-          .select("log_id, user_id")
-          .in("log_id", logIds);
+          .from("data_point_likes")
+          .select("data_point_id, user_id")
+          .in("data_point_id", logIds);
         allLikes = likesData || [];
       }
       // Build likeStates for this variable
       const likeStates: { [logId: string]: { liked: boolean; count: number } } =
         {};
       for (const log of logs || []) {
-        const likesForLog = allLikes.filter((lc) => lc.log_id === log.id);
+        const likesForLog = allLikes.filter(
+          (lc) => lc.data_point_id === log.data_point_id
+        );
         const liked = !!likesForLog.find(
           (like) => user && like.user_id === user.id
         );
-        likeStates[log.id] = {
+        likeStates[log.data_point_id] = {
           liked,
           count: likesForLog.length,
         };
@@ -133,39 +137,41 @@ export default function CommunityProfilePage() {
     try {
       if (!likeState.liked) {
         const { error } = await supabase
-          .from("log_likes")
+          .from("data_point_likes")
           .upsert(
-            { log_id: logId, user_id: user.id },
-            { onConflict: "log_id,user_id" }
+            { data_point_id: logId, user_id: user.id },
+            { onConflict: "data_point_id,user_id" }
           );
         if (error) console.error("Like error:", error);
       } else {
         const { error } = await supabase
-          .from("log_likes")
+          .from("data_point_likes")
           .delete()
-          .eq("log_id", logId)
+          .eq("data_point_id", logId)
           .eq("user_id", user.id);
         if (error) console.error("Unlike error:", error);
       }
       // Refetch likes for this variable
       const logs = logsByVariable[variable] || [];
-      const logIds = logs.map((log: any) => log.id).filter(Boolean);
+      const logIds = logs.map((log: any) => log.data_point_id).filter(Boolean);
       let allLikes: any[] = [];
       if (logIds.length > 0) {
         const { data: likesData } = await supabase
-          .from("log_likes")
-          .select("log_id, user_id")
-          .in("log_id", logIds);
+          .from("data_point_likes")
+          .select("data_point_id, user_id")
+          .in("data_point_id", logIds);
         allLikes = likesData || [];
       }
       const likeStates: { [logId: string]: { liked: boolean; count: number } } =
         {};
       for (const log of logs) {
-        const likesForLog = allLikes.filter((lc) => lc.log_id === log.id);
+        const likesForLog = allLikes.filter(
+          (lc) => lc.data_point_id === log.data_point_id
+        );
         const liked = !!likesForLog.find(
           (like) => user && like.user_id === user.id
         );
-        likeStates[log.id] = {
+        likeStates[log.data_point_id] = {
           liked,
           count: likesForLog.length,
         };
@@ -307,7 +313,7 @@ export default function CommunityProfilePage() {
                     ) : (
                       <List dense>
                         {logsByVariable[v.variable_name]?.map((log, idx) => (
-                          <ListItem key={log.id || idx}>
+                          <ListItem key={log.data_point_id || idx}>
                             <ListItemText
                               primary={
                                 <>
@@ -323,7 +329,7 @@ export default function CommunityProfilePage() {
                                     <IconButton
                                       color={
                                         likeStatesByVariable[v.variable_name]?.[
-                                          log.id
+                                          log.data_point_id
                                         ]?.liked
                                           ? "error"
                                           : "default"
@@ -331,10 +337,10 @@ export default function CommunityProfilePage() {
                                       onClick={() =>
                                         handleLike(
                                           v.variable_name,
-                                          log.id,
+                                          log.data_point_id,
                                           likeStatesByVariable[
                                             v.variable_name
-                                          ]?.[log.id] || {
+                                          ]?.[log.data_point_id] || {
                                             liked: false,
                                             count: 0,
                                           }
@@ -343,7 +349,7 @@ export default function CommunityProfilePage() {
                                       size="small"
                                     >
                                       {likeStatesByVariable[v.variable_name]?.[
-                                        log.id
+                                        log.data_point_id
                                       ]?.liked ? (
                                         <FavoriteIcon />
                                       ) : (
@@ -355,7 +361,7 @@ export default function CommunityProfilePage() {
                                       sx={{ ml: 0.5 }}
                                     >
                                       {likeStatesByVariable[v.variable_name]?.[
-                                        log.id
+                                        log.data_point_id
                                       ]?.count || 0}
                                     </Typography>
                                   </Box>

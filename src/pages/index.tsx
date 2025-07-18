@@ -18,7 +18,7 @@ export default function Home() {
   // If user is authenticated, redirect to log/now page
   useEffect(() => {
     if (!loading && user) {
-      router.push("/log/now");
+      router.push("/track/manual");
     }
   }, [user, loading, router]);
 
@@ -72,7 +72,7 @@ export default function Home() {
               variant="body1"
               className="mb-8 text-text-secondary text-center leading-relaxed text-sm lg:text-base"
             >
-              Sign in to start tracking your experiments, logging data, and
+              Sign in to start tracking your experiments, tracking data, and
               discovering insights about yourself through intelligent analysis.
             </Typography>
             <Box className="flex flex-col gap-4 w-full max-w-sm">
@@ -121,24 +121,14 @@ export default function Home() {
             Welcome back! What would you like to do today?
           </Typography>
           <Box className="flex flex-col gap-4 w-full max-w-sm">
-            <Link href="/experiment/builder" passHref>
+            <Link href="/track/manual" passHref>
               <Button
                 variant="contained"
                 className="w-full text-lg py-3 rounded-lg shadow-lg transition-all duration-200 hover:shadow-xl"
                 size="large"
                 fullWidth
               >
-                Build Experiment
-              </Button>
-            </Link>
-            <Link href="/log" passHref>
-              <Button
-                variant="outlined"
-                className="w-full text-lg py-3 rounded-lg transition-all duration-200"
-                size="large"
-                fullWidth
-              >
-                Log Now
+                Track Now
               </Button>
             </Link>
             <Link href="/analytics" passHref>

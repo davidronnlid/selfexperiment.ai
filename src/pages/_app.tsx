@@ -570,7 +570,7 @@ export default function App({ Component, pageProps }: AppProps) {
           const refreshToken = refreshMatch ? refreshMatch[1] : "";
 
           // Redirect to localhost with the token
-          const localhostUrl = `http://localhost:3000/log/now#access_token=${accessToken}&expires_at=${expiresAt}&refresh_token=${refreshToken}`;
+          const localhostUrl = `http://localhost:3000/track/manual#access_token=${accessToken}&expires_at=${expiresAt}&refresh_token=${refreshToken}`;
           window.location.href = localhostUrl;
         }
       }

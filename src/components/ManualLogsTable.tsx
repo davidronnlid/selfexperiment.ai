@@ -40,7 +40,7 @@ import { supabase } from "@/utils/supaBase";
 import { format, parseISO, subDays, startOfDay, endOfDay } from "date-fns";
 import { useRouter } from "next/router";
 
-interface ManualLog {
+interface ManualDataPoint {
   id: number;
   date: string;
   variable_id: string;
@@ -49,17 +49,17 @@ interface ManualLog {
   created_at: string;
 }
 
-interface ManualLogsTableProps {
+interface ManualDataPointsTableProps {
   userId: string;
   maxRows?: number;
 }
 
-export default function ManualLogsTable({
+export default function ManualDataPointsTable({
   userId,
   maxRows = 25, // Reduced from 50 to 25 for faster loading
-}: ManualLogsTableProps) {
+}: ManualDataPointsTableProps) {
   const router = useRouter();
-  const [logs, setLogs] = useState<ManualLog[]>([]);
+  const [logs, setLogs] = useState<ManualDataPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
@@ -115,7 +115,7 @@ export default function ManualLogsTable({
       const endDateTime = endOfDay(parseISO(endDate)).toISOString();
 
       const { data, error } = await supabase
-        .from("logs")
+        .from("data_points")
         .select("id, date, variable_id, value, notes, created_at")
         .eq("user_id", userId)
         .gte("date", startDateTime)
@@ -131,7 +131,7 @@ export default function ManualLogsTable({
       );
 
       // Map logs to ManualLog type
-      const mappedLogs: ManualLog[] = finalLogs.map((log: any) => ({
+      const mappedLogs: ManualDataPoint[] = finalLogs.map((log: any) => ({
         id: log.id,
         date: log.date,
         variable_id: log.variable_id,
@@ -248,7 +248,8 @@ export default function ManualLogsTable({
   if (logs.length === 0) {
     return (
       <Alert severity="info" sx={{ mt: 2 }} icon={<TrendingFlat />}>
-        No manual logs found. Start logging data to see your trends here!
+        No manual data points found. Start tracking data to see your trends
+        here!
       </Alert>
     );
   }
@@ -263,7 +264,7 @@ export default function ManualLogsTable({
           </Box>
           <Box>
             <Typography variant="h5" className="text-white font-semibold">
-              Manual Logs
+              Manual Data Points
             </Typography>
             <Typography variant="body2" className="text-text-secondary">
               {logs.length} {logs.length === 1 ? "entry" : "entries"} found

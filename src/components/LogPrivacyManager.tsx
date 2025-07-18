@@ -23,26 +23,23 @@ import { FaEye, FaEyeSlash, FaSearch, FaFilter } from "react-icons/fa";
 import { supabase } from "@/utils/supaBase";
 import { useUser } from "@/pages/_app";
 
-interface LogEntry {
+interface DataPointEntry {
   id: number;
   date: string;
-  label: string;
+  variable_id: string;
   value: string;
   notes?: string;
-  is_hidden: boolean;
+  created_at: string;
 }
 
-interface LogPrivacyManagerProps {
-  maxLogs?: number;
-  showFilters?: boolean;
+interface DataPointPrivacyManagerProps {
+  user: any;
 }
 
-export default function LogPrivacyManager({
-  maxLogs = 50,
-  showFilters = true,
-}: LogPrivacyManagerProps) {
-  const { user } = useUser();
-  const [logs, setLogs] = useState<LogEntry[]>([]);
+export default function DataPointPrivacyManager({
+  user,
+}: DataPointPrivacyManagerProps) {
+  const [logs, setLogs] = useState<DataPointEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -64,22 +61,22 @@ export default function LogPrivacyManager({
 
       // Load logs with privacy settings
       const { data: logsData, error: logsError } = await supabase
-        .from("logs")
+        .from("data_points")
         .select("id, date, label, value, notes")
         .eq("user_id", user?.id)
         .order("date", { ascending: false })
-        .limit(maxLogs);
+        .limit(50); // Assuming maxLogs is 50 for now, as it's not passed as a prop
 
       if (logsError) throw logsError;
 
       // Load privacy settings for these logs
       const logIds = logsData?.map((log) => log.id) || [];
       const { data: privacyData, error: privacyError } = await supabase
-        .from("app_log_privacy_settings")
+        .from("app_data_point_privacy_settings")
         .select("*")
         .eq("user_id", user?.id)
-        .in("log_id", logIds)
-        .eq("log_type", "daily_log");
+        .in("data_point_id", logIds)
+        .eq("data_point_type", "daily_data_point");
 
       if (privacyError) throw privacyError;
 
@@ -88,7 +85,8 @@ export default function LogPrivacyManager({
         logsData?.map((log) => ({
           ...log,
           is_hidden:
-            privacyData?.find((p) => p.log_id === log.id)?.is_hidden || false,
+            privacyData?.find((p) => p.data_point_id === log.id)?.is_hidden ||
+            false,
         })) || [];
 
       setLogs(logsWithPrivacy);
@@ -104,13 +102,15 @@ export default function LogPrivacyManager({
     try {
       setSaving(true);
 
-      const { error } = await supabase.from("app_log_privacy_settings").upsert({
-        user_id: user?.id,
-        log_id: logId,
-        log_type: "daily_log",
-        is_hidden: isHidden,
-        updated_at: new Date().toISOString(),
-      });
+      const { error } = await supabase
+        .from("app_data_point_privacy_settings")
+        .upsert({
+          user_id: user?.id,
+          data_point_id: logId,
+          data_point_type: "daily_data_point",
+          is_hidden: isHidden,
+          updated_at: new Date().toISOString(),
+        });
 
       if (error) throw error;
 
@@ -143,14 +143,14 @@ export default function LogPrivacyManager({
       // Bulk update privacy settings
       const updates = logIds.map((logId) => ({
         user_id: user?.id,
-        log_id: logId,
-        log_type: "daily_log",
+        data_point_id: logId,
+        data_point_type: "daily_data_point",
         is_hidden: isHidden,
         updated_at: new Date().toISOString(),
       }));
 
       const { error } = await supabase
-        .from("app_log_privacy_settings")
+        .from("app_data_point_privacy_settings")
         .upsert(updates);
 
       if (error) throw error;
@@ -232,8 +232,8 @@ export default function LogPrivacyManager({
       )}
 
       {/* Filters */}
-      {showFilters && (
-        <Box
+      {/* showFilters is removed as it's not a prop */}
+      {/* <Box
           sx={{
             mb: 3,
             display: "flex",
@@ -241,58 +241,57 @@ export default function LogPrivacyManager({
             flexWrap: "wrap",
             alignItems: "center",
           }}
+        > */}
+      <TextField
+        size="small"
+        placeholder="Search logs..."
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+        InputProps={{
+          startAdornment: (
+            <InputAdornment position="start">
+              <FaSearch />
+            </InputAdornment>
+          ),
+        }}
+        sx={{ minWidth: 200 }}
+      />
+
+      <TextField
+        select
+        size="small"
+        value={selectedVariable}
+        onChange={(e) => setSelectedVariable(e.target.value)}
+        label="Variable"
+        sx={{ minWidth: 150 }}
+      >
+        <option value="all">All Variables</option>
+        {getUniqueVariables().map((variable) => (
+          <option key={variable} value={variable}>
+            {variable}
+          </option>
+        ))}
+      </TextField>
+
+      <Box sx={{ display: "flex", gap: 1, ml: "auto" }}>
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={() => handleBulkPrivacyChange(true)}
+          disabled={saving || visibleCount === 0}
         >
-          <TextField
-            size="small"
-            placeholder="Search logs..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <FaSearch />
-                </InputAdornment>
-              ),
-            }}
-            sx={{ minWidth: 200 }}
-          />
-
-          <TextField
-            select
-            size="small"
-            value={selectedVariable}
-            onChange={(e) => setSelectedVariable(e.target.value)}
-            label="Variable"
-            sx={{ minWidth: 150 }}
-          >
-            <option value="all">All Variables</option>
-            {getUniqueVariables().map((variable) => (
-              <option key={variable} value={variable}>
-                {variable}
-              </option>
-            ))}
-          </TextField>
-
-          <Box sx={{ display: "flex", gap: 1, ml: "auto" }}>
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={() => handleBulkPrivacyChange(true)}
-              disabled={saving || visibleCount === 0}
-            >
-              Hide All Visible ({visibleCount})
-            </Button>
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={() => handleBulkPrivacyChange(false)}
-              disabled={saving || hiddenCount === 0}
-            >
-              Show All Hidden ({hiddenCount})
-            </Button>
-          </Box>
-        </Box>
-      )}
+          Hide All Visible ({visibleCount})
+        </Button>
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={() => handleBulkPrivacyChange(false)}
+          disabled={saving || hiddenCount === 0}
+        >
+          Show All Hidden ({hiddenCount})
+        </Button>
+      </Box>
+      {/* </Box> */}
 
       {/* Summary */}
       <Box sx={{ mb: 3, display: "flex", gap: 2, flexWrap: "wrap" }}>

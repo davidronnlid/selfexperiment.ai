@@ -1,23 +1,66 @@
 import React, { useState, useEffect } from "react";
 import {
-  Container,
   Box,
-  Typography,
-  Button,
-  TextField,
-  Alert,
   Card,
   CardContent,
+  Typography,
+  Button,
+  Alert,
   Stack,
-  Paper,
+  Divider,
+  Chip,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Switch,
+  FormControlLabel,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  CircularProgress,
+  Snackbar,
 } from "@mui/material";
 import {
-  Send as SendIcon,
+  Notifications as NotificationsIcon,
+  NotificationsOff as NotificationsOffIcon,
   Schedule as ScheduleIcon,
+  Sync as SyncIcon,
+  Psychology as PsychologyIcon,
+  FitnessCenter as FitnessIcon,
+  CheckCircle as CheckCircleIcon,
+  ExpandMore as ExpandMoreIcon,
+  Send as SendIcon,
+  AccessTime as AccessTimeIcon,
+  Refresh as RefreshIcon,
+  Info as InfoIcon,
+  Warning as WarningIcon,
+  Error as ErrorIcon,
 } from "@mui/icons-material";
 import { useNotifications } from "@/hooks/useNotifications";
+import { supabase } from "@/utils/supaBase";
 
-export default function NotificationTest() {
+interface TestResult {
+  test: string;
+  status: "pending" | "success" | "error";
+  message: string;
+  timestamp: Date;
+}
+
+export default function NotificationTestPage() {
+  const [userId, setUserId] = useState<string>("");
+  const [testResults, setTestResults] = useState<TestResult[]>([]);
+  const [snackbar, setSnackbar] = useState<{
+    open: boolean;
+    message: string;
+    severity: "success" | "error" | "info" | "warning";
+  }>({ open: false, message: "", severity: "info" });
+
   const {
     hasPermission,
     isSupported,
@@ -25,280 +68,485 @@ export default function NotificationTest() {
     sendNotification,
     scheduleTestNotification,
     cancelScheduledNotification,
-  } = useNotifications();
-
-  const [scheduledTime, setScheduledTime] = useState("");
-  const [testMessage, setTestMessage] = useState("");
-  const [currentScheduledNotification, setCurrentScheduledNotification] =
-    useState<string | null>(null);
-  const [status, setStatus] = useState("");
+    scheduledNotifications,
+  } = useNotifications(userId);
 
   useEffect(() => {
-    // Set default scheduled time to 30 seconds from now
-    const defaultTime = new Date();
-    defaultTime.setSeconds(defaultTime.getSeconds() + 30);
-    setScheduledTime(defaultTime.toISOString().slice(0, 16));
-    setTestMessage(
-      "🚀 Hello from your iPhone! This test notification was scheduled successfully."
-    );
+    // Get current user ID
+    const getCurrentUser = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        setUserId(user.id);
+      }
+    };
+    getCurrentUser();
   }, []);
 
-  const handleRequestPermission = async () => {
-    setStatus("Requesting permission...");
-    const granted = await requestPermission();
-    setStatus(granted ? "✅ Permission granted!" : "❌ Permission denied");
+  const addTestResult = (
+    test: string,
+    status: "pending" | "success" | "error",
+    message: string
+  ) => {
+    setTestResults((prev) => [
+      ...prev,
+      {
+        test,
+        status,
+        message,
+        timestamp: new Date(),
+      },
+    ]);
   };
 
-  const handleSendImmediate = async () => {
-    if (!hasPermission) return;
+  const showSnackbar = (
+    message: string,
+    severity: "success" | "error" | "info" | "warning" = "info"
+  ) => {
+    setSnackbar({ open: true, message, severity });
+  };
 
-    try {
-      setStatus("Sending immediate notification...");
-      await sendNotification("🔔 Immediate Test", {
-        body: "This is an immediate test notification!",
-        data: { type: "immediate_test" },
-      });
-      setStatus("✅ Immediate notification sent!");
-    } catch (error) {
-      setStatus(
-        `❌ Error: ${error instanceof Error ? error.message : "Unknown error"}`
+  const runBasicTests = async () => {
+    addTestResult(
+      "Browser Support",
+      "pending",
+      "Checking if notifications are supported..."
+    );
+
+    if (!isSupported) {
+      addTestResult(
+        "Browser Support",
+        "error",
+        "Notifications not supported in this browser"
+      );
+      return;
+    }
+    addTestResult("Browser Support", "success", "Notifications are supported");
+
+    addTestResult(
+      "Permission Status",
+      "pending",
+      "Checking notification permission..."
+    );
+    if (hasPermission) {
+      addTestResult(
+        "Permission Status",
+        "success",
+        "Notification permission granted"
+      );
+    } else {
+      addTestResult(
+        "Permission Status",
+        "error",
+        "Notification permission not granted"
       );
     }
   };
 
-  const handleScheduleTest = async () => {
-    if (!hasPermission || !scheduledTime) return;
+  const testPermissionRequest = async () => {
+    addTestResult(
+      "Permission Request",
+      "pending",
+      "Requesting notification permission..."
+    );
 
     try {
-      setStatus("Scheduling notification...");
-      const schedTime = new Date(scheduledTime);
-      const notificationId = await scheduleTestNotification(
-        schedTime,
-        testMessage
+      const granted = await requestPermission();
+      if (granted) {
+        addTestResult(
+          "Permission Request",
+          "success",
+          "Permission granted successfully"
+        );
+        showSnackbar("Notification permission granted!", "success");
+      } else {
+        addTestResult(
+          "Permission Request",
+          "error",
+          "Permission denied by user"
+        );
+        showSnackbar("Permission denied. Check browser settings.", "warning");
+      }
+    } catch (error) {
+      addTestResult(
+        "Permission Request",
+        "error",
+        `Error: ${error instanceof Error ? error.message : "Unknown error"}`
       );
-      setCurrentScheduledNotification(notificationId);
+      showSnackbar("Error requesting permission", "error");
+    }
+  };
 
-      const timeString = schedTime.toLocaleString();
-      setStatus(
-        `✅ Notification scheduled for ${timeString}!\n\n📱 Make sure your iPhone screen is locked or the app is in the background to see the notification.`
+  const testBasicNotification = async () => {
+    if (!hasPermission) {
+      showSnackbar("Please enable notifications first", "warning");
+      return;
+    }
+
+    addTestResult(
+      "Basic Notification",
+      "pending",
+      "Sending test notification..."
+    );
+
+    try {
+      await sendNotification("🧪 Test Notification", {
+        body: "This is a test notification from your health app!",
+        data: { type: "test_notification" },
+        icon: "/icon-192x192.png",
+        badge: "/icon-192x192.png",
+      });
+      addTestResult(
+        "Basic Notification",
+        "success",
+        "Test notification sent successfully"
+      );
+      showSnackbar("Test notification sent!", "success");
+    } catch (error) {
+      addTestResult(
+        "Basic Notification",
+        "error",
+        `Error: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
+      showSnackbar("Failed to send notification", "error");
+    }
+  };
+
+  const testScheduledNotification = async () => {
+    if (!hasPermission) {
+      showSnackbar("Please enable notifications first", "warning");
+      return;
+    }
+
+    const scheduledTime = new Date();
+    scheduledTime.setSeconds(scheduledTime.getSeconds() + 10); // 10 seconds from now
+
+    addTestResult(
+      "Scheduled Notification",
+      "pending",
+      `Scheduling notification for ${scheduledTime.toLocaleTimeString()}...`
+    );
+
+    try {
+      const notificationId = await scheduleTestNotification(
+        scheduledTime,
+        "This is a scheduled test notification!"
+      );
+      addTestResult(
+        "Scheduled Notification",
+        "success",
+        `Notification scheduled with ID: ${notificationId}`
+      );
+      showSnackbar(
+        "Notification scheduled for 10 seconds from now!",
+        "success"
       );
     } catch (error) {
-      setStatus(
-        `❌ Error scheduling: ${
+      addTestResult(
+        "Scheduled Notification",
+        "error",
+        `Error: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
+      showSnackbar("Failed to schedule notification", "error");
+    }
+  };
+
+  const testDatabaseConnection = async () => {
+    addTestResult(
+      "Database Connection",
+      "pending",
+      "Testing database connection..."
+    );
+
+    try {
+      const { data, error } = await supabase
+        .from("notification_preferences")
+        .select("*")
+        .limit(1);
+
+      if (error) {
+        addTestResult(
+          "Database Connection",
+          "error",
+          `Database error: ${error.message}`
+        );
+        return;
+      }
+
+      addTestResult(
+        "Database Connection",
+        "success",
+        "Database connection successful"
+      );
+    } catch (error) {
+      addTestResult(
+        "Database Connection",
+        "error",
+        `Connection failed: ${
           error instanceof Error ? error.message : "Unknown error"
         }`
       );
     }
   };
 
-  const handleCancelScheduled = () => {
-    if (currentScheduledNotification) {
-      cancelScheduledNotification(currentScheduledNotification);
-      setCurrentScheduledNotification(null);
-      setStatus("📱 Scheduled notification cancelled!");
+  const testPreferencesSave = async () => {
+    if (!userId) {
+      addTestResult("Preferences Save", "error", "No user ID available");
+      return;
+    }
+
+    addTestResult("Preferences Save", "pending", "Testing preferences save...");
+
+    try {
+      const testPreferences = {
+        user_id: userId,
+        routine_reminder_enabled: true,
+        routine_reminder_minutes: 15,
+        data_sync_notifications_enabled: true,
+        weekly_insights_enabled: true,
+        weekly_insights_day: "monday",
+        weekly_insights_time: "09:00",
+        experiment_reminders_enabled: true,
+        goal_celebrations_enabled: true,
+        test_notification_enabled: false,
+      };
+
+      const { data, error } = await supabase
+        .from("notification_preferences")
+        .upsert(testPreferences)
+        .select()
+        .single();
+
+      if (error) {
+        addTestResult(
+          "Preferences Save",
+          "error",
+          `Save error: ${error.message}`
+        );
+        return;
+      }
+
+      addTestResult(
+        "Preferences Save",
+        "success",
+        "Preferences saved successfully"
+      );
+    } catch (error) {
+      addTestResult(
+        "Preferences Save",
+        "error",
+        `Save failed: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
     }
   };
 
-  if (!isSupported) {
-    return (
-      <Container maxWidth="md" sx={{ py: 4 }}>
-        <Alert severity="error">
-          Your browser doesn't support push notifications. Please use Chrome,
-          Firefox, or Safari.
-        </Alert>
-      </Container>
-    );
-  }
+  const runAllTests = async () => {
+    setTestResults([]);
+
+    await runBasicTests();
+    await testDatabaseConnection();
+    await testPreferencesSave();
+
+    if (isSupported && !hasPermission) {
+      await testPermissionRequest();
+    }
+
+    if (hasPermission) {
+      await testBasicNotification();
+      await testScheduledNotification();
+    }
+  };
+
+  const clearTestResults = () => {
+    setTestResults([]);
+  };
+
+  const getStatusIcon = (status: "pending" | "success" | "error") => {
+    switch (status) {
+      case "pending":
+        return <CircularProgress size={16} />;
+      case "success":
+        return <CheckCircleIcon color="success" />;
+      case "error":
+        return <ErrorIcon color="error" />;
+    }
+  };
+
+  const getStatusColor = (status: "pending" | "success" | "error") => {
+    switch (status) {
+      case "pending":
+        return "default";
+      case "success":
+        return "success";
+      case "error":
+        return "error";
+    }
+  };
 
   return (
-    <Container maxWidth="md" sx={{ py: 4 }}>
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h3" component="h1" gutterBottom>
-          📱 iPhone Notification Test
-        </Typography>
-        <Typography variant="body1" color="text.secondary">
-          Test push notifications on your iPhone with custom timing
-        </Typography>
-      </Box>
+    <Box sx={{ maxWidth: 800, mx: "auto", p: 3 }}>
+      <Typography variant="h4" gutterBottom>
+        Notification System Test
+      </Typography>
 
-      <Stack spacing={3}>
-        {/* Permission Status */}
-        <Card>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Permission Status
-            </Typography>
-            {!hasPermission ? (
-              <Box>
-                <Alert severity="warning" sx={{ mb: 2 }}>
-                  Notifications are not enabled. Click below to enable them.
-                </Alert>
-                <Button
-                  variant="contained"
-                  onClick={handleRequestPermission}
-                  fullWidth
-                  size="large"
-                >
-                  Enable Notifications
-                </Button>
-              </Box>
-            ) : (
-              <Alert severity="success">
-                ✅ Notifications are enabled and ready!
-              </Alert>
-            )}
-          </CardContent>
-        </Card>
+      <Alert severity="info" sx={{ mb: 3 }}>
+        This page helps you test and verify that your notification system is
+        working correctly.
+      </Alert>
 
-        {/* Quick Test */}
-        {hasPermission && (
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Quick Test
+      {/* System Status */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            System Status
+          </Typography>
+          <Stack spacing={2}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Chip
+                label={isSupported ? "Supported" : "Not Supported"}
+                color={isSupported ? "success" : "error"}
+                size="small"
+              />
+              <Typography variant="body2">
+                Browser Notification Support
               </Typography>
-              <Typography variant="body2" sx={{ mb: 2 }}>
-                Send an immediate notification to test basic functionality.
-              </Typography>
+            </Box>
+
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Chip
+                label={hasPermission ? "Granted" : "Not Granted"}
+                color={hasPermission ? "success" : "warning"}
+                size="small"
+              />
+              <Typography variant="body2">Notification Permission</Typography>
+            </Box>
+
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Chip
+                label={userId ? "Connected" : "Not Connected"}
+                color={userId ? "success" : "error"}
+                size="small"
+              />
+              <Typography variant="body2">User Authentication</Typography>
+            </Box>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      {/* Test Controls */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Test Controls
+          </Typography>
+          <Stack spacing={2}>
+            <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+              <Button
+                variant="contained"
+                onClick={runAllTests}
+                startIcon={<RefreshIcon />}
+              >
+                Run All Tests
+              </Button>
+
               <Button
                 variant="outlined"
-                onClick={handleSendImmediate}
-                startIcon={<SendIcon />}
-                fullWidth
-                size="large"
+                onClick={testPermissionRequest}
+                disabled={!isSupported || hasPermission}
+                startIcon={<NotificationsIcon />}
               >
-                Send Immediate Test
+                Request Permission
               </Button>
-            </CardContent>
-          </Card>
-        )}
 
-        {/* Scheduled Test */}
-        {hasPermission && (
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Scheduled Test (Perfect for iPhone)
-              </Typography>
-              <Typography variant="body2" sx={{ mb: 3 }}>
-                Schedule a notification to arrive at a specific time. Lock your
-                iPhone screen or put the app in the background to see push
-                notifications.
-              </Typography>
-
-              <Stack spacing={2}>
-                <TextField
-                  label="Scheduled Time"
-                  type="datetime-local"
-                  value={scheduledTime}
-                  onChange={(e) => setScheduledTime(e.target.value)}
-                  fullWidth
-                  helperText="When should the notification be sent?"
-                  InputLabelProps={{ shrink: true }}
-                />
-
-                <TextField
-                  label="Custom Message"
-                  multiline
-                  rows={3}
-                  value={testMessage}
-                  onChange={(e) => setTestMessage(e.target.value)}
-                  fullWidth
-                  helperText="Customize your notification message"
-                />
-
-                <Box sx={{ display: "flex", gap: 2 }}>
-                  <Button
-                    variant="contained"
-                    onClick={handleScheduleTest}
-                    disabled={!scheduledTime}
-                    startIcon={<ScheduleIcon />}
-                    sx={{ flex: 1 }}
-                    size="large"
-                  >
-                    Schedule Test
-                  </Button>
-
-                  {currentScheduledNotification && (
-                    <Button
-                      variant="outlined"
-                      color="warning"
-                      onClick={handleCancelScheduled}
-                      sx={{ flex: 1 }}
-                      size="large"
-                    >
-                      Cancel Scheduled
-                    </Button>
-                  )}
-                </Box>
-
-                {currentScheduledNotification && (
-                  <Alert severity="info">
-                    📅 Notification scheduled! ID:{" "}
-                    {currentScheduledNotification}
-                  </Alert>
-                )}
-              </Stack>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Status */}
-        {status && (
-          <Paper sx={{ p: 2, bgcolor: "background.default" }}>
-            <Typography variant="body2" sx={{ whiteSpace: "pre-line" }}>
-              {status}
-            </Typography>
-          </Paper>
-        )}
-
-        {/* Instructions */}
-        <Card>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              📋 iPhone Testing Instructions
-            </Typography>
-            <Typography variant="body2" component="div">
-              <ol>
-                <li>
-                  <strong>Enable Notifications:</strong> Click "Enable
-                  Notifications" and allow when prompted
-                </li>
-                <li>
-                  <strong>Schedule a Test:</strong> Set a time 30+ seconds in
-                  the future
-                </li>
-                <li>
-                  <strong>Lock Your iPhone:</strong> Press the power button to
-                  lock the screen
-                </li>
-                <li>
-                  <strong>Wait:</strong> The notification will appear at the
-                  scheduled time
-                </li>
-                <li>
-                  <strong>Test Actions:</strong> Tap the notification to open
-                  the app
-                </li>
-              </ol>
-              <Box
-                sx={{
-                  mt: 2,
-                  p: 2,
-                  bgcolor: "warning.main",
-                  color: "warning.contrastText",
-                  borderRadius: 1,
-                }}
+              <Button
+                variant="outlined"
+                onClick={testBasicNotification}
+                disabled={!hasPermission}
+                startIcon={<SendIcon />}
               >
-                <Typography variant="body2">
-                  <strong>Important:</strong> Push notifications only appear
-                  when the app is in the background or the screen is locked.
-                </Typography>
-              </Box>
-            </Typography>
-          </CardContent>
-        </Card>
-      </Stack>
-    </Container>
+                Send Test Notification
+              </Button>
+
+              <Button
+                variant="outlined"
+                onClick={testScheduledNotification}
+                disabled={!hasPermission}
+                startIcon={<AccessTimeIcon />}
+              >
+                Schedule Test
+              </Button>
+
+              <Button
+                variant="outlined"
+                onClick={clearTestResults}
+                color="secondary"
+              >
+                Clear Results
+              </Button>
+            </Box>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      {/* Test Results */}
+      <Card>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Test Results ({testResults.length})
+          </Typography>
+
+          {testResults.length === 0 ? (
+            <Alert severity="info">
+              No test results yet. Click "Run All Tests" to start testing.
+            </Alert>
+          ) : (
+            <List>
+              {testResults.map((result, index) => (
+                <ListItem key={index} divider>
+                  <ListItemIcon>{getStatusIcon(result.status)}</ListItemIcon>
+                  <ListItemText
+                    primary={result.test}
+                    secondary={
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">
+                          {result.message}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {result.timestamp.toLocaleTimeString()}
+                        </Typography>
+                      </Box>
+                    }
+                  />
+                  <Chip
+                    label={result.status}
+                    color={getStatusColor(result.status)}
+                    size="small"
+                  />
+                </ListItem>
+              ))}
+            </List>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Snackbar */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          severity={snackbar.severity}
+          sx={{ width: "100%" }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+    </Box>
   );
 }

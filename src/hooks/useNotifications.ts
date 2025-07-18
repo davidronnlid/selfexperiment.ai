@@ -1,51 +1,52 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/utils/supaBase';
 
-interface NotificationHookReturn {
-  hasPermission: boolean;
-  isSupported: boolean;
-  requestPermission: () => Promise<boolean>;
-  sendNotification: (title: string, options?: NotificationOptions & { data?: any }) => Promise<void>;
-  scheduleRoutineReminder: (routineId: string, reminderTime: Date) => Promise<void>;
-  sendDataSyncNotification: (source: string, count: number) => Promise<void>;
-  sendWeeklyInsights: (insights: any) => Promise<void>;
-  scheduleTestNotification: (scheduledTime: Date, message?: string) => Promise<string>;
-  cancelScheduledNotification: (notificationId: string) => void;
+interface NotificationOptions {
+  body?: string;
+  icon?: string;
+  badge?: string;
+  data?: any;
+  tag?: string;
+  requireInteraction?: boolean;
+  silent?: boolean;
 }
 
-// Store for scheduled notification timeouts
-const scheduledNotifications = new Map<string, NodeJS.Timeout>();
+interface ScheduledNotification {
+  id: string;
+  scheduledTime: Date;
+  title: string;
+  options: NotificationOptions;
+}
 
-export function useNotifications(userId?: string): NotificationHookReturn {
+export function useNotifications(userId: string) {
   const [hasPermission, setHasPermission] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
+  const [scheduledNotifications, setScheduledNotifications] = useState<ScheduledNotification[]>([]);
 
   useEffect(() => {
-    checkSupport();
-  }, []);
-
-  const checkSupport = () => {
-    const supported = 'Notification' in window && 'serviceWorker' in navigator;
-    setIsSupported(supported);
-    
-    if (supported) {
+    // Check if notifications are supported
+    if ('Notification' in window) {
+      setIsSupported(true);
       setHasPermission(Notification.permission === 'granted');
     }
-  };
+  }, []);
 
   const requestPermission = useCallback(async (): Promise<boolean> => {
-    if (!isSupported) return false;
+    if (!isSupported) {
+      console.warn('Notifications not supported');
+      return false;
+    }
 
     try {
       const permission = await Notification.requestPermission();
       const granted = permission === 'granted';
       setHasPermission(granted);
-
+      
       if (granted) {
-        // Register the custom service worker for notifications
-        await navigator.serviceWorker.register('/sw-notifications.js');
+        console.log('Notification permission granted');
+      } else {
+        console.log('Notification permission denied');
       }
-
+      
       return granted;
     } catch (error) {
       console.error('Error requesting notification permission:', error);
@@ -54,209 +55,193 @@ export function useNotifications(userId?: string): NotificationHookReturn {
   }, [isSupported]);
 
   const sendNotification = useCallback(async (
-    title: string, 
-    options: NotificationOptions & { data?: any } = {}
+    title: string,
+    options: NotificationOptions = {}
   ): Promise<void> => {
     if (!hasPermission) {
-      console.warn('No notification permission');
-      return;
+      throw new Error('Notification permission not granted');
     }
 
     try {
-      const { data, ...notificationOptions } = options;
-      
-      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-        // Send via service worker for better reliability
-        navigator.serviceWorker.controller.postMessage({
-          type: 'SEND_NOTIFICATION',
-          payload: {
-            title,
-            body: options.body || '',
-            icon: options.icon || '/icon-192x192.png',
-            badge: options.badge || '/icon-96x96.png',
-            tag: options.tag || 'selfdev-notification',
-            data: data || {},
-          }
-        });
-      } else {
-        // Fallback to direct notification
-        new Notification(title, {
-          ...notificationOptions,
-          icon: options.icon || '/icon-192x192.png',
-          badge: options.badge || '/icon-96x96.png',
-        });
+      const notification = new Notification(title, {
+        body: options.body || 'You have a new notification',
+        icon: options.icon || '/icon-192x192.png',
+        badge: options.badge || '/icon-192x192.png',
+        data: options.data || {},
+        tag: options.tag || 'default',
+        requireInteraction: options.requireInteraction || false,
+        silent: options.silent || false,
+      });
+
+      // Auto-close after 5 seconds unless requireInteraction is true
+      if (!options.requireInteraction) {
+        setTimeout(() => {
+          notification.close();
+        }, 5000);
       }
 
-      // Log to database
-      if (userId) {
-        await logNotificationToDatabase({
-          user_id: userId,
-          notification_type: data?.type || 'manual',
-          title,
-          body: options.body || '',
-          context: data || {},
-        });
-      }
+      // Handle click events
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+      };
+
+      return Promise.resolve();
     } catch (error) {
       console.error('Error sending notification:', error);
+      throw error;
     }
-  }, [hasPermission, userId]);
+  }, [hasPermission]);
 
   const scheduleTestNotification = useCallback(async (
     scheduledTime: Date,
-    message: string = 'This is your scheduled test notification!'
+    message: string
   ): Promise<string> => {
     if (!hasPermission) {
-      throw new Error('No notification permission');
+      throw new Error('Notification permission not granted');
     }
 
-    const notificationId = `test-${Date.now()}`;
     const now = new Date();
-    const timeUntilNotification = scheduledTime.getTime() - now.getTime();
+    const delay = scheduledTime.getTime() - now.getTime();
 
-    if (timeUntilNotification <= 0) {
+    if (delay <= 0) {
       throw new Error('Scheduled time must be in the future');
     }
 
-    // Schedule the notification
-    const timeout = setTimeout(async () => {
-      await sendNotification('🔔 Test Notification', {
+    const notificationId = `test-${Date.now()}`;
+    
+    const timeoutId = setTimeout(async () => {
+      try {
+        await sendNotification('🧪 Test Notification', {
+          body: message,
+          data: { type: 'test_notification', id: notificationId },
+          tag: 'test-notification',
+        });
+        
+        // Remove from scheduled notifications
+        setScheduledNotifications(prev => 
+          prev.filter(n => n.id !== notificationId)
+        );
+      } catch (error) {
+        console.error('Error sending scheduled notification:', error);
+      }
+    }, delay);
+
+    const scheduledNotification: ScheduledNotification = {
+      id: notificationId,
+      scheduledTime,
+      title: '🧪 Test Notification',
+      options: {
         body: message,
-        tag: notificationId,
-        data: {
-          type: 'test_notification',
-          scheduled_time: scheduledTime.toISOString(),
-          url: '/profile'
-        }
-      });
-      
-      // Clean up from the map
-      scheduledNotifications.delete(notificationId);
-    }, timeUntilNotification);
+        data: { type: 'test_notification', id: notificationId },
+        tag: 'test-notification',
+      },
+    };
 
-    // Store the timeout reference
-    scheduledNotifications.set(notificationId, timeout);
+    setScheduledNotifications(prev => [...prev, scheduledNotification]);
 
-    console.log(`Test notification scheduled for ${scheduledTime.toLocaleString()}`);
+    // Store timeout ID for cancellation
+    (window as any).notificationTimeouts = (window as any).notificationTimeouts || {};
+    (window as any).notificationTimeouts[notificationId] = timeoutId;
+
     return notificationId;
   }, [hasPermission, sendNotification]);
 
-  const cancelScheduledNotification = useCallback((notificationId: string) => {
-    const timeout = scheduledNotifications.get(notificationId);
-    if (timeout) {
-      clearTimeout(timeout);
-      scheduledNotifications.delete(notificationId);
-      console.log(`Cancelled scheduled notification: ${notificationId}`);
+  const cancelScheduledNotification = useCallback((notificationId: string): void => {
+    // Clear the timeout
+    if ((window as any).notificationTimeouts?.[notificationId]) {
+      clearTimeout((window as any).notificationTimeouts[notificationId]);
+      delete (window as any).notificationTimeouts[notificationId];
     }
+
+    // Remove from scheduled notifications
+    setScheduledNotifications(prev => 
+      prev.filter(n => n.id !== notificationId)
+    );
   }, []);
 
-  const scheduleRoutineReminder = useCallback(async (
-    routineId: string, 
-    reminderTime: Date
+  const sendRoutineReminder = useCallback(async (
+    routineName: string,
+    scheduledTime: Date
   ): Promise<void> => {
-    if (!hasPermission) return;
+    const timeUntilRoutine = Math.max(0, scheduledTime.getTime() - Date.now());
+    const minutesUntilRoutine = Math.ceil(timeUntilRoutine / (1000 * 60));
 
-    try {
-      // Calculate time until reminder
-      const now = new Date();
-      const timeUntilReminder = reminderTime.getTime() - now.getTime();
-
-      if (timeUntilReminder <= 0) {
-        console.warn('Reminder time is in the past');
-        return;
-      }
-
-      // Schedule the notification
-      setTimeout(async () => {
-        await sendNotification('🕐 Routine Reminder', {
-          body: 'Your scheduled routine is starting soon!',
-          tag: `routine-${routineId}`,
-          data: {
-            type: 'routine_reminder',
-            routine_id: routineId,
-            url: '/routines'
-          }
-        });
-      }, timeUntilReminder);
-
-      console.log(`Routine reminder scheduled for ${reminderTime.toLocaleString()}`);
-    } catch (error) {
-      console.error('Error scheduling routine reminder:', error);
-    }
-  }, [hasPermission, sendNotification]);
+    await sendNotification('⏰ Routine Reminder', {
+      body: `Your routine "${routineName}" starts in ${minutesUntilRoutine} minute${minutesUntilRoutine !== 1 ? 's' : ''}`,
+      data: { type: 'routine_reminder', routineName, scheduledTime: scheduledTime.toISOString() },
+      tag: 'routine-reminder',
+      requireInteraction: true,
+    });
+  }, [sendNotification]);
 
   const sendDataSyncNotification = useCallback(async (
-    source: string, 
-    count: number
+    source: string,
+    status: 'success' | 'error' | 'partial'
   ): Promise<void> => {
-    if (!hasPermission) return;
-
-    const sourceEmojis: Record<string, string> = {
-      oura: '💍',
-      withings: '⚖️',
-      manual: '📝',
+    const messages = {
+      success: `✅ Data sync from ${source} completed successfully`,
+      error: `❌ Data sync from ${source} failed`,
+      partial: `⚠️ Data sync from ${source} completed with some issues`,
     };
 
-    const emoji = sourceEmojis[source.toLowerCase()] || '📊';
-
-    await sendNotification(`${emoji} Data Sync Complete`, {
-      body: `${count} new ${source} data points synced successfully!`,
-      tag: `sync-${source}`,
-      data: {
-        type: 'data_sync',
-        source,
-        count,
-        url: '/analytics'
-      }
+    await sendNotification('🔄 Data Sync Update', {
+      body: messages[status],
+      data: { type: 'data_sync', source, status },
+      tag: 'data-sync',
     });
-  }, [hasPermission, sendNotification]);
+  }, [sendNotification]);
 
-  const sendWeeklyInsights = useCallback(async (insights: any): Promise<void> => {
-    if (!hasPermission) return;
+  const sendWeeklyInsights = useCallback(async (
+    insights: string[]
+  ): Promise<void> => {
+    const summary = insights.length > 0 
+      ? insights.slice(0, 3).join(', ') + (insights.length > 3 ? '...' : '')
+      : 'No new insights this week';
 
-    const { totalLogs, topVariable, correlationCount } = insights;
-
-    await sendNotification('📊 Weekly Insights Ready!', {
-      body: `You logged ${totalLogs} entries this week. Check out your progress!`,
+    await sendNotification('📊 Weekly Insights', {
+      body: summary,
+      data: { type: 'weekly_insights', insights },
       tag: 'weekly-insights',
-      data: {
-        type: 'weekly_insights',
-        insights,
-        url: '/analytics'
-      }
+      requireInteraction: true,
     });
-  }, [hasPermission, sendNotification]);
+  }, [sendNotification]);
+
+  const sendGoalCelebration = useCallback(async (
+    goalName: string,
+    achievement: string
+  ): Promise<void> => {
+    await sendNotification('🎉 Goal Achieved!', {
+      body: `Congratulations! You've achieved "${goalName}": ${achievement}`,
+      data: { type: 'goal_celebration', goalName, achievement },
+      tag: 'goal-celebration',
+      requireInteraction: true,
+    });
+  }, [sendNotification]);
+
+  const sendExperimentReminder = useCallback(async (
+    experimentName: string,
+    daysLeft: number
+  ): Promise<void> => {
+    await sendNotification('🧪 Experiment Reminder', {
+      body: `Your experiment "${experimentName}" has ${daysLeft} day${daysLeft !== 1 ? 's' : ''} remaining`,
+      data: { type: 'experiment_reminder', experimentName, daysLeft },
+      tag: 'experiment-reminder',
+    });
+  }, [sendNotification]);
 
   return {
     hasPermission,
     isSupported,
     requestPermission,
     sendNotification,
-    scheduleRoutineReminder,
-    sendDataSyncNotification,
-    sendWeeklyInsights,
     scheduleTestNotification,
     cancelScheduledNotification,
+    sendRoutineReminder,
+    sendDataSyncNotification,
+    sendWeeklyInsights,
+    sendGoalCelebration,
+    sendExperimentReminder,
+    scheduledNotifications,
   };
-}
-
-// Helper function to log notifications to database
-async function logNotificationToDatabase(notificationData: {
-  user_id: string;
-  notification_type: string;
-  title: string;
-  body: string;
-  context?: any;
-}) {
-  try {
-    await supabase
-      .from('notification_history')
-      .insert({
-        ...notificationData,
-        sent_at: new Date().toISOString(),
-        delivery_status: 'sent'
-      });
-  } catch (error) {
-    console.error('Error logging notification to database:', error);
-  }
 } 

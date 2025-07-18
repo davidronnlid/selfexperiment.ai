@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS roadmap_posts (
     -- Post content
     title TEXT NOT NULL,
     description TEXT,
-    tag TEXT NOT NULL CHECK (tag IN ('Analytics', 'Log Now', 'Log Routines', 'Community')),
+    tag TEXT NOT NULL CHECK (tag IN ('Analytics', 'Manual Tracking', 'Auto-Tracking', 'Community')),
     
     -- Authorship
     created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,

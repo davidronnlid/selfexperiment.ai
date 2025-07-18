@@ -131,7 +131,7 @@ export default function CompleteProfilePage() {
       setError(error.message);
     } else {
       setSuccess(true);
-      setTimeout(() => router.replace("/log/now"), 1000);
+      setTimeout(() => router.replace("/track/manual"), 1000);
     }
   };
 

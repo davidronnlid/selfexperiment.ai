@@ -69,7 +69,7 @@ export default function RoutineLogManager({
     );
 
     const { data: logsData } = await supabase
-      .from("logs")
+      .from("data_points")
       .select("id, variable_id, value, created_at, source")
       .eq("user_id", user.id)
       .in("variable_id", allVariableIds)
@@ -163,9 +163,12 @@ export default function RoutineLogManager({
     const logTimestamp = today + "T" + logTime;
 
     if (log) {
-      await supabase.from("logs").update({ value: value }).eq("id", log.id);
+      await supabase
+        .from("data_points")
+        .update({ value: value })
+        .eq("id", log.id);
     } else {
-      await supabase.from("logs").insert({
+      await supabase.from("data_points").insert({
         user_id: user.id,
         variable_id: variableId,
         value: value,
@@ -211,7 +214,7 @@ export default function RoutineLogManager({
     const logs = routineLogs[routineId]?.[variableId] || [];
     const log = logs.find((l) => l.created_at.slice(0, 10) === today);
     if (!log) return;
-    await supabase.from("logs").delete().eq("id", log.id);
+    await supabase.from("data_points").delete().eq("id", log.id);
     await fetchRoutineLogs();
     // After refresh, clear the input
     setRoutineEditValues((prev) => ({

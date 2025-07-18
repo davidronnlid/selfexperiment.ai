@@ -44,8 +44,8 @@ import RoadmapComments from "./RoadmapComments";
 
 const ROADMAP_TAGS = [
   "Analytics",
-  "Log Now",
-  "Log Routines",
+  "Manual Tracking",
+  "Auto-Tracking",
   "Community",
 ] as const;
 
@@ -107,7 +107,9 @@ export default function RoadmapManager() {
   const [commentCounts, setCommentCounts] = useState<{
     [postId: string]: number;
   }>({});
-  const [sortBy, setSortBy] = useState<"recent" | "popular" | "likes" | "comments">("recent");
+  const [sortBy, setSortBy] = useState<
+    "recent" | "popular" | "likes" | "comments"
+  >("recent");
 
   // Check if current user is admin
   const isAdmin = username === "davidronnlidmh";
@@ -175,7 +177,19 @@ export default function RoadmapManager() {
   };
 
   const createPost = async () => {
-    if (!user) return;
+    if (!user) {
+      console.log("No user found, cannot create post");
+      alert("Please log in to create a post");
+      return;
+    }
+
+    if (!username) {
+      console.log("No username found, user profile incomplete");
+      alert("Please complete your profile before creating posts");
+      return;
+    }
+
+    console.log("Creating post with user:", user.id, user.email, username);
 
     try {
       const response = await fetch("/api/roadmap/posts", {
@@ -190,9 +204,24 @@ export default function RoadmapManager() {
         setNewPost({ title: "", description: "", tag: "Analytics" });
         setCreateDialogOpen(false);
         fetchPosts();
+      } else {
+        const errorData = await response.json();
+        console.error("Error creating post:", errorData);
+
+        // Provide specific guidance based on the error
+        if (errorData.error?.includes("Authentication issue")) {
+          alert(
+            "Authentication issue detected. Please log out and log back in, then try again."
+          );
+        } else if (errorData.error?.includes("profile")) {
+          alert("Please complete your profile setup before creating posts.");
+        } else {
+          alert(`Failed to create post: ${errorData.error || "Unknown error"}`);
+        }
       }
     } catch (error) {
       console.error("Error creating post:", error);
+      alert("Failed to create post. Please try again.");
     }
   };
 
@@ -286,13 +315,19 @@ export default function RoadmapManager() {
     return [...postsToSort].sort((a, b) => {
       switch (sortBy) {
         case "recent":
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+          return (
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
         case "popular":
-          const aPopularity = (likeStates[a.id]?.count || 0) + (commentCounts[a.id] || 0);
-          const bPopularity = (likeStates[b.id]?.count || 0) + (commentCounts[b.id] || 0);
+          const aPopularity =
+            (likeStates[a.id]?.count || 0) + (commentCounts[a.id] || 0);
+          const bPopularity =
+            (likeStates[b.id]?.count || 0) + (commentCounts[b.id] || 0);
           return bPopularity - aPopularity;
         case "likes":
-          return (likeStates[b.id]?.count || 0) - (likeStates[a.id]?.count || 0);
+          return (
+            (likeStates[b.id]?.count || 0) - (likeStates[a.id]?.count || 0)
+          );
         case "comments":
           return (commentCounts[b.id] || 0) - (commentCounts[a.id] || 0);
         default:
@@ -304,25 +339,33 @@ export default function RoadmapManager() {
   // Filter and sort posts
   useEffect(() => {
     let filtered = posts;
-    
+
     // Filter by tag
     if (selectedTag !== "all") {
       filtered = filtered.filter((post) => post.tag === selectedTag);
     }
-    
+
     // Filter by status
     if (selectedStatus !== "all") {
       filtered = filtered.filter((post) => post.status === selectedStatus);
     }
-    
+
     // Filter by priority
     if (selectedPriority !== "all") {
       filtered = filtered.filter((post) => post.priority === selectedPriority);
     }
-    
+
     const sorted = sortPosts(filtered);
     setFilteredPosts(sorted);
-  }, [posts, selectedTag, selectedStatus, selectedPriority, sortBy, likeStates, commentCounts]);
+  }, [
+    posts,
+    selectedTag,
+    selectedStatus,
+    selectedPriority,
+    sortBy,
+    likeStates,
+    commentCounts,
+  ]);
 
   // Load posts on component mount
   useEffect(() => {
@@ -373,7 +416,11 @@ export default function RoadmapManager() {
           startIcon={<AddIcon />}
           onClick={() => setCreateDialogOpen(true)}
           disabled={!user}
-          sx={{ bgcolor: "#fdd835", color: "black", "&:hover": { bgcolor: "#f9a825" } }}
+          sx={{
+            bgcolor: "#fdd835",
+            color: "black",
+            "&:hover": { bgcolor: "#f9a825" },
+          }}
         >
           Add Feature Request
         </Button>
@@ -394,19 +441,28 @@ export default function RoadmapManager() {
       </Tabs>
 
       {/* Filters and Sort Controls */}
-      <Box sx={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        mb: 3,
-        flexWrap: 'wrap',
-        gap: 2
-      }}>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          mb: 3,
+          flexWrap: "wrap",
+          gap: 2,
+        }}
+      >
         <Typography variant="h6" component="h2">
-          {filteredPosts.length} {filteredPosts.length === 1 ? 'Post' : 'Posts'}
+          {filteredPosts.length} {filteredPosts.length === 1 ? "Post" : "Posts"}
         </Typography>
-        
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 2,
+            flexWrap: "wrap",
+          }}
+        >
           {/* Status Filter */}
           <FormControl size="small" sx={{ minWidth: 140 }}>
             <InputLabel>Status</InputLabel>
@@ -414,7 +470,9 @@ export default function RoadmapManager() {
               value={selectedStatus}
               label="Status"
               onChange={(e) => setSelectedStatus(e.target.value)}
-              startAdornment={<FilterIcon sx={{ mr: 1, color: 'action.active' }} />}
+              startAdornment={
+                <FilterIcon sx={{ mr: 1, color: "action.active" }} />
+              }
             >
               {STATUS_OPTIONS.map((option) => (
                 <MenuItem key={option.value} value={option.value}>
@@ -431,7 +489,9 @@ export default function RoadmapManager() {
               value={selectedPriority}
               label="Priority"
               onChange={(e) => setSelectedPriority(e.target.value)}
-              startAdornment={<FilterIcon sx={{ mr: 1, color: 'action.active' }} />}
+              startAdornment={
+                <FilterIcon sx={{ mr: 1, color: "action.active" }} />
+              }
             >
               {PRIORITY_OPTIONS.map((option) => (
                 <MenuItem key={option.value} value={option.value}>
@@ -448,7 +508,9 @@ export default function RoadmapManager() {
               value={sortBy}
               label="Sort by"
               onChange={(e) => setSortBy(e.target.value as any)}
-              startAdornment={<SortIcon sx={{ mr: 1, color: 'action.active' }} />}
+              startAdornment={
+                <SortIcon sx={{ mr: 1, color: "action.active" }} />
+              }
             >
               {SORT_OPTIONS.map((option) => (
                 <MenuItem key={option.value} value={option.value}>
@@ -616,7 +678,9 @@ export default function RoadmapManager() {
       {filteredPosts.length === 0 && !loading && (
         <Box sx={{ textAlign: "center", py: 4 }}>
           <Typography variant="body1" color="textSecondary">
-            {selectedTag === "all" && selectedStatus === "all" && selectedPriority === "all"
+            {selectedTag === "all" &&
+            selectedStatus === "all" &&
+            selectedPriority === "all"
               ? "No roadmap posts yet. Be the first to suggest a feature!"
               : "No posts match the selected filters."}
           </Typography>

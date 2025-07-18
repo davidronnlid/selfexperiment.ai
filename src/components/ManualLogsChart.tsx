@@ -56,7 +56,7 @@ ChartJS.register(
   Filler
 );
 
-interface ManualLog {
+interface ManualDataPoint {
   id: number;
   date: string;
   variable_id: string;
@@ -65,9 +65,9 @@ interface ManualLog {
   created_at: string;
 }
 
-interface ManualLogsChartProps {
+interface ManualDataPointsChartProps {
   userId: string;
-  maxDays?: number;
+  maxRows?: number;
 }
 
 interface ChartData {
@@ -94,11 +94,11 @@ interface VariableStats {
   weeklyPattern: { day: string; average: number }[];
 }
 
-const ManualLogsChart = memo(function ManualLogsChart({
+const ManualDataPointsChart = memo(function ManualDataPointsChart({
   userId,
   maxDays = 30,
-}: ManualLogsChartProps) {
-  const [logs, setLogs] = useState<ManualLog[]>([]);
+}: ManualDataPointsChartProps) {
+  const [logs, setLogs] = useState<ManualDataPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<string>("30");
@@ -150,7 +150,7 @@ const ManualLogsChart = memo(function ManualLogsChart({
   // Memoize filtered logs for selected variable
   // Calculate variable statistics
   const calculateStats = useCallback(
-    (variableLogs: ManualLog[]): VariableStats => {
+    (variableLogs: ManualDataPoint[]): VariableStats => {
       const numericLogs = variableLogs.filter((log) => isNumeric(log.value));
       const values = numericLogs.map((log) => parseFloat(log.value));
 
@@ -320,7 +320,7 @@ const ManualLogsChart = memo(function ManualLogsChart({
       cutoffDate.setDate(cutoffDate.getDate() - daysBack);
 
       const { data, error } = await supabase
-        .from("logs")
+        .from("data_points")
         .select("id, date, variable_id, value, notes, created_at")
         .eq("user_id", userId)
         .gte("date", cutoffDate.toISOString())
@@ -379,7 +379,7 @@ const ManualLogsChart = memo(function ManualLogsChart({
       }
       acc[log.variable_id].push(log);
       return acc;
-    }, {} as { [variable: string]: ManualLog[] });
+    }, {} as { [variable: string]: ManualDataPoint[] });
 
     // Create chart data for each variable
     Object.entries(logsByVariable).forEach(([variable, variableLogs]) => {
@@ -472,8 +472,8 @@ const ManualLogsChart = memo(function ManualLogsChart({
   if (logs.length === 0) {
     return (
       <Alert severity="info" sx={{ mt: 2 }}>
-        No manual logs found for the selected time range. Start logging data to
-        see your trends here!
+        No manual data points found for the selected time range. Start tracking
+        data to see your trends here!
       </Alert>
     );
   }
@@ -732,4 +732,4 @@ const ManualLogsChart = memo(function ManualLogsChart({
   );
 });
 
-export default ManualLogsChart;
+export default ManualDataPointsChart;

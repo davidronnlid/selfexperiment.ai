@@ -120,17 +120,22 @@ export default function WithingsIntegration({
 
     try {
       setLoading(true);
-      const twoWeeksAgo = new Date();
-      twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
 
+      // Fetch all Withings data for the user
       const { data: withingsData, error } = await supabase
-        .from("withings_variable_logs")
+        .from("withings_variable_data_points")
         .select("*")
         .eq("user_id", userId)
-        .gte("date", twoWeeksAgo.toISOString().split("T")[0])
-        .order("date", { ascending: true });
+        .order("date", { ascending: false });
 
       if (error) throw error;
+      console.log(
+        "[WithingsIntegration] Fetched data for user",
+        userId,
+        ":",
+        withingsData?.length || 0,
+        "records"
+      );
       setData(withingsData || []);
     } catch (error) {
       console.error("Error fetching Withings data:", error);
@@ -139,21 +144,24 @@ export default function WithingsIntegration({
     }
   }, [userId, connected]);
 
-  // Sync recent Withings data
+  // Sync all Withings data from January 2009 until today
   const syncData = async () => {
     if (!connected) return;
 
     try {
       setSyncing(true);
       const now = new Date();
-      const twoWeeksAgo = new Date();
-      twoWeeksAgo.setDate(now.getDate() - 14);
+      const startDate = new Date("2009-01-01"); // January 1, 2009
 
-      const startdate = Math.floor(twoWeeksAgo.getTime() / 1000);
+      const startdate = Math.floor(startDate.getTime() / 1000);
       const enddate = Math.floor(now.getTime() / 1000);
 
+      console.log(
+        `[Withings Sync] Fetching data from ${startDate.toISOString()} to ${now.toISOString()}`
+      );
+
       const response = await fetch(
-        `/api/withings/fetch?startdate=${startdate}&enddate=${enddate}&meastype=1,5,6,8,76,77,88`,
+        `/api/withings/fetch?startdate=${startdate}&enddate=${enddate}&meastype=1,5,6,8,76,77,88&user_id=${userId}`,
         {
           method: "GET",
         }
@@ -168,6 +176,10 @@ export default function WithingsIntegration({
         if (result.count > 0) {
           sendDataSyncNotification("Withings", result.count);
         }
+
+        console.log(
+          `[Withings Sync] Successfully synced ${result.count} data points`
+        );
       } else {
         console.error("Failed to sync Withings data");
       }
@@ -226,7 +238,61 @@ export default function WithingsIntegration({
 
   // Connect to Withings
   const handleConnect = async () => {
-    window.location.href = "/api/withings/auth";
+    // Get current user info from Supabase
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      console.error("No user found for Withings connection");
+      return;
+    }
+
+    // Pass user info as query parameters to avoid session issues
+    const authUrl = `/api/withings/auth?user_id=${encodeURIComponent(
+      user.id
+    )}&user_email=${encodeURIComponent(user.email || "")}`;
+    window.location.href = authUrl;
+  };
+
+  // Disconnect from Withings
+  const handleDisconnect = async () => {
+    try {
+      setLoading(true);
+
+      // Delete tokens from database
+      const { error: tokenError } = await supabase
+        .from("withings_tokens")
+        .delete()
+        .eq("user_id", userId);
+
+      if (tokenError) {
+        console.error("Error deleting Withings tokens:", tokenError);
+        return;
+      }
+
+      // Delete all Withings data points
+      const { error: dataError } = await supabase
+        .from("withings_variable_data_points")
+        .delete()
+        .eq("user_id", userId);
+
+      if (dataError) {
+        console.error("Error deleting Withings data:", dataError);
+        return;
+      }
+
+      // Update local state
+      setConnected(false);
+      setData([]);
+      setLastSync(null);
+
+      console.log("Successfully disconnected from Withings");
+    } catch (error) {
+      console.error("Error disconnecting from Withings:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -336,7 +402,7 @@ export default function WithingsIntegration({
               }
               size="small"
             >
-              {syncing ? "Syncing..." : "Sync Recent"}
+              {syncing ? "Syncing..." : "Sync All Data"}
             </Button>
             <Button
               variant="outlined"
@@ -348,6 +414,15 @@ export default function WithingsIntegration({
               size="small"
             >
               {reimporting ? "Reimporting..." : "Reimport All"}
+            </Button>
+            <Button
+              variant="outlined"
+              color="error"
+              onClick={handleDisconnect}
+              disabled={loading}
+              size="small"
+            >
+              Disconnect
             </Button>
           </Box>
         </Box>
@@ -388,7 +463,7 @@ export default function WithingsIntegration({
         ) : (
           <Box>
             <Typography variant="h6" sx={{ mb: 2 }}>
-              📊 Body Composition (Last 14 Days)
+              📊 Body Composition Data ({data.length} measurements)
             </Typography>
 
             <Grid container spacing={2}>
@@ -517,7 +592,7 @@ export default function WithingsIntegration({
             <Divider sx={{ my: 3 }} />
 
             <Typography variant="h6" sx={{ mb: 2 }}>
-              📋 Recent Measurements
+              📋 All Measurements ({data.length} total)
             </Typography>
 
             <TableContainer component={Paper} variant="outlined">
@@ -525,27 +600,24 @@ export default function WithingsIntegration({
                 <TableHead>
                   <TableRow>
                     <TableCell>Date</TableCell>
-                    <TableCell align="right">Variable</TableCell>
+                    <TableCell>Variable</TableCell>
                     <TableCell align="right">Value</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {data
-                    .slice(-10)
-                    .reverse()
-                    .map((item, index) => (
-                      <TableRow key={index}>
-                        <TableCell>
-                          {format(parseISO(item.date), "MMM dd, yyyy")}
-                        </TableCell>
-                        <TableCell align="right">
-                          {METRIC_LABELS[item.variable] || item.variable}
-                        </TableCell>
-                        <TableCell align="right">
-                          {formatValue(item.variable, item.value)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                  {data.map((item, index) => (
+                    <TableRow key={`${item.date}-${item.variable}-${index}`}>
+                      <TableCell>
+                        {format(parseISO(item.date), "MMM dd, yyyy")}
+                      </TableCell>
+                      <TableCell>
+                        {METRIC_LABELS[item.variable] || item.variable}
+                      </TableCell>
+                      <TableCell align="right">
+                        {formatValue(item.variable, item.value)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </TableContainer>

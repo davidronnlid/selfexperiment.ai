@@ -106,7 +106,7 @@ export default function ReadinessScorePage() {
       cutoffDate.setDate(cutoffDate.getDate() - daysBack);
 
       const { data: ouraData, error } = await supabase
-        .from("oura_variable_logs")
+        .from("oura_variable_data_points")
         .select("id, date, value, created_at, raw")
         .eq("user_id", user.id)
         .eq("variable_id", variableId)

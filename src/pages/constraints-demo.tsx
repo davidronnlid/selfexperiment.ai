@@ -137,7 +137,7 @@ export default function ConstraintsDemo() {
 
         <Alert severity={allValid ? "success" : "warning"}>
           {allValid
-            ? "🎉 All variables are valid! You can proceed with logging."
+            ? "🎉 All variables are valid! You can proceed with tracking."
             : "⚠️ Some variables have validation errors. Please fix them before proceeding."}
         </Alert>
       </Paper>

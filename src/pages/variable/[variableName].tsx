@@ -204,7 +204,7 @@ export default function VariableLogsPage() {
         );
 
         const { data: ouraLogs, error: ouraError } = await supabase
-          .from("oura_variable_logs")
+          .from("oura_variable_data_points")
           .select("id, date, variable_id, value, raw, created_at")
           .eq("user_id", user.id)
           .eq("variable_id", variableInfo.slug) // Oura uses slug as variable_id
@@ -232,9 +232,9 @@ export default function VariableLogsPage() {
           }));
         }
       } else {
-        // Regular variable - fetch from logs table using variable_id (UUID)
+        // Regular variable - fetch from data_points table using variable_id (UUID)
         const { data: uuidLogs, error: uuidError } = await supabase
-          .from("logs")
+          .from("data_points")
           .select("id, created_at, date, variable_id, value, notes, user_id")
           .eq("user_id", user.id)
           .eq("variable_id", variableInfo.id)
@@ -391,7 +391,7 @@ export default function VariableLogsPage() {
     setDistributionLoading(true);
     try {
       const { data, error } = await supabase
-        .from("logs")
+        .from("data_points")
         .select("value, user_id")
         .eq("variable_id", variableInfo?.id)
         .in(
@@ -487,7 +487,7 @@ export default function VariableLogsPage() {
 
   const updateLog = async (logId: number) => {
     const { error } = await supabase
-      .from("logs")
+      .from("data_points")
       .update({ value: editValue, notes: editNotes })
       .eq("id", logId);
     if (!error) {
@@ -505,7 +505,10 @@ export default function VariableLogsPage() {
 
   const deleteLog = async (logId: number) => {
     if (!confirm("Are you sure you want to delete this log?")) return;
-    const { error } = await supabase.from("logs").delete().eq("id", logId);
+    const { error } = await supabase
+      .from("data_points")
+      .delete()
+      .eq("id", logId);
     if (!error) {
       await fetchLogs();
       setSuccessMessage("Log deleted successfully!");
@@ -736,8 +739,8 @@ export default function VariableLogsPage() {
           </Typography>
           {logs.length === 0 ? (
             <Alert severity="info">
-              No logs found for this variable. Start logging data to see it
-              here.
+              No data points found for this variable. Start tracking data to see
+              it here.
             </Alert>
           ) : (
             <TableContainer component={Paper}>

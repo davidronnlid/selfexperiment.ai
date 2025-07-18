@@ -320,7 +320,7 @@ export default function VariableConstraintManager({
           <Box>
             <Typography variant="caption" color="textSecondary">
               These constraints will help ensure data quality and provide better
-              validation when logging values for this variable.
+              validation when tracking values for this variable.
             </Typography>
           </Box>
         </Box>

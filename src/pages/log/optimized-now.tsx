@@ -125,7 +125,7 @@ export default function OptimizedLogNow() {
 
         // Log the variable
         await PerformanceMonitor.measureQuery("log_variable", async () => {
-          const { error } = await supabase.from("variable_logs").insert({
+          const { error } = await supabase.from("variable_data_points").insert({
             user_id: user.id,
             variable_id: variableId,
             display_value: value,
@@ -347,7 +347,7 @@ export default function OptimizedLogNow() {
                   </Button>
                   <Button
                     variant="outlined"
-                    onClick={() => router.push("/log/routines")}
+                    onClick={() => router.push("/track/auto")}
                     fullWidth
                   >
                     Manage Routines

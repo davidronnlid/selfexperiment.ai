@@ -362,7 +362,7 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
       cutoffDate.setDate(cutoffDate.getDate() - daysBack);
 
       const { data: ouraData, error } = await supabase
-        .from("oura_variable_logs")
+        .from("oura_variable_data_points")
         .select("id, source, variable_id, date, value, raw, created_at")
         .eq("user_id", userId)
         .gte("date", cutoffDate.toISOString().split("T")[0])

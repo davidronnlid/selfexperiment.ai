@@ -19,6 +19,10 @@ import {
   Link,
   TextField,
   Button,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import {
   Chart as ChartJS,
@@ -41,6 +45,10 @@ import {
   FaCompressArrowsAlt,
   FaSyncAlt,
 } from "react-icons/fa";
+import InfoIcon from "@mui/icons-material/Info";
+import TrendingUpIcon from "@mui/icons-material/TrendingUp";
+import TrendingDownIcon from "@mui/icons-material/TrendingDown";
+import { VariableLinkSimple } from "./VariableLink";
 
 ChartJS.register(
   CategoryScale,
@@ -68,6 +76,17 @@ interface CorrelationAnalysisProps {
   userId?: string;
 }
 
+interface CorrelationResult {
+  variable1: string;
+  variable2: string;
+  correlation: number;
+  strength: "strong" | "moderate" | "weak" | "none";
+  direction: "positive" | "negative";
+  dataPoints: number;
+  pValue?: number;
+  rSquared?: number;
+}
+
 export default function CorrelationAnalysis({
   userId,
 }: CorrelationAnalysisProps) {
@@ -77,6 +96,10 @@ export default function CorrelationAnalysis({
   const [error, setError] = useState<string | null>(null);
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [variables, setVariables] = useState<Record<string, string>>({});
+  const [showCorrelationAnalysis, setShowCorrelationAnalysis] = useState(true); // Toggle for correlation section
+  const [minCorrelationStrength, setMinCorrelationStrength] =
+    useState<string>("0.1"); // Filter by minimum correlation
+  const [showOnlySignificant, setShowOnlySignificant] = useState(false); // Show only statistically significant
 
   // Date range state for filtering
   const [startDate, setStartDate] = useState<string>(() => {
@@ -86,6 +109,11 @@ export default function CorrelationAnalysis({
   const [endDate, setEndDate] = useState<string>(() => {
     return format(new Date(), "yyyy-MM-dd");
   });
+
+  // Analysis controls state
+  const [timeRange, setTimeRange] = useState("90");
+  const [selectedVar1, setSelectedVar1] = useState<string | null>(null);
+  const [selectedVar2, setSelectedVar2] = useState<string | null>(null);
 
   // Helper function to get variable display names
   const getVariableDisplayName = (variableId: string): string => {
@@ -105,12 +133,32 @@ export default function CorrelationAnalysis({
       ].includes(id);
     };
 
+    const isWithingsVariable = (id: string) => {
+      return [
+        "weight",
+        "fat_free_mass_kg",
+        "fat_ratio",
+        "fat_mass_weight_kg",
+        "muscle_mass_kg",
+        "hydration_kg",
+        "bone_mass_kg",
+      ].includes(id);
+    };
+
     if (isOuraVariable(variableId)) {
       return (
         variables[variableId] ||
         variableId.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
       );
     }
+
+    if (isWithingsVariable(variableId)) {
+      return (
+        variables[variableId] ||
+        variableId.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
+      );
+    }
+
     return variables[variableId] || variableId;
   };
 
@@ -131,9 +179,26 @@ export default function CorrelationAnalysis({
       ].includes(id);
     };
 
+    const isWithingsVariable = (id: string) => {
+      return [
+        "weight",
+        "fat_free_mass_kg",
+        "fat_ratio",
+        "fat_mass_weight_kg",
+        "muscle_mass_kg",
+        "hydration_kg",
+        "bone_mass_kg",
+      ].includes(id);
+    };
+
     if (isOuraVariable(variableId)) {
       return variableId;
     }
+
+    if (isWithingsVariable(variableId)) {
+      return variableId;
+    }
+
     return variableId;
   };
 
@@ -191,7 +256,7 @@ export default function CorrelationAnalysis({
       // Fetch manual logs and variables separately for reliable data loading
       const [logsResponse, variablesResponse] = await Promise.all([
         supabase
-          .from("logs")
+          .from("data_points")
           .select("*")
           .eq("user_id", userId)
           .gte("date", startDateTime)
@@ -229,7 +294,7 @@ export default function CorrelationAnalysis({
 
       // Fetch Oura logs
       const { data: ouraLogsResult, error: ouraError } = await supabase
-        .from("oura_variable_logs")
+        .from("oura_variable_data_points")
         .select("*")
         .eq("user_id", userId)
         .gte("date", startDate)
@@ -237,6 +302,18 @@ export default function CorrelationAnalysis({
         .order("date", { ascending: false });
       if (ouraError) {
         throw new Error(`Oura logs: ${ouraError.message}`);
+      }
+
+      // Fetch Withings logs
+      const { data: withingsLogsResult, error: withingsError } = await supabase
+        .from("withings_variable_data_points")
+        .select("*")
+        .eq("user_id", userId)
+        .gte("date", startDate)
+        .lte("date", endDate)
+        .order("date", { ascending: false });
+      if (withingsError) {
+        throw new Error(`Withings logs: ${withingsError.message}`);
       }
 
       let allLogs: ManualLog[] = [];
@@ -295,6 +372,35 @@ export default function CorrelationAnalysis({
           };
         });
         allLogs = [...allLogs, ...processedOuraLogs];
+      }
+
+      // Process Withings logs
+      if (withingsLogsResult) {
+        const processedWithingsLogs = withingsLogsResult.map((log: any) => {
+          const withingsLabels: Record<string, string> = {
+            weight: "Weight",
+            fat_free_mass_kg: "Fat Free Mass",
+            fat_ratio: "Fat Ratio",
+            fat_mass_weight_kg: "Fat Mass",
+            muscle_mass_kg: "Muscle Mass",
+            hydration_kg: "Hydration",
+            bone_mass_kg: "Bone Mass",
+          };
+
+          variableLabels[log.variable] =
+            withingsLabels[log.variable] || log.variable;
+
+          return {
+            id: `withings_${log.id}`,
+            variable_id: log.variable,
+            value: log.value,
+            date: log.date,
+            notes: "Withings data",
+            source: "withings",
+            created_at: log.created_at,
+          };
+        });
+        allLogs = [...allLogs, ...processedWithingsLogs];
       }
 
       setLogs(allLogs);
@@ -363,13 +469,12 @@ export default function CorrelationAnalysis({
 
   const getCorrelationStrength = (
     correlation: number
-  ): "Very Strong" | "Strong" | "Moderate" | "Weak" | "Very Weak" => {
+  ): "strong" | "moderate" | "weak" | "none" => {
     const abs = Math.abs(correlation);
-    if (abs >= 0.8) return "Very Strong";
-    if (abs >= 0.6) return "Strong";
-    if (abs >= 0.4) return "Moderate";
-    if (abs >= 0.2) return "Weak";
-    return "Very Weak";
+    if (abs >= 0.7) return "strong";
+    if (abs >= 0.3) return "moderate";
+    if (abs >= 0.1) return "weak";
+    return "none";
   };
 
   const getCorrelationColor = (correlation: number): string => {
@@ -415,6 +520,7 @@ export default function CorrelationAnalysis({
     );
   };
 
+  // Calculate linear regression line
   const calculateRegressionLine = (x: number[], y: number[]) => {
     const n = x.length;
     const sumX = x.reduce((a, b) => a + b, 0);
@@ -436,6 +542,43 @@ export default function CorrelationAnalysis({
         { x: maxX, y: slope * maxX + intercept },
       ],
     };
+  };
+
+  // Calculate R-squared value
+  const calculateRSquared = (x: number[], y: number[]) => {
+    const correlation = calculateCorrelation(x, y);
+    return Math.pow(correlation, 2);
+  };
+
+  // Estimate p-value using t-test approximation
+  const estimatePValue = (correlation: number, n: number) => {
+    if (n < 3) return 1;
+
+    const t =
+      correlation * Math.sqrt((n - 2) / (1 - correlation * correlation));
+    const df = n - 2;
+
+    // Simple approximation - for more accuracy, use proper t-distribution
+    if (Math.abs(t) > 3.5) return 0.001;
+    if (Math.abs(t) > 2.8) return 0.01;
+    if (Math.abs(t) > 2.0) return 0.05;
+    if (Math.abs(t) > 1.7) return 0.1;
+    return 0.5;
+  };
+
+  // Calculate confidence interval for correlation
+  const calculateConfidenceInterval = (correlation: number, n: number) => {
+    if (n < 3) return { lower: -1, upper: 1 };
+
+    const z = 0.5 * Math.log((1 + correlation) / (1 - correlation));
+    const se = 1 / Math.sqrt(n - 3);
+    const zLower = z - 1.96 * se;
+    const zUpper = z + 1.96 * se;
+
+    const lower = (Math.exp(2 * zLower) - 1) / (Math.exp(2 * zLower) + 1);
+    const upper = (Math.exp(2 * zUpper) - 1) / (Math.exp(2 * zUpper) + 1);
+
+    return { lower, upper };
   };
 
   const handleRowToggle = (variable1: string, variable2: string) => {
@@ -580,14 +723,7 @@ export default function CorrelationAnalysis({
   // Calculate all correlations
   const allCorrelations = useMemo(() => {
     const numericVariables = getNumericVariables();
-    const correlations: Array<{
-      variable1: string;
-      variable2: string;
-      correlation: number;
-      strength: string;
-      dataPoints: number;
-      color: string;
-    }> = [];
+    const correlations: CorrelationResult[] = [];
 
     for (let i = 0; i < numericVariables.length; i++) {
       for (let j = i + 1; j < numericVariables.length; j++) {
@@ -599,14 +735,22 @@ export default function CorrelationAnalysis({
           const x = matchedData.map((d) => d.var1Value);
           const y = matchedData.map((d) => d.var2Value);
           const correlation = calculateCorrelation(x, y);
+          const pValue = estimatePValue(correlation, matchedData.length);
+
+          // Apply filters
+          const minStrength = parseFloat(minCorrelationStrength);
+          if (Math.abs(correlation) < minStrength) continue;
+          if (showOnlySignificant && pValue >= 0.05) continue;
 
           correlations.push({
             variable1: var1,
             variable2: var2,
-            correlation,
+            correlation: Math.round(correlation * 1000) / 1000,
             strength: getCorrelationStrength(correlation),
+            direction: correlation > 0 ? "positive" : "negative",
             dataPoints: matchedData.length,
-            color: getCorrelationColor(correlation),
+            pValue: pValue,
+            rSquared: Math.pow(correlation, 2),
           });
         }
       }
@@ -615,7 +759,7 @@ export default function CorrelationAnalysis({
     return correlations.sort(
       (a, b) => Math.abs(b.correlation) - Math.abs(a.correlation)
     );
-  }, [logs]);
+  }, [logs, minCorrelationStrength, showOnlySignificant]);
 
   if (loading) {
     return (
@@ -644,11 +788,28 @@ export default function CorrelationAnalysis({
     return (
       <Alert severity="info" sx={{ mt: 2 }}>
         You need at least 2 numeric variables to perform correlation analysis.
-        Start logging more different types of data across all sources (manual,
+        Start tracking more different types of data across all sources (manual,
         Oura, Withings, etc.) to see correlations!
       </Alert>
     );
   }
+
+  const handleTimeRangeChange = (event: any) => {
+    setTimeRange(event.target.value);
+    const daysAgo = parseInt(event.target.value, 10);
+    const ninetyDaysAgo = subDays(new Date(), daysAgo);
+    setStartDate(format(ninetyDaysAgo, "yyyy-MM-dd"));
+    setEndDate(format(new Date(), "yyyy-MM-dd"));
+    fetchManualLogs(); // Re-fetch data based on new date range
+  };
+
+  const handleVar1Change = (event: any) => {
+    setSelectedVar1(event.target.value);
+  };
+
+  const handleVar2Change = (event: any) => {
+    setSelectedVar2(event.target.value);
+  };
 
   return (
     <Box>
@@ -697,6 +858,125 @@ export default function CorrelationAnalysis({
         </CardContent>
       </Card>
 
+      {/* Analysis Controls */}
+      <Box
+        sx={{
+          mb: 3,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 2,
+        }}
+      >
+        <Typography variant="h6" component="h4">
+          Variable Analysis Settings
+        </Typography>
+        <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <InputLabel>Time Range</InputLabel>
+            <Select
+              value={timeRange}
+              label="Time Range"
+              onChange={handleTimeRangeChange}
+            >
+              <MenuItem value="30">Last 30 days</MenuItem>
+              <MenuItem value="90">Last 90 days</MenuItem>
+              <MenuItem value="180">Last 6 months</MenuItem>
+              <MenuItem value="365">Last year</MenuItem>
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 150 }}>
+            <InputLabel>Variable 1</InputLabel>
+            <Select
+              value={selectedVar1}
+              label="Variable 1"
+              onChange={handleVar1Change}
+            >
+              {numericVariables.map((variable) => (
+                <MenuItem key={variable} value={variable}>
+                  <VariableLinkSimple
+                    variableId={variable}
+                    variables={variables}
+                    variant="inherit"
+                    underline={false}
+                    onClick={() => {}} // Prevent navigation when in dropdown
+                    forceAsText={true}
+                  />
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 150 }}>
+            <InputLabel>Variable 2</InputLabel>
+            <Select
+              value={selectedVar2}
+              label="Variable 2"
+              onChange={handleVar2Change}
+            >
+              {numericVariables
+                .filter((v) => v !== selectedVar1)
+                .map((variable) => (
+                  <MenuItem key={variable} value={variable}>
+                    <VariableLinkSimple
+                      variableId={variable}
+                      variables={variables}
+                      variant="inherit"
+                      underline={false}
+                      onClick={() => {}} // Prevent navigation when in dropdown
+                      forceAsText={true}
+                    />
+                  </MenuItem>
+                ))}
+            </Select>
+          </FormControl>
+        </Box>
+      </Box>
+
+      {/* Filter Controls */}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="subtitle2" gutterBottom color="text.secondary">
+          Filter Correlations
+        </Typography>
+        <Box
+          sx={{
+            display: "flex",
+            gap: 2,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <FormControl size="small" sx={{ minWidth: 150 }}>
+            <InputLabel>Min Strength</InputLabel>
+            <Select
+              value={minCorrelationStrength}
+              label="Min Strength"
+              onChange={(e) => setMinCorrelationStrength(e.target.value)}
+            >
+              <MenuItem value="0.0">Any (0.0+)</MenuItem>
+              <MenuItem value="0.1">Weak+ (0.1+)</MenuItem>
+              <MenuItem value="0.3">Moderate+ (0.3+)</MenuItem>
+              <MenuItem value="0.7">Strong+ (0.7+)</MenuItem>
+            </Select>
+          </FormControl>
+          <FormControl size="small">
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <input
+                type="checkbox"
+                checked={showOnlySignificant}
+                onChange={(e) => setShowOnlySignificant(e.target.checked)}
+                id="significant-only"
+              />
+              <label htmlFor="significant-only">
+                <Typography variant="body2">
+                  Show only significant (p &lt; 0.05)
+                </Typography>
+              </label>
+            </Box>
+          </FormControl>
+        </Box>
+      </Box>
+
       {/* Data Source Breakdown */}
       {logs.length > 0 && (
         <Box sx={{ mb: 3 }}>
@@ -728,7 +1008,15 @@ export default function CorrelationAnalysis({
                   variant="outlined"
                 />
                 <Chip
-                  label={`Total: ${logs.length} logs`}
+                  label={`Withings: ${
+                    logs.filter((log) => log.source === "withings").length
+                  }`}
+                  size="small"
+                  color="warning"
+                  variant="outlined"
+                />
+                <Chip
+                  label={`Total: ${logs.length} data points`}
                   size="small"
                   color="default"
                 />
@@ -746,6 +1034,67 @@ export default function CorrelationAnalysis({
               Correlation Results ({allCorrelations.length} correlations found)
             </Typography>
 
+            {/* Correlation Summary */}
+            {allCorrelations.length > 0 && (
+              <Card variant="outlined" sx={{ mb: 3, bgcolor: "#f8f9fa" }}>
+                <CardContent sx={{ py: 2 }}>
+                  <Typography
+                    variant="subtitle2"
+                    gutterBottom
+                    sx={{ fontWeight: 600, color: "primary.main" }}
+                  >
+                    📈 Correlation Summary
+                  </Typography>
+                  <Box sx={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                    <Box>
+                      <Typography variant="body2" color="text.secondary">
+                        Total Correlations:
+                      </Typography>
+                      <Typography variant="h6">
+                        {allCorrelations.length}
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="body2" color="text.secondary">
+                        Strong Correlations:
+                      </Typography>
+                      <Typography variant="h6" color="success.main">
+                        {
+                          allCorrelations.filter((c) => c.strength === "strong")
+                            .length
+                        }
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="body2" color="text.secondary">
+                        Significant (p &lt; 0.05):
+                      </Typography>
+                      <Typography variant="h6" color="info.main">
+                        {
+                          allCorrelations.filter(
+                            (c) => c.pValue && c.pValue < 0.05
+                          ).length
+                        }
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="body2" color="text.secondary">
+                        Average R²:
+                      </Typography>
+                      <Typography variant="h6" color="secondary.main">
+                        {(
+                          allCorrelations.reduce(
+                            (sum, c) => sum + (c.rSquared || 0),
+                            0
+                          ) / allCorrelations.length
+                        ).toFixed(3)}
+                      </Typography>
+                    </Box>
+                  </Box>
+                </CardContent>
+              </Card>
+            )}
+
             <TableContainer component={Paper}>
               <Table>
                 <TableHead>
@@ -761,7 +1110,7 @@ export default function CorrelationAnalysis({
                       <strong>Correlation</strong>
                     </TableCell>
                     <TableCell>
-                      <strong>Strength</strong>
+                      <strong>Strength (★ = Significant)</strong>
                     </TableCell>
                     <TableCell>
                       <strong>Data Points</strong>
@@ -809,35 +1158,87 @@ export default function CorrelationAnalysis({
                               getVariableDisplayName(corr.variable2)
                             )}
                           </TableCell>
-                          <TableCell>
+                          <TableCell
+                            align="right"
+                            onClick={() =>
+                              handleRowToggle(corr.variable1, corr.variable2)
+                            }
+                          >
                             <Box
                               sx={{
                                 display: "flex",
                                 alignItems: "center",
+                                justifyContent: "flex-end",
+                                gap: 0.5,
+                              }}
+                            >
+                              {corr.direction === "positive" ? (
+                                <TrendingUpIcon
+                                  fontSize="small"
+                                  color="success"
+                                />
+                              ) : (
+                                <TrendingDownIcon
+                                  fontSize="small"
+                                  color="error"
+                                />
+                              )}
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  fontWeight: "bold",
+                                  color: getCorrelationColor(corr.correlation),
+                                }}
+                              >
+                                {corr.correlation}
+                              </Typography>
+                            </Box>
+                          </TableCell>
+                          <TableCell
+                            align="right"
+                            onClick={() =>
+                              handleRowToggle(corr.variable1, corr.variable2)
+                            }
+                          >
+                            <Box
+                              sx={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "flex-end",
                                 gap: 1,
                               }}
                             >
-                              <Box
+                              <Chip
+                                label={corr.strength}
+                                size="small"
+                                variant="outlined"
                                 sx={{
-                                  width: 12,
-                                  height: 12,
-                                  borderRadius: "50%",
-                                  backgroundColor: corr.color,
+                                  fontSize: "0.75rem",
+                                  color: getCorrelationColor(corr.correlation),
+                                  borderColor: getCorrelationColor(
+                                    corr.correlation
+                                  ),
+                                  fontWeight: "bold",
                                 }}
                               />
-                              {corr.correlation.toFixed(3)}
+                              {(() => {
+                                const pValue = estimatePValue(
+                                  corr.correlation,
+                                  corr.dataPoints
+                                );
+                                return pValue < 0.05 ? (
+                                  <Chip
+                                    label="★"
+                                    size="small"
+                                    color="success"
+                                    sx={{
+                                      fontSize: "0.6rem",
+                                      minWidth: "auto",
+                                    }}
+                                  />
+                                ) : null;
+                              })()}
                             </Box>
-                          </TableCell>
-                          <TableCell>
-                            <Chip
-                              label={corr.strength}
-                              size="small"
-                              sx={{
-                                backgroundColor: corr.color,
-                                color: "white",
-                                fontWeight: "bold",
-                              }}
-                            />
                           </TableCell>
                           <TableCell>{corr.dataPoints}</TableCell>
                         </TableRow>
@@ -853,43 +1254,355 @@ export default function CorrelationAnalysis({
                             >
                               <Box sx={{ margin: 2 }}>
                                 {chartData ? (
-                                  <Card>
-                                    <CardContent>
-                                      <Typography variant="h6" gutterBottom>
-                                        {getVariableDisplayName(corr.variable1)}{" "}
-                                        vs{" "}
-                                        {getVariableDisplayName(corr.variable2)}
+                                  <>
+                                    <Alert
+                                      severity="info"
+                                      icon={<InfoIcon />}
+                                      sx={{ mb: 2, bgcolor: "#e3f2fd" }}
+                                    >
+                                      <Typography
+                                        variant="body2"
+                                        sx={{ fontWeight: 600, mb: 0.5 }}
+                                      >
+                                        Understanding Correlation (r ={" "}
+                                        {corr.correlation.toFixed(3)}):
                                       </Typography>
                                       <Typography
                                         variant="body2"
-                                        color="textSecondary"
-                                        gutterBottom
+                                        component="div"
                                       >
-                                        Correlation:{" "}
-                                        {chartData.correlation.toFixed(3)} (
-                                        {getCorrelationStrength(
-                                          chartData.correlation
-                                        )}
-                                        ) • Data Points:{" "}
-                                        {chartData.matchedData.length}
+                                        •{" "}
+                                        <strong>
+                                          Correlation ≠ Causation:
+                                        </strong>{" "}
+                                        A correlation doesn't mean one variable
+                                        causes the other
+                                        <br />• <strong>Range:</strong> Values
+                                        from -1 (perfect negative) to +1
+                                        (perfect positive)
+                                        <br />• <strong>Strength:</strong>{" "}
+                                        |0.7+| = strong, |0.3-0.7| = moderate,
+                                        |0.1-0.3| = weak
+                                        <br />• <strong>Trend Line:</strong> The
+                                        dashed line shows the linear
+                                        relationship direction
+                                        <br />•{" "}
+                                        <strong>Hover Data Points:</strong> See
+                                        exact values and measurement dates
+                                        <br />• <strong>
+                                          Confounding:
+                                        </strong>{" "}
+                                        Other variables may influence both
+                                        measurements
                                       </Typography>
-                                      <Box
-                                        sx={{
-                                          height: 400,
-                                          width: "100%",
-                                          position: "relative",
-                                        }}
-                                      >
-                                        <Chart
-                                          type="scatter"
-                                          data={chartData.chartData as any}
-                                          options={
-                                            chartData.chartOptions as any
-                                          }
-                                        />
-                                      </Box>
-                                    </CardContent>
-                                  </Card>
+                                    </Alert>
+
+                                    {/* Statistical Insights Panel */}
+                                    {(() => {
+                                      const x = chartData.matchedData.map(
+                                        (d) => d.var1Value
+                                      );
+                                      const y = chartData.matchedData.map(
+                                        (d) => d.var2Value
+                                      );
+                                      const rSquared = calculateRSquared(x, y);
+                                      const pValue = estimatePValue(
+                                        corr.correlation,
+                                        chartData.matchedData.length
+                                      );
+                                      const confidenceInterval =
+                                        calculateConfidenceInterval(
+                                          corr.correlation,
+                                          chartData.matchedData.length
+                                        );
+                                      const regressionLine =
+                                        calculateRegressionLine(x, y);
+
+                                      return (
+                                        <Card
+                                          variant="outlined"
+                                          sx={{ mb: 2, bgcolor: "#fafafa" }}
+                                        >
+                                          <CardContent sx={{ py: 2 }}>
+                                            <Typography
+                                              variant="subtitle2"
+                                              gutterBottom
+                                              sx={{
+                                                fontWeight: 600,
+                                                color: "primary.main",
+                                              }}
+                                            >
+                                              📊 Statistical Analysis
+                                            </Typography>
+                                            <Box
+                                              sx={{
+                                                display: "flex",
+                                                flexDirection: "column",
+                                                gap: 1,
+                                              }}
+                                            >
+                                              <Box
+                                                sx={{
+                                                  display: "flex",
+                                                  justifyContent:
+                                                    "space-between",
+                                                  alignItems: "center",
+                                                }}
+                                              >
+                                                <Typography variant="body2">
+                                                  R-squared (Explained
+                                                  Variance):
+                                                </Typography>
+                                                <Chip
+                                                  label={`${(
+                                                    rSquared * 100
+                                                  ).toFixed(1)}%`}
+                                                  size="small"
+                                                  color="info"
+                                                />
+                                              </Box>
+                                              <Box
+                                                sx={{
+                                                  display: "flex",
+                                                  justifyContent:
+                                                    "space-between",
+                                                  alignItems: "center",
+                                                }}
+                                              >
+                                                <Typography variant="body2">
+                                                  Statistical Significance:
+                                                </Typography>
+                                                <Chip
+                                                  label={
+                                                    pValue < 0.05
+                                                      ? "Significant"
+                                                      : "Not Significant"
+                                                  }
+                                                  size="small"
+                                                  color={
+                                                    pValue < 0.05
+                                                      ? "success"
+                                                      : "warning"
+                                                  }
+                                                />
+                                              </Box>
+                                              <Box
+                                                sx={{
+                                                  display: "flex",
+                                                  justifyContent:
+                                                    "space-between",
+                                                  alignItems: "center",
+                                                }}
+                                              >
+                                                <Typography variant="body2">
+                                                  95% Confidence Interval:
+                                                </Typography>
+                                                <Typography
+                                                  variant="body2"
+                                                  sx={{
+                                                    fontFamily: "monospace",
+                                                  }}
+                                                >
+                                                  [
+                                                  {confidenceInterval.lower.toFixed(
+                                                    3
+                                                  )}
+                                                  ,{" "}
+                                                  {confidenceInterval.upper.toFixed(
+                                                    3
+                                                  )}
+                                                  ]
+                                                </Typography>
+                                              </Box>
+                                              <Box
+                                                sx={{
+                                                  display: "flex",
+                                                  justifyContent:
+                                                    "space-between",
+                                                  alignItems: "center",
+                                                }}
+                                              >
+                                                <Typography variant="body2">
+                                                  Regression Equation:
+                                                </Typography>
+                                                <Typography
+                                                  variant="body2"
+                                                  sx={{
+                                                    fontFamily: "monospace",
+                                                  }}
+                                                >
+                                                  y ={" "}
+                                                  {regressionLine.slope.toFixed(
+                                                    3
+                                                  )}
+                                                  x +{" "}
+                                                  {regressionLine.intercept.toFixed(
+                                                    3
+                                                  )}
+                                                </Typography>
+                                              </Box>
+                                              <Box
+                                                sx={{
+                                                  display: "flex",
+                                                  justifyContent:
+                                                    "space-between",
+                                                  alignItems: "center",
+                                                }}
+                                              >
+                                                <Typography variant="body2">
+                                                  Data Quality:
+                                                </Typography>
+                                                <Chip
+                                                  label={
+                                                    chartData.matchedData
+                                                      .length >= 10
+                                                      ? "Good"
+                                                      : chartData.matchedData
+                                                          .length >= 5
+                                                      ? "Fair"
+                                                      : "Limited"
+                                                  }
+                                                  size="small"
+                                                  color={
+                                                    chartData.matchedData
+                                                      .length >= 10
+                                                      ? "success"
+                                                      : chartData.matchedData
+                                                          .length >= 5
+                                                      ? "warning"
+                                                      : "error"
+                                                  }
+                                                />
+                                              </Box>
+                                            </Box>
+                                          </CardContent>
+                                        </Card>
+                                      );
+                                    })()}
+                                    <Card>
+                                      <CardContent>
+                                        <Typography variant="h6" gutterBottom>
+                                          {getVariableDisplayName(
+                                            corr.variable1
+                                          )}{" "}
+                                          vs{" "}
+                                          {getVariableDisplayName(
+                                            corr.variable2
+                                          )}
+                                        </Typography>
+                                        <Box
+                                          sx={{
+                                            display: "flex",
+                                            gap: 1,
+                                            mb: 2,
+                                            flexWrap: "wrap",
+                                          }}
+                                        >
+                                          <Chip
+                                            label={`Correlation: ${corr.correlation}`}
+                                            size="small"
+                                            sx={{
+                                              bgcolor: getCorrelationColor(
+                                                corr.correlation
+                                              ),
+                                              color: "white",
+                                            }}
+                                          />
+                                          <Chip
+                                            label={`${getCorrelationStrength(
+                                              corr.correlation
+                                            )} ${
+                                              corr.correlation > 0
+                                                ? "Positive"
+                                                : "Negative"
+                                            }`}
+                                            size="small"
+                                            variant="outlined"
+                                          />
+                                          <Chip
+                                            label={`${chartData.matchedData.length} data points`}
+                                            size="small"
+                                            color="primary"
+                                          />
+                                          {(() => {
+                                            const x = chartData.matchedData.map(
+                                              (d) => d.var1Value
+                                            );
+                                            const y = chartData.matchedData.map(
+                                              (d) => d.var2Value
+                                            );
+                                            const regressionLine =
+                                              calculateRegressionLine(x, y);
+                                            const rSquared = calculateRSquared(
+                                              x,
+                                              y
+                                            );
+                                            const pValue = estimatePValue(
+                                              corr.correlation,
+                                              chartData.matchedData.length
+                                            );
+                                            const confidenceInterval =
+                                              calculateConfidenceInterval(
+                                                corr.correlation,
+                                                chartData.matchedData.length
+                                              );
+
+                                            return (
+                                              <>
+                                                <Chip
+                                                  label={`R² = ${rSquared.toFixed(
+                                                    3
+                                                  )}`}
+                                                  size="small"
+                                                  variant="outlined"
+                                                  color="info"
+                                                />
+                                                <Chip
+                                                  label={`p < ${
+                                                    pValue < 0.001
+                                                      ? "0.001"
+                                                      : pValue.toFixed(3)
+                                                  }`}
+                                                  size="small"
+                                                  variant="outlined"
+                                                  color={
+                                                    pValue < 0.05
+                                                      ? "success"
+                                                      : "warning"
+                                                  }
+                                                />
+                                                <Chip
+                                                  label={`95% CI: [${confidenceInterval.lower.toFixed(
+                                                    3
+                                                  )}, ${confidenceInterval.upper.toFixed(
+                                                    3
+                                                  )}]`}
+                                                  size="small"
+                                                  variant="outlined"
+                                                  color="secondary"
+                                                />
+                                              </>
+                                            );
+                                          })()}
+                                        </Box>
+                                        <Box
+                                          sx={{
+                                            height: 400,
+                                            width: "100%",
+                                            position: "relative",
+                                          }}
+                                        >
+                                          <Chart
+                                            type="scatter"
+                                            data={chartData.chartData as any}
+                                            options={
+                                              chartData.chartOptions as any
+                                            }
+                                          />
+                                        </Box>
+                                      </CardContent>
+                                    </Card>
+                                  </>
                                 ) : (
                                   <Alert severity="info">
                                     Not enough data points to display chart for
@@ -910,7 +1623,7 @@ export default function CorrelationAnalysis({
         </Card>
       ) : (
         <Alert severity="info">
-          No significant correlations found with current data. Try logging more
+          No significant correlations found with current data. Try tracking more
           data points for your variables!
         </Alert>
       )}

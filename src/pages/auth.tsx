@@ -35,7 +35,7 @@ export default function Auth() {
         data: { user },
       } = await supabase.auth.getUser();
       if (user) {
-        router.push("/log/now");
+        router.push("/track/manual");
       }
     };
     checkUser();
@@ -48,8 +48,8 @@ export default function Auth() {
 
     const redirectUrl =
       process.env.NODE_ENV === "development"
-        ? "http://localhost:3000/log/now"
-        : `${window.location.origin}/log/now`;
+        ? "http://localhost:3000/track/manual"
+        : `${window.location.origin}/track/manual`;
 
     console.log("Redirect URL:", redirectUrl);
 
@@ -95,8 +95,8 @@ export default function Auth() {
           options: {
             emailRedirectTo:
               process.env.NODE_ENV === "development"
-                ? "http://localhost:3000/log/now"
-                : `${window.location.origin}/log/now`,
+                ? "http://localhost:3000/track/manual"
+                : `${window.location.origin}/track/manual`,
           },
         });
         if (error) {
@@ -114,7 +114,7 @@ export default function Auth() {
         if (error) {
           setError(error.message);
         } else {
-          router.push("/log/now");
+          router.push("/track/manual");
         }
       }
     } catch (err) {

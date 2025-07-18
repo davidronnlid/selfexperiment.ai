@@ -127,7 +127,7 @@ export default function CompletedExperimentsPage() {
       for (const exp of experiments) {
         // Fetch logs for independent variable within experiment date range
         const { data: independentLogs } = await supabase
-          .from("logs")
+          .from("data_points")
           .select("*")
           .eq("user_id", user.id)
           .eq("variable", exp.variable)
@@ -141,7 +141,7 @@ export default function CompletedExperimentsPage() {
         let dependentLogs: LogEntry[] = [];
         if (dependentVariable) {
           const { data } = await supabase
-            .from("logs")
+            .from("data_points")
             .select("*")
             .eq("user_id", user.id)
             .eq("variable", dependentVariable)
@@ -390,25 +390,7 @@ export default function CompletedExperimentsPage() {
         </Alert>
       )}
 
-      {/* Build New Experiment Button */}
-      <Box sx={{ mb: 3 }}>
-        <Button
-          component={Link}
-          href="/experiment/builder"
-          variant="contained"
-          size="large"
-          sx={{
-            background: "linear-gradient(45deg, #FFD700 30%, #FFEA70 90%)",
-            color: "black",
-            fontWeight: "bold",
-            "&:hover": {
-              background: "linear-gradient(45deg, #FFD700 30%, #FFEA70 90%)",
-            },
-          }}
-        >
-          🧪 Build New Experiment
-        </Button>
-      </Box>
+      {/* Remove Build New Experiment Button */}
 
       {loading && (
         <Box sx={{ mb: 3 }}>

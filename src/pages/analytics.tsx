@@ -13,8 +13,7 @@ import { useRouter } from "next/router";
 import ManualLogsChart from "@/components/ManualLogsChart";
 import ManualLogsTable from "@/components/ManualLogsTable";
 import CorrelationAnalysis from "@/components/CorrelationAnalysis";
-import OuraIntegration from "@/components/OuraIntegration";
-import WithingsIntegration from "@/components/WithingsIntegration";
+import UnifiedHealthDashboard from "@/components/UnifiedHealthDashboard";
 
 export default function Analytics() {
   const { user } = useUser();
@@ -94,10 +93,9 @@ export default function Analytics() {
             <ManualLogsTable userId={user.id} />
             <Divider />
             <Typography variant="h6" sx={{ mb: 2 }}>
-              🔗 External Data Sources
+              📊 Health Data Dashboard
             </Typography>
-            <OuraIntegration userId={user.id} />
-            <WithingsIntegration userId={user.id} />
+            <UnifiedHealthDashboard userId={user.id} />
           </Box>
         )}
       </Paper>

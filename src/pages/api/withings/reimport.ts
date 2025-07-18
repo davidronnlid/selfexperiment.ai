@@ -1,5 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
+
+// Create a service role client that bypasses RLS
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 function getCookiesFromReq(req: NextApiRequest) {
   const cookieHeader = req.headers.cookie;
@@ -32,8 +39,8 @@ async function reimportAllWithingsData(
   rowsFetched: number;
   totalAvailable: number;
 }> {
-  // Fetch refresh_token from Supabase
-  const { data: tokenRow, error: tokenError } = await supabase
+  // Fetch refresh_token from Supabase using admin client to bypass RLS
+  const { data: tokenRow, error: tokenError } = await supabaseAdmin
     .from("withings_tokens")
     .select("refresh_token, expires_at")
     .eq("user_id", user_id)
@@ -62,8 +69,9 @@ async function reimportAllWithingsData(
     tokenRow.expires_at
   );
 
-  // Fetch in 360-day batches from 2009-05-01 to today
-  const startDate = new Date("2009-05-01");
+  // Fetch in 360-day batches from 2 years ago to today (more recent data)
+  const startDate = new Date();
+  startDate.setFullYear(startDate.getFullYear() - 2);
   const endDate = new Date();
   let batchStart = new Date(startDate);
   let batchEnd = new Date(startDate);
@@ -98,8 +106,16 @@ async function reimportAllWithingsData(
       ).toISOString()} to ${new Date(endUnix * 1000).toISOString()}`
     );
 
-    let resp = await fetch(url);
-    let data = await resp.json();
+    let resp;
+    let data: any;
+    
+    try {
+      resp = await fetch(url);
+      data = await resp.json();
+    } catch (fetchError) {
+      console.error("[Withings Reimport] Fetch error:", fetchError);
+      throw new Error(`Failed to fetch Withings data: ${fetchError instanceof Error ? fetchError.message : 'Unknown fetch error'}`);
+    }
 
     // Debug: Log the full API response for this batch
     console.log(
@@ -131,19 +147,26 @@ async function reimportAllWithingsData(
       );
 
       // Refresh the access token
-      const refreshRes = await fetch("https://wbsapi.withings.net/v2/oauth2", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          action: "requesttoken",
-          grant_type: "refresh_token",
-          client_id: process.env.WITHINGS_ClientID!,
-          client_secret: process.env.WITHINGS_Secret!,
-          refresh_token: currentRefreshToken,
-        }),
-      });
-
-      const refreshData = await refreshRes.json();
+      let refreshRes;
+      let refreshData: any;
+      
+      try {
+        refreshRes = await fetch("https://wbsapi.withings.net/v2/oauth2", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            action: "requesttoken",
+            grant_type: "refresh_token",
+            client_id: process.env.WITHINGS_ClientID!,
+            client_secret: process.env.WITHINGS_Secret!,
+            refresh_token: currentRefreshToken,
+          }),
+        });
+        refreshData = await refreshRes.json();
+      } catch (refreshError) {
+        console.error("[Withings Reimport] Token refresh fetch error:", refreshError);
+        throw new Error(`Failed to refresh Withings token: ${refreshError instanceof Error ? refreshError.message : 'Unknown refresh error'}`);
+      }
 
       // Log the refresh response for debugging
       console.log(
@@ -167,8 +190,8 @@ async function reimportAllWithingsData(
             `Please re-authorize the Withings integration.`
         );
       }
-      // Update tokens in Supabase
-      await supabase.from("withings_tokens").upsert({
+      // Update tokens in Supabase using admin client
+      await supabaseAdmin.from("withings_tokens").upsert({
         user_id: user_id,
         access_token: refreshData.body.access_token,
         refresh_token: refreshData.body.refresh_token,
@@ -294,9 +317,9 @@ async function reimportAllWithingsData(
   );
 
   // Clear existing data for this user
-  await supabase.from("withings_variable_logs").delete().eq("user_id", user_id);
+  await supabase.from("withings_variable_data_points").delete().eq("user_id", user_id);
 
-  // Transform to match withings_variable_logs structure
+  // Transform to match withings_variable_data_points structure
   const transformedBatch = validRows.flatMap(row => {
     const entries = [];
     for (const [key, value] of Object.entries(row)) {
@@ -313,7 +336,7 @@ async function reimportAllWithingsData(
     return entries;
   });
 
-  const { error } = await supabase.from("withings_variable_logs").upsert(transformedBatch, {
+  const { error } = await supabase.from("withings_variable_data_points").upsert(transformedBatch, {
     onConflict: "user_id,date,variable",
   });
 
@@ -363,9 +386,10 @@ export default async function handler(
     return res.status(405).json({ error: "Method not allowed" });
   }
 
+  // Use admin client to bypass RLS for authentication
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!, // Use service role key instead of anon key
     {
       cookies: {
         getAll() {

@@ -2,7 +2,7 @@ export interface RoadmapPost {
   id: string;
   title: string;
   description?: string;
-  tag: 'Analytics' | 'Log Now' | 'Log Routines' | 'Community';
+  tag: 'Analytics' | 'Manual Tracking' | 'Auto-Tracking' | 'Community';
   status: 'proposed' | 'in_progress' | 'completed' | 'rejected';
   priority: 'low' | 'medium' | 'high';
   created_by: string;
@@ -62,14 +62,14 @@ export interface UpdateRoadmapCommentRequest {
 export interface CreateRoadmapPostRequest {
   title: string;
   description?: string;
-  tag: 'Analytics' | 'Log Now' | 'Log Routines' | 'Community';
+  tag: 'Analytics' | 'Manual Tracking' | 'Auto-Tracking' | 'Community';
 }
 
 export interface UpdateRoadmapPostRequest {
   id: string;
   title?: string;
   description?: string;
-  tag?: 'Analytics' | 'Log Now' | 'Log Routines' | 'Community';
+  tag?: 'Analytics' | 'Manual Tracking' | 'Auto-Tracking' | 'Community';
   status?: 'proposed' | 'in_progress' | 'completed' | 'rejected';
   priority?: 'low' | 'medium' | 'high';
 }

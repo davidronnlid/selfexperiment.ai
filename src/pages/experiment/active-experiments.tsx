@@ -140,7 +140,7 @@ export default function ActiveExperimentsPage() {
       for (const exp of experiments) {
         // Fetch logs for independent variable (by variable_id)
         const { data: independentLogs } = await supabase
-          .from("logs")
+          .from("data_points")
           .select("*")
           .eq("user_id", user.id)
           .eq("variable_id", exp.variable_id)
@@ -153,7 +153,7 @@ export default function ActiveExperimentsPage() {
         let dependentLogs: LogEntry[] = [];
         if (dependentVariableId) {
           const { data } = await supabase
-            .from("logs")
+            .from("data_points")
             .select("*")
             .eq("user_id", user.id)
             .eq("variable_id", dependentVariableId)
@@ -477,7 +477,7 @@ export default function ActiveExperimentsPage() {
         source: ["manual"],
       };
 
-      const { error } = await supabase.from("logs").insert([logData]);
+      const { error } = await supabase.from("data_points").insert([logData]);
 
       if (error) throw error;
 
@@ -511,17 +511,17 @@ export default function ActiveExperimentsPage() {
     const startOfDay = `${today}T00:00:00.000Z`;
     const endOfDay = `${today}T23:59:59.999Z`;
 
-    const { data: logs } = await supabase
-      .from("logs")
+    const { data: todaysLogs } = await supabase
+      .from("data_points")
       .select("*")
       .eq("user_id", user.id)
       .gte("created_at", startOfDay)
       .lte("created_at", endOfDay);
 
-    if (logs) {
-      setTodaysLogs(logs);
+    if (todaysLogs) {
+      setTodaysLogs(todaysLogs);
       // Filter experiments needing logs
-      const filtered = filterExperimentsNeedingLogs(experiments, logs);
+      const filtered = filterExperimentsNeedingLogs(experiments, todaysLogs);
       setExperimentsNeedingLogs(filtered);
     }
   };
@@ -559,7 +559,7 @@ export default function ActiveExperimentsPage() {
       <Box sx={{ textAlign: "center", mb: 3 }}>
         <Button
           component={Link}
-          href="/log"
+          href="/track/manual"
           variant="contained"
           size="large"
           sx={{
@@ -803,7 +803,7 @@ export default function ActiveExperimentsPage() {
                           },
                         }}
                       >
-                        {submitting ? "Logging..." : "Log"}
+                        {submitting ? "Tracking..." : "Track"}
                       </Button>
                     </Box>
 
@@ -936,7 +936,7 @@ export default function ActiveExperimentsPage() {
                             },
                           }}
                         >
-                          {submitting ? "Logging..." : "Log"}
+                          {submitting ? "Tracking..." : "Track"}
                         </Button>
                       </Box>
                     )}
@@ -950,15 +950,7 @@ export default function ActiveExperimentsPage() {
 
       {experiments.length === 0 ? (
         <Alert severity="info" sx={{ mb: 3 }}>
-          You have no active experiments. <br />
-          <Button
-            component={Link}
-            href="/experiment/builder"
-            variant="contained"
-            sx={{ mt: 2 }}
-          >
-            Start a New Experiment
-          </Button>
+          You have no active experiments.
         </Alert>
       ) : (
         <DragDropContext onDragEnd={onDragEnd}>

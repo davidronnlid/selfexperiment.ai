@@ -1,5 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
+
+// Create a service role client that bypasses RLS
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 function getCookiesFromReq(req: NextApiRequest) {
   const cookieHeader = req.headers.cookie;
@@ -12,7 +19,7 @@ function getCookiesFromReq(req: NextApiRequest) {
 
 // Supported Withings measurement types
 const MEAS_TYPES = [
-  { type: 1, name: "weight_kg" }, // Weight (kg)
+  { type: 1, name: "weight" }, // Weight (kg)
   { type: 5, name: "fat_free_mass_kg" }, // Fat-free mass (kg)
   { type: 6, name: "fat_ratio" }, // Fat ratio (%)
   { type: 8, name: "fat_mass_weight_kg" }, // Fat mass weight (kg)
@@ -22,7 +29,7 @@ const MEAS_TYPES = [
 ];
 
 async function fetchAndStoreAllWithingsData(
-  supabase: any,
+  supabaseClient: any,
   user_id: string,
   access_token: string
 ): Promise<number> {
@@ -55,8 +62,8 @@ async function fetchAndStoreAllWithingsData(
           const meas = grp.measures.find((x: any) => x.type === m.type);
           if (meas) {
             const value = meas.value * Math.pow(10, meas.unit);
-            // Only include valid weight measurements
-            if (m.name === 'weight' || value > 0) {
+            // Only include valid measurements
+            if (value > 0) {
               allRows.push({
                 user_id,
                 date,
@@ -86,8 +93,8 @@ async function fetchAndStoreAllWithingsData(
 
   // Upsert all rows in batches of 100
   for (let i = 0; i < deduplicatedRows.length; i += 100) {
-    await supabase
-      .from("withings_variable_logs")
+    await supabaseClient
+      .from("withings_variable_data_points")
       .upsert(deduplicatedRows.slice(i, i + 100), {
         onConflict: "user_id,date,variable",
       });
@@ -160,8 +167,8 @@ export default async function handler(
       .json({ error: "Failed to get Withings tokens", details: tokenData });
   }
 
-  // Save tokens to Supabase
-  const { error: upsertError, data: upsertData } = await supabase
+  // Save tokens to Supabase using admin client to bypass RLS
+  const { error: upsertError, data: upsertData } = await supabaseAdmin
     .from("withings_tokens")
     .upsert({
       user_id: user_id,
@@ -186,7 +193,7 @@ export default async function handler(
   // Fetch and store all historical Withings data (all supported types)
   try {
     const count = await fetchAndStoreAllWithingsData(
-      supabase,
+      supabaseAdmin,
       user_id,
       tokenData.body.access_token
     );

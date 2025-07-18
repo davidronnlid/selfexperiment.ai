@@ -8,6 +8,26 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+// Helper function to verify user authentication
+async function verifyUserAuth(userId: string) {
+  try {
+    // First check if user exists in profiles table
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('id, username')
+      .eq('id', userId)
+      .single();
+
+    if (profileError) {
+      return { valid: false, error: profileError };
+    }
+
+    return { valid: true, profile };
+  } catch (error) {
+    return { valid: false, error };
+  }
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === 'GET') {
     try {
@@ -75,15 +95,40 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   } else if (req.method === 'POST') {
     try {
+      console.log('POST request received:', req.body);
       const { title, description, tag, userId } = req.body;
 
       if (!title || !tag) {
+        console.log('Missing required fields:', { title, tag });
         return res.status(400).json({ error: 'Title and tag are required' });
       }
 
       if (!userId) {
+        console.log('Missing userId');
         return res.status(401).json({ error: 'User ID is required' });
       }
+
+      console.log('Creating post with data:', { title, description, tag, userId });
+
+      // Verify user authentication
+      const authResult = await verifyUserAuth(userId);
+      
+      if (!authResult.valid) {
+        console.error('User authentication failed:', authResult.error);
+        const error = authResult.error as any;
+        if (error?.code === '23503') {
+          return res.status(400).json({ 
+            error: 'Authentication issue. Please log out and log back in.',
+            details: 'Your user account needs to be properly set up. Please try logging out and logging back in.'
+          });
+        }
+        return res.status(400).json({ 
+          error: 'User profile not found. Please complete your profile setup.',
+          details: 'Your user profile needs to be created before you can create posts. Please go to your profile page and complete your setup.'
+        });
+      }
+
+      const userProfile = authResult.profile;
 
       const { data: post, error } = await supabaseAdmin
         .from('roadmap_posts')
@@ -99,25 +144,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       if (error) {
         console.error('Error creating roadmap post:', error);
-        return res.status(500).json({ error: 'Failed to create roadmap post' });
+        return res.status(500).json({ error: 'Failed to create roadmap post', details: error.message });
       }
 
-      // Get creator profile
-      const { data: creatorProfile } = await supabaseAdmin
-        .from('profiles')
-        .select('username')
-        .eq('id', userId)
-        .single();
+      console.log('Post created successfully:', post);
 
-      res.status(201).json({ 
+      const responseData = { 
         ...post, 
         like_count: 0,
-        profiles: creatorProfile,
+        profiles: userProfile,
         last_editor: null
-      });
+      };
+
+      console.log('Sending response:', responseData);
+      res.status(201).json(responseData);
     } catch (error) {
-      console.error('Unexpected error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      console.error('Unexpected error in POST:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'Internal server error', details: errorMessage });
     }
   } else if (req.method === 'PUT') {
     try {

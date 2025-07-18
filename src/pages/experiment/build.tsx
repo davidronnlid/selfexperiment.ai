@@ -388,7 +388,7 @@ export default function ExperimentDesigner() {
 
   useEffect(() => {
     async function fetchAndSortVariables() {
-      const { data: logs } = await supabase.from("logs").select("label");
+      const { data: logs } = await supabase.from("data_points").select("label");
       const logCounts: Record<string, number> = {};
       (logs || []).forEach((row: any) => {
         if (row.label) logCounts[row.label] = (logCounts[row.label] || 0) + 1;
@@ -594,7 +594,10 @@ export default function ExperimentDesigner() {
       );
       setLoading(false);
       clearTimeout(loadingTimeout);
-      redirectTimeout.current = setTimeout(() => router.push("/log"), 1200);
+      redirectTimeout.current = setTimeout(
+        () => router.push("/track/manual"),
+        1200
+      );
     } catch (err) {
       clearTimeout(loadingTimeout);
       console.error("Unexpected error in experiment creation:", err);
