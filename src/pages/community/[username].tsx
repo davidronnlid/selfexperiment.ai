@@ -7,6 +7,7 @@ import {
   Typography,
   List,
   ListItem,
+  ListItemButton,
   ListItemText,
   Paper,
   Box,
@@ -310,41 +311,41 @@ export default function CommunityProfilePage() {
             variables.map((v, i) => (
               <Box key={i}>
                 <ListItem
-                  button
-                  onClick={() => handleToggle(v.variable_name)}
                   sx={{
                     borderBottom: i < variables.length - 1 ? 1 : 0,
                     borderColor: "divider",
                   }}
                 >
-                  <ListItemText
-                    primary={
-                      <Box
-                        sx={{ display: "flex", alignItems: "center", gap: 1 }}
-                      >
-                        <Typography variant="subtitle1">
-                          {v.variable_name}
-                        </Typography>
-                        <Typography variant="caption" color="textSecondary">
-                          ({v.data_point_count} data points)
-                        </Typography>
-                      </Box>
-                    }
-                    secondary={
-                      v.latest_value && v.latest_date
-                        ? `Latest: ${v.latest_value} on ${new Date(
-                            v.latest_date
-                          ).toLocaleDateString()}`
-                        : "No recent data"
-                    }
-                  />
-                  <IconButton size="small">
-                    {expanded[v.variable_name] ? (
-                      <ExpandLessIcon />
-                    ) : (
-                      <ExpandMoreIcon />
-                    )}
-                  </IconButton>
+                  <ListItemButton onClick={() => handleToggle(v.variable_name)}>
+                    <ListItemText
+                      primary={
+                        <Box
+                          sx={{ display: "flex", alignItems: "center", gap: 1 }}
+                        >
+                          <Typography variant="subtitle1">
+                            {v.variable_name}
+                          </Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            ({v.data_point_count} data points)
+                          </Typography>
+                        </Box>
+                      }
+                      secondary={
+                        v.latest_value && v.latest_date
+                          ? `Latest: ${v.latest_value} on ${new Date(
+                              v.latest_date
+                            ).toLocaleDateString()}`
+                          : "No recent data"
+                      }
+                    />
+                    <IconButton size="small">
+                      {expanded[v.variable_name] ? (
+                        <ExpandLessIcon />
+                      ) : (
+                        <ExpandMoreIcon />
+                      )}
+                    </IconButton>
+                  </ListItemButton>
                 </ListItem>
                 <Collapse in={expanded[v.variable_name]}>
                   <Box sx={{ bgcolor: "grey.50", p: 2 }}>
