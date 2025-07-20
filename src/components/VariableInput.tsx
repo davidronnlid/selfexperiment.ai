@@ -363,12 +363,9 @@ export default function VariableInput({
 
     return (
       <UnitSelector
-        variable={variable}
         value={displayUnit}
         onChange={handleUnitChange}
         disabled={disabled || isConverting}
-        size={size}
-        showPreview={true}
         label="Unit"
       />
     );

@@ -24,8 +24,8 @@ export default function NotificationsTest() {
     sendNotification,
     sendDataSyncNotification,
     sendWeeklyInsights,
-    scheduleRoutineReminder,
-  } = useNotifications(user?.id);
+    sendRoutineReminder,
+  } = useNotifications(user?.id || "");
 
   if (loading) {
     return (
@@ -61,22 +61,22 @@ export default function NotificationsTest() {
     {
       name: "Data Sync (Withings)",
       description: "Simulate a Withings data sync completion",
-      action: () => sendDataSyncNotification("Withings", 5),
+      action: () => sendDataSyncNotification("Withings", "success"),
     },
     {
       name: "Data Sync (Oura)",
       description: "Simulate an Oura data sync completion",
-      action: () => sendDataSyncNotification("Oura", 12),
+      action: () => sendDataSyncNotification("Oura", "success"),
     },
     {
       name: "Weekly Insights",
       description: "Send a weekly insights notification",
       action: () =>
-        sendWeeklyInsights({
-          totalLogs: 47,
-          topVariable: "Sleep Quality",
-          correlationCount: 8,
-        }),
+        sendWeeklyInsights([
+          "You logged 47 data points this week",
+          "Sleep Quality was your top variable",
+          "Found 8 new correlations",
+        ]),
     },
     {
       name: "Routine Reminder (5 seconds)",
@@ -84,7 +84,7 @@ export default function NotificationsTest() {
       action: () => {
         const reminderTime = new Date();
         reminderTime.setSeconds(reminderTime.getSeconds() + 5);
-        scheduleRoutineReminder("test-routine", reminderTime);
+        sendRoutineReminder("test-routine", reminderTime);
       },
     },
     {

@@ -105,8 +105,6 @@ export default function VariableManager({
     convertible_units: [],
     source_type: "manual",
     category: "",
-    subcategory: "",
-    tags: [],
     validation_rules: {},
   });
 
@@ -165,8 +163,6 @@ export default function VariableManager({
           convertible_units: [],
           source_type: "manual",
           category: "",
-          subcategory: "",
-          tags: [],
           validation_rules: {},
         });
       }
@@ -183,10 +179,10 @@ export default function VariableManager({
 
     try {
       setLoading(true);
-      const updatedVariable = await updateVariable({
-        id: editingVariable.id,
-        ...createForm,
-      });
+      const updatedVariable = await updateVariable(
+        editingVariable.id,
+        createForm
+      );
 
       if (updatedVariable) {
         setVariables((prev) =>
@@ -217,12 +213,18 @@ export default function VariableManager({
         updates
       );
       if (updatedPreference) {
+        // Since updateUserVariablePreference returns boolean, we need to update manually
         setUserPreferences((prev) =>
           prev.map((p) =>
-            p.variable_id === variableId ? updatedPreference : p
+            p.variable_id === variableId ? { ...p, ...updates } : p
           )
         );
-        onPreferenceUpdate?.(updatedPreference);
+        // Create a preference object for the callback
+        const updatedPref = {
+          variable_id: variableId,
+          ...updates,
+        } as UserVariablePreference;
+        onPreferenceUpdate?.(updatedPref);
       }
     } catch (error) {
       console.error("Failed to update preference:", error);
@@ -242,8 +244,6 @@ export default function VariableManager({
       convertible_units: variable.convertible_units || [],
       source_type: variable.source_type,
       category: variable.category || "",
-      subcategory: variable.subcategory || "",
-      tags: variable.tags || [],
       validation_rules: variable.validation_rules || {},
     });
   };
@@ -260,8 +260,6 @@ export default function VariableManager({
       convertible_units: [],
       source_type: "manual",
       category: "",
-      subcategory: "",
-      tags: [],
       validation_rules: {},
     });
   };
@@ -378,17 +376,6 @@ export default function VariableManager({
             value={createForm.category}
             onChange={(e) =>
               setCreateForm((prev) => ({ ...prev, category: e.target.value }))
-            }
-          />
-          <TextField
-            fullWidth
-            label="Subcategory"
-            value={createForm.subcategory}
-            onChange={(e) =>
-              setCreateForm((prev) => ({
-                ...prev,
-                subcategory: e.target.value,
-              }))
             }
           />
         </Box>

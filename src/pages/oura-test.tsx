@@ -706,7 +706,9 @@ export default function OuraTest() {
       setSyncProgress({
         active: false,
         progress: 0,
-        status: `Sync failed: ${error.message}`,
+        status: `Sync failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       });
     }
   };

@@ -23,5 +23,5 @@
     "disableSourceOfProjectReferenceRedirect": true
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", "src/pages/api/oura"],
-  "exclude": ["node_modules", ".next", "out", "dist", "build"]
+  "exclude": ["node_modules", ".next", "out", "dist", "build", "supabase"]
 }

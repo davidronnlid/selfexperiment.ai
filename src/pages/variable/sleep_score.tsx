@@ -289,7 +289,7 @@ export default function SleepScorePage() {
 
       <Grid container spacing={3}>
         {/* Variable Information */}
-        <Grid item xs={12} md={4}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Card sx={{ mb: 3 }}>
             <CardContent>
               <Typography
@@ -343,7 +343,7 @@ export default function SleepScorePage() {
                       Latest:
                     </Typography>
                     <Typography variant="body2" fontWeight="bold">
-                      {formatOuraVariableValue(variableId, stats.latest)}
+                      {formatOuraVariableValue(variableSlug, stats.latest)}
                     </Typography>
                   </Box>
                   <Box
@@ -353,7 +353,7 @@ export default function SleepScorePage() {
                       Average:
                     </Typography>
                     <Typography variant="body2">
-                      {formatOuraVariableValue(variableId, stats.average)}
+                      {formatOuraVariableValue(variableSlug, stats.average)}
                     </Typography>
                   </Box>
                   <Box
@@ -363,8 +363,8 @@ export default function SleepScorePage() {
                       Range:
                     </Typography>
                     <Typography variant="body2">
-                      {formatOuraVariableValue(variableId, stats.min)} -{" "}
-                      {formatOuraVariableValue(variableId, stats.max)}
+                      {formatOuraVariableValue(variableSlug, stats.min)} -{" "}
+                      {formatOuraVariableValue(variableSlug, stats.max)}
                     </Typography>
                   </Box>
                 </Box>
@@ -374,7 +374,7 @@ export default function SleepScorePage() {
         </Grid>
 
         {/* Chart and Data */}
-        <Grid item xs={12} md={8}>
+        <Grid size={{ xs: 12, md: 8 }}>
           {/* Time Range Filter */}
           <Box sx={{ mb: 3, display: "flex", justifyContent: "flex-end" }}>
             <FormControl size="small" sx={{ minWidth: 120 }}>
@@ -436,12 +436,12 @@ export default function SleepScorePage() {
                         <TableRow key={log.id} hover>
                           <TableCell>{formatDate(log.date)}</TableCell>
                           <TableCell align="right" sx={{ fontWeight: "bold" }}>
-                            {formatOuraVariableValue(variableId, log.value)}
+                            {formatOuraVariableValue(variableSlug, log.value)}
                           </TableCell>
                           <TableCell>
                             <Typography variant="body2" color="textSecondary">
                               {getOuraVariableInterpretation(
-                                variableId,
+                                variableSlug,
                                 log.value
                               )}
                             </Typography>

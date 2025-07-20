@@ -121,9 +121,9 @@ export async function searchVariablesWithSynonyms(
     }
 
     // Process and score results
+    // TODO: Implement actual search and scoring logic
     
-    
-    return results;
+    return [];
   } catch (error) {
     console.error('Failed to search variables with synonyms:', error);
     return [];
@@ -184,8 +184,9 @@ export async function searchVariablesUsingIndex(
     // Process results and remove duplicates
     const variableMap = new Map<string, VariableSearchResult>();
     
-    data?.forEach((item) => {
-      const variable = item.variables;
+    data?.forEach((item: any) => {
+      const variable = item.variables?.[0];
+      if (!variable) return;
       const existing = variableMap.get(variable.id);
       
       if (!existing || getSearchTypeScore(item.search_type) > existing.matchScore) {
@@ -417,7 +418,7 @@ function processSearchResults(
   const results: VariableSearchResult[] = [];
   const variableMap = new Map<string, VariableSearchResult>();
 
-  data.forEach((item) => {
+  data.forEach((item: any) => {
     const variable = item.variable_synonyms ? item : item;
     const variableId = variable.id;
     
@@ -449,7 +450,7 @@ function processSearchResults(
 
     // Check synonyms
     if (item.variable_synonyms) {
-      item.variable_synonyms.forEach((synonym: unknown) => {
+      item.variable_synonyms.forEach((synonym: any) => {
         if (synonym.synonym_label.toLowerCase().includes(query)) {
           matchScore += synonym.search_weight * 10;
           matchType = 'synonym';

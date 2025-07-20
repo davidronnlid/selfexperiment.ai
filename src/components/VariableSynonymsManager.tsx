@@ -29,7 +29,7 @@ import {
   Delete as DeleteIcon,
   Info as InfoIcon,
   Star as StarIcon,
-} from "@react-icons/all-files/md";
+} from "@mui/icons-material";
 import { useUser } from "../pages/_app";
 import {
   getVariableSynonyms,
@@ -298,7 +298,7 @@ export default function VariableSynonymsManager({
         <Box display="flex" alignItems="center" gap={1}>
           <InfoIcon />
           <Typography variant="h6">
-            Manage Synonyms for "{variable?.label || variable?.primary_label}"
+            Manage Synonyms for "{variable?.label}"
           </Typography>
         </Box>
       </DialogTitle>

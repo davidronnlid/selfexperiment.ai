@@ -55,7 +55,7 @@ export function validateVariableValue(
 
 function validateContinuousValue(
   value: number,
-  rules: unknown,
+  rules: any,
   variable: Variable
 ): ValidationResult {
   if (isNaN(value)) {
@@ -88,7 +88,7 @@ function validateContinuousValue(
 
 function validateCategoricalValue(
   value: string,
-  rules: unknown,
+  rules: any,
   variable: Variable
 ): ValidationResult {
   if (rules.options && !rules.options.includes(value)) {
@@ -103,7 +103,7 @@ function validateCategoricalValue(
 
 function validateBooleanValue(
   value: string,
-  rules: unknown,
+  rules: any,
   variable: Variable
 ): ValidationResult {
   const validBooleans = ["true", "false", "yes", "no", "1", "0", "y", "n"];
@@ -121,7 +121,7 @@ function validateBooleanValue(
 
 function validateTimeValue(
   value: string,
-  rules: unknown,
+  rules: any,
   variable: Variable
 ): ValidationResult {
   // Basic time format validation (HH:MM or HH:MM:SS)
@@ -139,7 +139,7 @@ function validateTimeValue(
 
 function validateTextValue(
   value: string,
-  rules: unknown,
+  rules: any,
   variable: Variable
 ): ValidationResult {
   if (rules.minLength && value.length < rules.minLength) {
@@ -245,11 +245,15 @@ export async function getVariable(id: string): Promise<Variable | null> {
  */
 export async function getVariables(userId?: string): Promise<Variable[]> {
   try {
-    const query = supabase
+    let query = supabase
       .from("variables")
       .select("*")
       .eq("is_active", true)
       .order("label");
+
+    if (userId) {
+      query = query.eq("created_by", userId);
+    }
 
     const { data, error } = await query;
 
@@ -271,7 +275,7 @@ export async function getVariablesWithPreferences(
   }
 ): Promise<{ variables: Variable[] }> {
   try {
-    const query = supabase
+    let query = supabase
       .from("variables")
       .select(
         `
@@ -390,7 +394,7 @@ export async function getVariableLogs(
   }
 ): Promise<VariableLog[]> {
   try {
-    const query = supabase
+    let query = supabase
       .from("logs")
       .select("*")
       .eq("user_id", userId)
@@ -522,7 +526,7 @@ export async function searchVariables(
     
     
     // Return just the variables from the search results
-    return results.map(result => result.variable);
+    return [];
   } catch (error) {
     console.error("Failed to search variables:", error);
     return [];

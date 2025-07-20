@@ -91,7 +91,7 @@ export const QueryOptimizer = {
     // Check cache first
     const cached = queryCache.get(cacheKey);
     if (cached) {
-      return cached;
+      return cached as T;
     }
 
     // Execute query
@@ -222,7 +222,7 @@ export const QueryOptimizer = {
       const pattern = keyOrPattern.replace('*', '');
       const keysToDelete: string[] = [];
       
-      for (const key of (queryCache as unknown).cache.keys()) {
+      for (const key of (queryCache as any).cache.keys()) {
         if (key.includes(pattern)) {
           keysToDelete.push(key);
         }
@@ -314,7 +314,7 @@ export const PerformanceMonitor = {
    */
   logCacheStats() {
     const stats = {
-      cacheSize: (queryCache as unknown).cache.size,
+      cacheSize: (queryCache as any).cache.size,
       timestamp: new Date().toISOString(),
     };
     

@@ -157,7 +157,7 @@ export function getSuggestedConvertibleUnits(variable: Variable): string[] {
   };
   
   
-  return groupKey ? (commonUnits[groupKey] || group.units) : [variable.canonical_unit];
+  return group.category ? (commonUnits[group.category] || group.units) : [variable.canonical_unit];
 }
 
 // Generate conversion preview text

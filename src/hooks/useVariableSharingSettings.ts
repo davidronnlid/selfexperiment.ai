@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import {
-  fetchUserVariablePreferences,
+  fetchVariableSharingSettings,
   upsertUserVariablePreference,
 } from "../utils/privacyApi";
 
@@ -29,16 +29,11 @@ export function useUserVariablePreferences(userId: string) {
     setError(null);
 
     try {
-      const { data, error: fetchError } = await fetchUserVariablePreferences(
+      const data = await fetchVariableSharingSettings(
         userId
       );
-
-      if (fetchError) {
-        setError(fetchError.message);
-        setPreferences([]);
-      } else {
-        setPreferences((data as UserVariablePreference[]) || []);
-      }
+      
+      setPreferences(data as unknown as UserVariablePreference[]);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to load preferences"

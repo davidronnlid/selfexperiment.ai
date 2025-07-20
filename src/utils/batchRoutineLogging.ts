@@ -43,7 +43,7 @@ export function generatePlannedRoutineLogs(
     console.log("Processing date:", dateString, "weekday:", weekdayFormatted);
 
     // Process each routine
-    routines.forEach((routine) => {
+    routines.forEach((routine: any) => {
       console.log("Processing routine:", routine.routine_name);
       console.log("Routine weekdays:", routine.weekdays);
       
@@ -52,7 +52,7 @@ export function generatePlannedRoutineLogs(
         console.log("Routine runs on this weekday");
         
         // Process each variable in the routine
-        (routine.variables || []).forEach((variable: unknown) => {
+        (routine.variables || []).forEach((variable: any) => {
           console.log("Processing variable:", variable.variable_name);
           console.log("Variable weekdays:", variable.weekdays);
           
@@ -61,7 +61,7 @@ export function generatePlannedRoutineLogs(
             console.log("Variable runs on this weekday");
             
             // Process each time for this variable
-            (variable.times || []).forEach((time: unknown) => {
+            (variable.times || []).forEach((time: any) => {
               console.log("Processing time:", time);
               
               const plannedLog = {

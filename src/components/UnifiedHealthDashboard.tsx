@@ -430,7 +430,7 @@ export default function UnifiedHealthDashboard({
           return {
             id: item.id,
             source: source,
-            variable: item.variables?.slug || item.variable_id,
+            variable: item.variables?.[0]?.slug || item.variable_id,
             variable_id: item.variable_id,
             date: item.date,
             value:
@@ -1002,7 +1002,7 @@ export default function UnifiedHealthDashboard({
             <Box>
               {/* Stats Cards */}
               <Grid container spacing={2} sx={{ mb: 3 }}>
-                <Grid item xs={12} sm={6} md={3}>
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                   <Card>
                     <CardContent>
                       <Box
@@ -1019,7 +1019,7 @@ export default function UnifiedHealthDashboard({
                     </CardContent>
                   </Card>
                 </Grid>
-                <Grid item xs={12} sm={6} md={3}>
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                   <Card>
                     <CardContent>
                       <Box
@@ -1036,7 +1036,7 @@ export default function UnifiedHealthDashboard({
                     </CardContent>
                   </Card>
                 </Grid>
-                <Grid item xs={12} sm={6} md={3}>
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                   <Tooltip
                     title={`${
                       variableStats.changePercentage > 0 ? "+" : ""
@@ -1076,7 +1076,7 @@ export default function UnifiedHealthDashboard({
                     </Card>
                   </Tooltip>
                 </Grid>
-                <Grid item xs={12} sm={6} md={3}>
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                   <Card>
                     <CardContent>
                       <Box

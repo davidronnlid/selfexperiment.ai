@@ -289,7 +289,7 @@ export default function ReadinessScorePage() {
 
       <Grid container spacing={3}>
         {/* Variable Information */}
-        <Grid item xs={12} md={4}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Card sx={{ mb: 3 }}>
             <CardContent>
               <Typography
@@ -374,7 +374,7 @@ export default function ReadinessScorePage() {
         </Grid>
 
         {/* Chart and Data */}
-        <Grid item xs={12} md={8}>
+        <Grid size={{ xs: 12, md: 8 }}>
           {/* Time Range Filter */}
           <Box sx={{ mb: 3, display: "flex", justifyContent: "flex-end" }}>
             <FormControl size="small" sx={{ minWidth: 120 }}>
