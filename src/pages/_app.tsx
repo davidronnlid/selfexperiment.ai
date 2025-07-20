@@ -370,6 +370,20 @@ export default function App({ Component, pageProps }: AppProps) {
   });
   const router = useRouter();
 
+  // Add viewport meta tag to fix Next.js warning
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const viewport = document.querySelector('meta[name="viewport"]');
+      if (!viewport) {
+        const meta = document.createElement("meta");
+        meta.name = "viewport";
+        meta.content =
+          "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover";
+        document.head.appendChild(meta);
+      }
+    }
+  }, []);
+
   // Function to fetch user profile
   const fetchUserProfile = useCallback(async (userId: string) => {
     try {

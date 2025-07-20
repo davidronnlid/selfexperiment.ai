@@ -34,31 +34,35 @@ export default function Document() {
         <link rel="manifest" href="/manifest.json" />
 
         {/* Apple Touch Icons */}
-        <link rel="apple-touch-icon" href="/icon-152x152.png" />
-        <link rel="apple-touch-icon" sizes="152x152" href="/icon-152x152.png" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/icon-192x192.png" />
+        <link rel="apple-touch-icon" href="/icon-152x152.png?v=2" />
+        <link
+          rel="apple-touch-icon"
+          sizes="152x152"
+          href="/icon-152x152.png?v=2"
+        />
+        <link
+          rel="apple-touch-icon"
+          sizes="180x180"
+          href="/icon-192x192.png?v=2"
+        />
 
         {/* Favicon */}
-        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2" />
         <link
           rel="icon"
           type="image/png"
           sizes="32x32"
-          href="/favicon-32x32.png"
+          href="/favicon-32x32.png?v=2"
         />
         <link
           rel="icon"
           type="image/png"
           sizes="16x16"
-          href="/favicon-16x16.png"
+          href="/favicon-16x16.png?v=2"
         />
-        <link rel="icon" href="/favicon.ico" />
+        <link rel="icon" href="/favicon.ico?v=2" />
 
-        {/* Viewport for mobile optimization */}
-        <meta
-          name="viewport"
-          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
-        />
+        {/* Note: Viewport meta tag moved to _app.tsx to avoid Next.js warning */}
       </Head>
       <body className="antialiased">
         <Main />

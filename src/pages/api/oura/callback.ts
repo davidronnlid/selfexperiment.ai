@@ -1,5 +1,11 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { supabase } from "@/utils/supaBase";
+import { createClient } from '@supabase/supabase-js';
+
+// Use service role key to bypass RLS for token operations
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export default async function handler(
   req: NextApiRequest,
@@ -43,22 +49,28 @@ export default async function handler(
     const tokenData = await response.json();
 
     // Save access_token, refresh_token, and user_id to Supabase
-    const { error } = await supabase.from("oura_tokens").insert([
-      {
-        access_token: tokenData.access_token,
-        refresh_token: tokenData.refresh_token,
-        user_id: user_id,
-      },
-    ]);
+    const { error } = await supabaseAdmin.from("oura_tokens").upsert({
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token,
+      user_id: user_id,
+      expires_at: tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000).toISOString() : null,
+      updated_at: new Date().toISOString()
+    }, {
+      onConflict: "user_id"
+    });
 
     if (error) {
-      console.error("Failed to save token to Supabase:", error.message);
-      return res.status(500).send("Token saved failed.");
+      console.error("Failed to save token to Supabase:", error);
+      return res.status(500).json({ 
+        error: "Token save failed", 
+        details: error.message,
+        code: error.code 
+      });
     }
 
     console.log("✅ Oura Token Response:", tokenData);
-    // Redirect to analytics page with success message
-    res.redirect("/analytics?oura=success");
+    // Redirect to oura-test page with success message
+    res.redirect("/oura-test?oura=success");
   } catch (error) {
     console.error("OAuth error:", error);
     res.status(500).send("OAuth failed");

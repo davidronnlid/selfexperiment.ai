@@ -403,8 +403,8 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
         return;
       }
 
-      const response = await fetch("/api/oura/fetch", {
-        method: "POST",
+      const response = await fetch(`/api/oura/fetch?user_id=${userId}`, {
+        method: "GET",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,

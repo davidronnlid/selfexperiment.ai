@@ -43,6 +43,7 @@ import {
   formatOuraVariableValue,
   getOuraVariableInterpretation,
 } from "@/utils/ouraVariableUtils";
+import { formatLargeNumber } from "@/utils/numberFormatting";
 
 ChartJS.register(
   CategoryScale,
@@ -69,15 +70,16 @@ export default function ReadinessScorePage() {
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<string>("30");
   const [error, setError] = useState<string | null>(null);
+  const [variableInfo, setVariableInfo] = useState<any>(null);
 
-  const variableId = "readiness_score";
-  const variableInfo = getOuraVariableInfo(variableId);
+  const variableSlug = "readiness_score";
+  const ouraVariableInfo = getOuraVariableInfo(variableSlug);
 
   useEffect(() => {
     if (userLoading) return;
 
     const initializePage = async () => {
-      if (!variableInfo) {
+      if (!ouraVariableInfo) {
         setError("Invalid Oura variable");
         setLoading(false);
         return;
@@ -89,14 +91,34 @@ export default function ReadinessScorePage() {
         return;
       }
 
-      await fetchLogs();
-      setLoading(false);
+      // Fetch the actual variable info from the database
+      try {
+        const { data: variableData, error } = await supabase
+          .from("variables")
+          .select("*")
+          .eq("slug", variableSlug)
+          .single();
+
+        if (error || !variableData) {
+          setError("Variable not found in database");
+          setLoading(false);
+          return;
+        }
+
+        setVariableInfo(variableData);
+        await fetchLogs(variableData.id);
+      } catch (err) {
+        console.error("Error fetching variable info:", err);
+        setError("Failed to load variable information");
+      } finally {
+        setLoading(false);
+      }
     };
 
     initializePage();
   }, [user, userLoading, timeRange]);
 
-  const fetchLogs = async () => {
+  const fetchLogs = async (variableId?: string) => {
     if (!user || !variableInfo) return;
 
     try {
@@ -109,7 +131,7 @@ export default function ReadinessScorePage() {
         .from("oura_variable_data_points")
         .select("id, date, value, created_at, raw")
         .eq("user_id", user.id)
-        .eq("variable_id", variableId)
+        .eq("variable_id", variableId || variableInfo.id)
         .gte("date", cutoffDate.toISOString().split("T")[0])
         .order("date", { ascending: false })
         .limit(100);
@@ -165,7 +187,7 @@ export default function ReadinessScorePage() {
             .map((log) => format(parseISO(log.date), "MMM dd")),
           datasets: [
             {
-              label: variableInfo?.label || variableId,
+              label: ouraVariableInfo?.label || variableSlug,
               data: logs
                 .slice()
                 .reverse()
@@ -223,7 +245,7 @@ export default function ReadinessScorePage() {
     );
   }
 
-  if (error || !variableInfo) {
+  if (error || !variableInfo || !ouraVariableInfo) {
     return (
       <Container maxWidth="lg" sx={{ py: 4 }}>
         <Button
@@ -256,11 +278,12 @@ export default function ReadinessScorePage() {
           component="h1"
           sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}
         >
-          <span>{variableInfo.icon}</span>
-          {variableInfo.label}
+          <span>{ouraVariableInfo.icon}</span>
+          {ouraVariableInfo.label}
         </Typography>
         <Typography variant="h6" color="textSecondary" sx={{ mb: 1 }}>
-          {variableInfo.category} • {logs.length} data points
+          {ouraVariableInfo.category} • {formatLargeNumber(logs.length)} data
+          points
         </Typography>
       </Box>
 
@@ -277,7 +300,7 @@ export default function ReadinessScorePage() {
                 About This Metric
               </Typography>
               <Typography variant="body2" sx={{ mb: 2 }}>
-                {variableInfo.description}
+                {ouraVariableInfo.description}
               </Typography>
               <Divider sx={{ my: 2 }} />
               <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -285,9 +308,11 @@ export default function ReadinessScorePage() {
                   <Typography variant="body2" color="textSecondary">
                     Unit:
                   </Typography>
-                  <Typography variant="body2">{variableInfo.unit}</Typography>
+                  <Typography variant="body2">
+                    {ouraVariableInfo.unit}
+                  </Typography>
                 </Box>
-                {variableInfo.normalRange && (
+                {ouraVariableInfo.normalRange && (
                   <Box
                     sx={{ display: "flex", justifyContent: "space-between" }}
                   >
@@ -295,7 +320,7 @@ export default function ReadinessScorePage() {
                       Normal Range:
                     </Typography>
                     <Typography variant="body2">
-                      {variableInfo.normalRange}
+                      {ouraVariableInfo.normalRange}
                     </Typography>
                   </Box>
                 )}
@@ -318,7 +343,7 @@ export default function ReadinessScorePage() {
                       Latest:
                     </Typography>
                     <Typography variant="body2" fontWeight="bold">
-                      {formatOuraVariableValue(variableId, stats.latest)}
+                      {formatOuraVariableValue(variableSlug, stats.latest)}
                     </Typography>
                   </Box>
                   <Box
@@ -328,7 +353,7 @@ export default function ReadinessScorePage() {
                       Average:
                     </Typography>
                     <Typography variant="body2">
-                      {formatOuraVariableValue(variableId, stats.average)}
+                      {formatOuraVariableValue(variableSlug, stats.average)}
                     </Typography>
                   </Box>
                   <Box
@@ -338,8 +363,8 @@ export default function ReadinessScorePage() {
                       Range:
                     </Typography>
                     <Typography variant="body2">
-                      {formatOuraVariableValue(variableId, stats.min)} -{" "}
-                      {formatOuraVariableValue(variableId, stats.max)}
+                      {formatOuraVariableValue(variableSlug, stats.min)} -{" "}
+                      {formatOuraVariableValue(variableSlug, stats.max)}
                     </Typography>
                   </Box>
                 </Box>
@@ -411,12 +436,12 @@ export default function ReadinessScorePage() {
                         <TableRow key={log.id} hover>
                           <TableCell>{formatDate(log.date)}</TableCell>
                           <TableCell align="right" sx={{ fontWeight: "bold" }}>
-                            {formatOuraVariableValue(variableId, log.value)}
+                            {formatOuraVariableValue(variableSlug, log.value)}
                           </TableCell>
                           <TableCell>
                             <Typography variant="body2" color="textSecondary">
                               {getOuraVariableInterpretation(
-                                variableId,
+                                variableSlug,
                                 log.value
                               )}
                             </Typography>

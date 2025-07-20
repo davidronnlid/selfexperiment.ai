@@ -1,33 +1,7 @@
-<svg width="400" height="200" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
-  <!-- Dark background -->
-  <rect width="400" height="200" fill="#2a2a2a"/>
-  
-  <!-- Left M pillar -->
-  <rect x="40" y="30" width="80" height="140" fill="#2a2a2a" stroke="#000" stroke-width="6" rx="8"/>
-  
-  <!-- Right M pillar -->
-  <rect x="280" y="30" width="80" height="140" fill="#2a2a2a" stroke="#000" stroke-width="6" rx="8"/>
-  
-  <!-- Gold rectangles in left pillar -->
-  <rect x="50" y="50" width="25" height="25" fill="#FFD700" rx="3"/>
-  <rect x="85" y="50" width="25" height="25" fill="#FFD700" rx="3"/>
-  <rect x="50" y="135" width="25" height="25" fill="#FFD700" rx="3"/>
-  <rect x="85" y="135" width="25" height="25" fill="#FFD700" rx="3"/>
-  
-  <!-- Gold rectangles in right pillar -->
-  <rect x="290" y="50" width="25" height="25" fill="#FFD700" rx="3"/>
-  <rect x="325" y="50" width="25" height="25" fill="#FFD700" rx="3"/>
-  <rect x="290" y="135" width="25" height="25" fill="#FFD700" rx="3"/>
-  <rect x="325" y="135" width="25" height="25" fill="#FFD700" rx="3"/>
-  
-  <!-- Central chevron/arrow pointing down -->
-  <path d="M 160 50 L 200 120 L 240 50 L 200 90 Z" fill="#FFD700" stroke="#000" stroke-width="4" stroke-linejoin="round"/>
-  
-  <!-- M connecting lines -->
-  <path d="M 120 30 L 160 50" stroke="#000" stroke-width="6" stroke-linecap="round"/>
-  <path d="M 240 50 L 280 30" stroke="#000" stroke-width="6" stroke-linecap="round"/>
-  
-  <!-- Additional structural lines for the M -->
-  <path d="M 80 60 L 120 100 L 160 60" stroke="#000" stroke-width="4" fill="none" stroke-linecap="round"/>
-  <path d="M 240 60 L 280 100 L 320 60" stroke="#000" stroke-width="4" fill="none" stroke-linecap="round"/>
+<svg width="400" height="200" viewBox="0 0 400 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="400" height="200" fill="black"/>
+<!-- Main "M" shape -->
+<path d="M100 34H133V200L200 134L267 200V34H300V334H267V224L200 290L133 224V334H100V34Z" fill="#FFD700"/>
+<!-- Integrated "i" dot -->
+<rect x="184" y="76" width="32" height="8" fill="#FFD700"/>
 </svg> 

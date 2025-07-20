@@ -304,6 +304,43 @@ export async function getVariablesWithPreferences(
   }
 }
 
+/**
+ * Get variables that the user has data for
+ */
+export async function getVariablesWithUserData(userId: string): Promise<Variable[]> {
+  try {
+    // First, get all variable IDs that the user has data for
+    const { data: userDataPoints, error: dataError } = await supabase
+      .from("data_points")
+      .select("variable_id")
+      .eq("user_id", userId)
+      .not("variable_id", "is", null);
+
+    if (dataError) throw dataError;
+
+    // Extract unique variable IDs
+    const variableIds = [...new Set(userDataPoints?.map(dp => dp.variable_id) || [])];
+
+    if (variableIds.length === 0) {
+      return [];
+    }
+
+    // Get the variables that the user has data for
+    const { data: variables, error: varError } = await supabase
+      .from("variables")
+      .select("*")
+      .in("id", variableIds)
+      .eq("is_active", true)
+      .order("label");
+
+    if (varError) throw varError;
+    return variables || [];
+  } catch (error) {
+    console.error("Failed to get variables with user data:", error);
+    return [];
+  }
+}
+
 // ============================================================================
 // VARIABLE LOGS MANAGEMENT
 // ============================================================================

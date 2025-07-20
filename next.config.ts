@@ -8,9 +8,47 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   
-  // Performance optimizations
+  // Performance optimizations - only in production
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',
+  },
+
+  // Disable expensive features in development
+  experimental: {
+    optimizeCss: process.env.NODE_ENV === 'production',
+  },
+
+  // Simplified webpack configuration for faster development
+  webpack: (config, { dev, isServer }) => {
+    // Only apply optimizations in production
+    if (!dev) {
+      // Optimize bundle size only in production
+      config.optimization.splitChunks = {
+        chunks: 'all',
+        cacheGroups: {
+          vendor: {
+            test: /[\\/]node_modules[\\/]/,
+            name: 'vendors',
+            priority: 10,
+            reuseExistingChunk: true,
+          },
+          mui: {
+            test: /[\\/]node_modules[\\/]@mui[\\/]/,
+            name: 'mui',
+            priority: 20,
+            reuseExistingChunk: true,
+          },
+          supabase: {
+            test: /[\\/]node_modules[\\/]@supabase[\\/]/,
+            name: 'supabase',
+            priority: 20,
+            reuseExistingChunk: true,
+          },
+        },
+      };
+    }
+    
+    return config;
   },
   
   // Image optimization
@@ -20,72 +58,45 @@ const nextConfig: NextConfig = {
     minimumCacheTTL: 60,
   },
   
-  // Compression
-  compress: true,
-  
-  // Bundle optimization
-  webpack: (config, { isServer }) => {
-    // Optimize bundle size
-    config.optimization.splitChunks = {
-      chunks: 'all',
-      cacheGroups: {
-        vendor: {
-          test: /[\\/]node_modules[\\/]/,
-          name: 'vendors',
-          priority: 10,
-          reuseExistingChunk: true,
-        },
-        mui: {
-          test: /[\\/]node_modules[\\/]@mui[\\/]/,
-          name: 'mui',
-          priority: 20,
-          reuseExistingChunk: true,
-        },
-        supabase: {
-          test: /[\\/]node_modules[\\/]@supabase[\\/]/,
-          name: 'supabase',
-          priority: 20,
-          reuseExistingChunk: true,
-        },
-      },
-    };
-    
-    return config;
-  },
+  // Compression only in production
+  compress: process.env.NODE_ENV === 'production',
   
   // Static generation for better performance
   generateEtags: false,
   
-  // Headers for caching
+  // Headers for caching - only in production
   async headers() {
-    return [
-      {
-        source: '/(.*)',
-        headers: [
-          {
-            key: 'X-Content-Type-Options',
-            value: 'nosniff',
-          },
-          {
-            key: 'X-Frame-Options',
-            value: 'DENY',
-          },
-          {
-            key: 'X-XSS-Protection',
-            value: '1; mode=block',
-          },
-        ],
-      },
-      {
-        source: '/api/(.*)',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=60, stale-while-revalidate=300',
-          },
-        ],
-      },
-    ];
+    if (process.env.NODE_ENV === 'production') {
+      return [
+        {
+          source: '/(.*)',
+          headers: [
+            {
+              key: 'X-Content-Type-Options',
+              value: 'nosniff',
+            },
+            {
+              key: 'X-Frame-Options',
+              value: 'DENY',
+            },
+            {
+              key: 'X-XSS-Protection',
+              value: '1; mode=block',
+            },
+          ],
+        },
+        {
+          source: '/api/(.*)',
+          headers: [
+            {
+              key: 'Cache-Control',
+              value: 'public, max-age=60, stale-while-revalidate=300',
+            },
+          ],
+        },
+      ];
+    }
+    return [];
   },
 };
 

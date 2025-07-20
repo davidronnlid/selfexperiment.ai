@@ -127,7 +127,7 @@ function SharedVariablesViewer({ username }: { username: string }) {
   );
 }
 
-export default function ProfilePage() {
+export default function AccountPage() {
   const { user, loading } = useUser();
   const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -380,14 +380,14 @@ export default function ProfilePage() {
       <Container maxWidth="md" className="px-4">
         <Box className="text-center">
           <Typography variant="h6" className="text-white">
-            Please sign in to view your profile.
+            Please sign in to view your account.
           </Typography>
         </Box>
       </Container>
     );
   }
 
-  // If viewing another user's profile
+  // If viewing another user's account
   if (username && username !== profile?.username) {
     return (
       <Container maxWidth="md" className="px-4">
@@ -397,7 +397,7 @@ export default function ProfilePage() {
               variant="h3"
               className="font-bold text-white mb-2 text-2xl lg:text-3xl"
             >
-              {username}'s Profile
+              {username}'s Account
             </Typography>
           </Box>
           <SharedVariablesViewer username={username as string} />
@@ -415,7 +415,7 @@ export default function ProfilePage() {
             variant="h3"
             className="font-bold text-white mb-2 text-2xl lg:text-3xl"
           >
-            Profile
+            Account
           </Typography>
           <Typography
             variant="body1"
@@ -430,7 +430,7 @@ export default function ProfilePage() {
           <CardHeader
             title={
               <Typography variant="h6" className="text-white font-semibold">
-                Profile Information
+                Account Information
               </Typography>
             }
             action={

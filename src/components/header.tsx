@@ -39,6 +39,11 @@ export default function Header() {
   // Mobile menu state
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  // Reset image load error when user changes
+  useEffect(() => {
+    setImageLoadError(false);
+  }, [user]);
+
   // Fetch custom avatar from profiles table
   useEffect(() => {
     const fetchAvatar = async () => {
@@ -73,8 +78,13 @@ export default function Header() {
     fetchAvatar();
   }, [user]);
 
+  // State to track failed image loads
+  const [imageLoadError, setImageLoadError] = useState(false);
+
   // Use custom avatar if available, otherwise fall back to OAuth picture or avatarUrl from useUser
-  const profilePic = customAvatarUrl || avatarUrl || oauthProfilePic;
+  const profilePic = !imageLoadError
+    ? customAvatarUrl || avatarUrl || oauthProfilePic
+    : null;
 
   // Helper for nav link styling
   const navLinkClass =
@@ -112,7 +122,12 @@ export default function Header() {
   };
 
   const handleProfile = () => {
-    router.push("/profile");
+    router.push("/account");
+    setAnchorEl(null);
+    setMobileOpen(false);
+  };
+  const handleWithingsTest = () => {
+    router.push("/withings-test");
     setAnchorEl(null);
     setMobileOpen(false);
   };
@@ -175,7 +190,7 @@ export default function Header() {
           >
             <Box className="flex items-center gap-2 lg:gap-3">
               <img
-                src="/modular-health-logo.svg?v=4"
+                src="/mh-logo.svg"
                 alt="Modular Health"
                 className="h-8 lg:h-10 w-auto"
               />
@@ -289,9 +304,9 @@ export default function Header() {
                     src={profilePic || undefined}
                     alt={displayName}
                     className="w-8 h-8 border-2 border-gold"
-                    onError={(e) => {
-                      // Hide the image if it fails to load
-                      e.currentTarget.style.display = "none";
+                    onError={() => {
+                      // Mark image as failed to show fallback letter instead
+                      setImageLoadError(true);
                     }}
                     sx={{
                       width: 32,
@@ -329,7 +344,12 @@ export default function Header() {
                 >
                   <MenuItem onClick={handleProfile} className="py-3">
                     <Typography variant="body2" className="font-medium">
-                      Profile
+                      Account
+                    </Typography>
+                  </MenuItem>
+                  <MenuItem onClick={handleWithingsTest} className="py-3">
+                    <Typography variant="body2" className="font-medium">
+                      🏥 Withings Test
                     </Typography>
                   </MenuItem>
                   <MenuItem onClick={handleLogout} className="py-3">
@@ -352,9 +372,9 @@ export default function Header() {
                 src={profilePic || undefined}
                 alt={displayName}
                 className="w-8 h-8 border-2 border-gold"
-                onError={(e) => {
-                  // Hide the image if it fails to load
-                  e.currentTarget.style.display = "none";
+                onError={() => {
+                  // Mark image as failed to show fallback letter instead
+                  setImageLoadError(true);
                 }}
                 sx={{
                   width: 32,
@@ -471,7 +491,20 @@ export default function Header() {
                   sx={{ minHeight: 48 }}
                 >
                   <ListItemText
-                    primary="Profile"
+                    primary="Account"
+                    primaryTypographyProps={{
+                      className: "text-white font-medium",
+                    }}
+                  />
+                </ListItem>
+                <ListItem
+                  component="div"
+                  onClick={handleWithingsTest}
+                  className="rounded-lg hover:bg-surface-light transition-all duration-200 cursor-pointer"
+                  sx={{ minHeight: 48 }}
+                >
+                  <ListItemText
+                    primary="🏥 Withings Test"
                     primaryTypographyProps={{
                       className: "text-white font-medium",
                     }}

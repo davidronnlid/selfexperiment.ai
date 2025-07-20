@@ -64,6 +64,7 @@ import {
   getOuraVariableInterpretation,
   OURA_VARIABLES,
 } from "@/utils/ouraVariableUtils";
+import { formatLargeNumber } from "@/utils/numberFormatting";
 
 // Register Chart.js components
 ChartJS.register(
@@ -527,15 +528,25 @@ export default function UnifiedHealthDashboard({
       </Typography>
 
       {/* Summary Cards */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={6} md={3}>
+      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, mb: 3 }}>
+        <Box
+          sx={{
+            flex: {
+              xs: "1 1 100%",
+              sm: "1 1 calc(50% - 8px)",
+              md: "1 1 calc(25% - 8px)",
+            },
+          }}
+        >
           <Card>
             <CardContent>
               <Box sx={{ display: "flex", alignItems: "center" }}>
                 <BedIcon sx={{ mr: 1, color: "primary.main" }} />
                 <Box>
                   <Typography variant="h6">
-                    {data.filter((d) => d.source === "oura").length}
+                    {formatLargeNumber(
+                      data.filter((d) => d.source === "oura").length
+                    )}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Oura Records
@@ -544,15 +555,25 @@ export default function UnifiedHealthDashboard({
               </Box>
             </CardContent>
           </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
+        </Box>
+        <Box
+          sx={{
+            flex: {
+              xs: "1 1 100%",
+              sm: "1 1 calc(50% - 8px)",
+              md: "1 1 calc(25% - 8px)",
+            },
+          }}
+        >
           <Card>
             <CardContent>
               <Box sx={{ display: "flex", alignItems: "center" }}>
                 <ScaleIcon sx={{ mr: 1, color: "secondary.main" }} />
                 <Box>
                   <Typography variant="h6">
-                    {data.filter((d) => d.source === "withings").length}
+                    {formatLargeNumber(
+                      data.filter((d) => d.source === "withings").length
+                    )}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Withings Records
@@ -561,31 +582,49 @@ export default function UnifiedHealthDashboard({
               </Box>
             </CardContent>
           </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
+        </Box>
+        <Box
+          sx={{
+            flex: {
+              xs: "1 1 100%",
+              sm: "1 1 calc(50% - 8px)",
+              md: "1 1 calc(25% - 8px)",
+            },
+          }}
+        >
           <Card>
             <CardContent>
               <Box sx={{ display: "flex", alignItems: "center" }}>
                 <TimelineIcon sx={{ mr: 1, color: "success.main" }} />
                 <Box>
                   <Typography variant="h6">
-                    {availableMetrics.length}
+                    {formatLargeNumber(availableMetrics.length)}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Metrics Tracked
+                    Variables Tracked
                   </Typography>
                 </Box>
               </Box>
             </CardContent>
           </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
+        </Box>
+        <Box
+          sx={{
+            flex: {
+              xs: "1 1 100%",
+              sm: "1 1 calc(50% - 8px)",
+              md: "1 1 calc(25% - 8px)",
+            },
+          }}
+        >
           <Card>
             <CardContent>
               <Box sx={{ display: "flex", alignItems: "center" }}>
                 <BarChartIcon sx={{ mr: 1, color: "warning.main" }} />
                 <Box>
-                  <Typography variant="h6">{data.length}</Typography>
+                  <Typography variant="h6">
+                    {formatLargeNumber(data.length)}
+                  </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Total Records
                   </Typography>
@@ -593,8 +632,8 @@ export default function UnifiedHealthDashboard({
               </Box>
             </CardContent>
           </Card>
-        </Grid>
-      </Grid>
+        </Box>
+      </Box>
 
       {/* Tabs */}
       <Paper sx={{ mb: 3 }}>
@@ -614,14 +653,17 @@ export default function UnifiedHealthDashboard({
           <Typography variant="h6" sx={{ mb: 2 }}>
             📈 Quick Overview
           </Typography>
-          <Grid container spacing={2}>
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
             {availableMetrics.slice(0, 6).map((variable) => {
               const variableData = getVariableData(variable);
               const stats = calculateStats(variableData);
               const isExpanded = expandedMetrics.has(variable);
 
               return (
-                <Grid item xs={12} md={6} key={variable}>
+                <Box
+                  sx={{ flex: { xs: "1 1 100%", md: "1 1 calc(50% - 8px)" } }}
+                  key={variable}
+                >
                   <Card variant="outlined">
                     <CardContent>
                       <Box
@@ -652,32 +694,32 @@ export default function UnifiedHealthDashboard({
 
                       <Collapse in={isExpanded}>
                         <Box sx={{ mt: 2 }}>
-                          <Grid container spacing={2} sx={{ mb: 2 }}>
-                            <Grid item xs={4}>
+                          <Box sx={{ display: "flex", gap: 2, mb: 2 }}>
+                            <Box sx={{ flex: 1 }}>
                               <Typography variant="body2" color="textSecondary">
                                 Average
                               </Typography>
                               <Typography variant="body1">
                                 {formatValue(variable, stats.average)}
                               </Typography>
-                            </Grid>
-                            <Grid item xs={4}>
+                            </Box>
+                            <Box sx={{ flex: 1 }}>
                               <Typography variant="body2" color="textSecondary">
                                 Min
                               </Typography>
                               <Typography variant="body1">
                                 {formatValue(variable, stats.min)}
                               </Typography>
-                            </Grid>
-                            <Grid item xs={4}>
+                            </Box>
+                            <Box sx={{ flex: 1 }}>
                               <Typography variant="body2" color="textSecondary">
                                 Max
                               </Typography>
                               <Typography variant="body1">
                                 {formatValue(variable, stats.max)}
                               </Typography>
-                            </Grid>
-                          </Grid>
+                            </Box>
+                          </Box>
 
                           <Box sx={{ height: 200 }}>
                             <Line
@@ -705,10 +747,10 @@ export default function UnifiedHealthDashboard({
                       </Collapse>
                     </CardContent>
                   </Card>
-                </Grid>
+                </Box>
               );
             })}
-          </Grid>
+          </Box>
         </Box>
       )}
 

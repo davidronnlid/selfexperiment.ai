@@ -117,49 +117,59 @@ export default function CorrelationAnalysis({
 
   // Helper function to get variable display names
   const getVariableDisplayName = (variableId: string): string => {
-    const isOuraVariable = (id: string) => {
-      return [
-        "sleep_score",
-        "readiness_score",
-        "temperature_deviation",
-        "temperature_trend_deviation",
-        "total_sleep_duration",
-        "rem_sleep_duration",
-        "deep_sleep_duration",
-        "efficiency",
-        "sleep_latency",
-        "hr_lowest_true",
-        "hr_average_true",
-      ].includes(id);
-    };
-
-    const isWithingsVariable = (id: string) => {
-      return [
-        "weight",
-        "fat_free_mass_kg",
-        "fat_ratio",
-        "fat_mass_weight_kg",
-        "muscle_mass_kg",
-        "hydration_kg",
-        "bone_mass_kg",
-      ].includes(id);
-    };
-
-    if (isOuraVariable(variableId)) {
-      return (
-        variables[variableId] ||
-        variableId.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
-      );
+    // First check if we have a label in the variables mapping
+    if (variables[variableId]) {
+      return variables[variableId];
     }
 
-    if (isWithingsVariable(variableId)) {
-      return (
-        variables[variableId] ||
-        variableId.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
-      );
+    // Fallback for known Oura variables
+    const ouraLabels: Record<string, string> = {
+      sleep_score: "Sleep Score",
+      readiness_score: "Readiness Score",
+      temperature_deviation: "Temperature Deviation",
+      temperature_trend_deviation: "Temperature Trend Deviation",
+      total_sleep_duration: "Total Sleep Duration",
+      rem_sleep_duration: "REM Sleep Duration",
+      deep_sleep_duration: "Deep Sleep Duration",
+      efficiency: "Sleep Efficiency",
+      sleep_latency: "Sleep Latency",
+      hr_lowest_true: "Lowest Heart Rate",
+      hr_average_true: "Average Heart Rate",
+    };
+
+    if (ouraLabels[variableId]) {
+      return ouraLabels[variableId];
     }
 
-    return variables[variableId] || variableId;
+    // Fallback for known Withings variables
+    const withingsLabels: Record<string, string> = {
+      weight: "Weight",
+      fat_free_mass_kg: "Fat Free Mass",
+      fat_ratio: "Fat Ratio",
+      fat_mass_weight_kg: "Fat Mass",
+      muscle_mass_kg: "Muscle Mass",
+      hydration_kg: "Hydration",
+      bone_mass_kg: "Bone Mass",
+    };
+
+    if (withingsLabels[variableId]) {
+      return withingsLabels[variableId];
+    }
+
+    // If it's a UUID (variable ID), try to format it nicely
+    if (
+      variableId.match(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      )
+    ) {
+      // This is a UUID, likely a variable ID - show a generic name
+      return `Variable ${variableId.slice(0, 8)}...`;
+    }
+
+    // Final fallback - format the ID nicely
+    return variableId
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (l) => l.toUpperCase());
   };
 
   const getVariableSlug = (variableId: string): string => {
@@ -239,6 +249,15 @@ export default function CorrelationAnalysis({
     fetchManualLogs();
   }, [userId, startDate, endDate]);
 
+  // Debug: Log when variables state changes
+  useEffect(() => {
+    console.log("[CorrelationAnalysis] Variables state updated:", variables);
+    console.log(
+      "[CorrelationAnalysis] Variables state keys:",
+      Object.keys(variables)
+    );
+  }, [variables]);
+
   const fetchManualLogs = async () => {
     if (!userId) {
       setError("User ID is required");
@@ -253,27 +272,21 @@ export default function CorrelationAnalysis({
       const startDateTime = startOfDay(parseISO(startDate)).toISOString();
       const endDateTime = endOfDay(parseISO(endDate)).toISOString();
 
-      // Fetch manual logs and variables separately for reliable data loading
-      const [logsResponse, variablesResponse] = await Promise.all([
-        supabase
-          .from("data_points")
-          .select("*")
-          .eq("user_id", userId)
-          .gte("date", startDateTime)
-          .lte("date", endDateTime)
-          .order("date", { ascending: false }),
-        supabase.from("variables").select("id, label"),
-      ]);
+      console.log(
+        "[CorrelationAnalysis] Fetching data from",
+        startDate,
+        "to",
+        endDate
+      );
 
-      const { data: rawManualLogs, error: manualError } = logsResponse;
-      const { data: variablesData, error: variablesError } = variablesResponse;
+      // Fetch variables mapping first
+      const { data: variablesData, error: variablesError } = await supabase
+        .from("variables")
+        .select("id, label, slug")
+        .eq("is_active", true);
 
-      // Check for errors
-      if (manualError) {
-        throw new Error(`Manual logs: ${manualError.message}`);
-      }
       if (variablesError) {
-        throw new Error(`Variables: ${variablesError.message}`);
+        console.error("Error fetching variables:", variablesError);
       }
 
       // Create a variables lookup map for joining data
@@ -283,125 +296,210 @@ export default function CorrelationAnalysis({
           {}
         ) || {};
 
-      // Join the data in JavaScript (more reliable than database joins)
-      const manualLogsResult =
-        rawManualLogs?.map((log: any) => ({
-          ...log,
-          variables: varsMap[log.variable_id]
-            ? { label: varsMap[log.variable_id].label }
-            : null,
-        })) || [];
-
-      // Fetch Oura logs
-      const { data: ouraLogsResult, error: ouraError } = await supabase
-        .from("oura_variable_data_points")
-        .select("*")
-        .eq("user_id", userId)
-        .gte("date", startDate)
-        .lte("date", endDate)
-        .order("date", { ascending: false });
-      if (ouraError) {
-        throw new Error(`Oura logs: ${ouraError.message}`);
-      }
-
-      // Fetch Withings logs
-      const { data: withingsLogsResult, error: withingsError } = await supabase
-        .from("withings_variable_data_points")
-        .select("*")
-        .eq("user_id", userId)
-        .gte("date", startDate)
-        .lte("date", endDate)
-        .order("date", { ascending: false });
-      if (withingsError) {
-        throw new Error(`Withings logs: ${withingsError.message}`);
+      // Initialize variableLabels with all variables from the database
+      const variableLabels: Record<string, string> = {};
+      if (variablesData) {
+        variablesData.forEach((variable: any) => {
+          variableLabels[variable.id] = variable.label || variable.id;
+        });
       }
 
       let allLogs: ManualLog[] = [];
-      const variableLabels: Record<string, string> = {};
 
-      // Process manual logs
-      if (manualLogsResult) {
-        const processedManualLogs = manualLogsResult.map((log: any) => {
-          // Handle both joined data structure and fallback structure
-          const variableLabel = log.variables?.label || log.variable_label;
-          if (variableLabel) {
-            variableLabels[log.variable_id] = variableLabel;
-          }
+      // 1. Fetch Oura data with high limit and proper date filtering
+      console.log("[CorrelationAnalysis] Fetching Oura data...");
+      const { data: ouraLogsResult, error: ouraError } = await supabase
+        .from("oura_variable_data_points")
+        .select("id, user_id, date, variable_id, value, created_at")
+        .eq("user_id", userId)
+        .gte("date", startDate)
+        .lte("date", endDate)
+        .order("date", { ascending: false })
+        .limit(20000); // High limit to get all Oura data
 
-          return {
-            id: log.id,
-            variable_id: log.variable_id,
-            value: log.value,
-            date: format(parseISO(log.date), "yyyy-MM-dd"),
-            notes: log.notes,
-            source: "manual",
-            created_at: log.created_at,
-          };
-        });
-        allLogs = [...allLogs, ...processedManualLogs];
+      if (ouraError) {
+        console.error("Error fetching Oura data:", ouraError);
+      } else {
+        console.log(
+          "[CorrelationAnalysis] Fetched",
+          ouraLogsResult?.length || 0,
+          "Oura records"
+        );
+
+        // Process Oura logs
+        if (ouraLogsResult) {
+          const processedOuraLogs = ouraLogsResult.map((log: any) => {
+            const ouraLabels: Record<string, string> = {
+              sleep_score: "Sleep Score",
+              readiness_score: "Readiness Score",
+              temperature_deviation: "Temperature Deviation",
+              temperature_trend_deviation: "Temperature Trend Deviation",
+              total_sleep_duration: "Total Sleep Duration",
+              rem_sleep_duration: "REM Sleep Duration",
+              deep_sleep_duration: "Deep Sleep Duration",
+              efficiency: "Sleep Efficiency",
+              sleep_latency: "Sleep Latency",
+              hr_lowest_true: "Lowest Heart Rate",
+              hr_average_true: "Average Heart Rate",
+            };
+
+            // Ensure the variable label is set for Oura variables
+            if (!variableLabels[log.variable_id]) {
+              variableLabels[log.variable_id] =
+                ouraLabels[log.variable_id] || log.variable_id;
+            }
+
+            return {
+              id: `oura_${log.id}`,
+              variable_id: log.variable_id,
+              value: log.value?.toString() || "0",
+              date: log.date,
+              notes: "Oura Ring data",
+              source: "oura",
+              created_at: log.created_at,
+            };
+          });
+          allLogs = [...allLogs, ...processedOuraLogs];
+        }
       }
 
-      // Process Oura logs
-      if (ouraLogsResult) {
-        const processedOuraLogs = ouraLogsResult.map((log: any) => {
-          const ouraLabels: Record<string, string> = {
-            sleep_score: "Sleep Score",
-            readiness_score: "Readiness Score",
-            temperature_deviation: "Temperature Deviation",
-            temperature_trend_deviation: "Temperature Trend Deviation",
-            total_sleep_duration: "Total Sleep Duration",
-            rem_sleep_duration: "REM Sleep Duration",
-            deep_sleep_duration: "Deep Sleep Duration",
-            efficiency: "Sleep Efficiency",
-            sleep_latency: "Sleep Latency",
-            hr_lowest_true: "Lowest Heart Rate",
-            hr_average_true: "Average Heart Rate",
-          };
+      // 2. Fetch Withings data with high limit
+      console.log("[CorrelationAnalysis] Fetching Withings data...");
+      const { data: withingsLogsResult, error: withingsError } = await supabase
+        .from("withings_variable_data_points")
+        .select("id, user_id, date, variable_id, value, created_at")
+        .eq("user_id", userId)
+        .gte("date", startDate)
+        .lte("date", endDate)
+        .order("date", { ascending: false })
+        .limit(10000); // High limit for Withings data
 
-          variableLabels[log.variable_id] =
-            ouraLabels[log.variable_id] || log.variable_id;
+      if (withingsError) {
+        console.error("Error fetching Withings data:", withingsError);
+      } else {
+        console.log(
+          "[CorrelationAnalysis] Fetched",
+          withingsLogsResult?.length || 0,
+          "Withings records"
+        );
 
-          return {
-            id: `oura_${log.id}`,
-            variable_id: log.variable_id,
-            value: log.value,
-            date: log.date,
-            notes: "Oura Ring data",
-            source: "oura",
-            created_at: log.created_at,
-          };
-        });
-        allLogs = [...allLogs, ...processedOuraLogs];
+        // Process Withings logs
+        if (withingsLogsResult) {
+          const processedWithingsLogs = withingsLogsResult.map((log: any) => {
+            const withingsLabels: Record<string, string> = {
+              weight: "Weight",
+              fat_free_mass_kg: "Fat Free Mass",
+              fat_ratio: "Fat Ratio",
+              fat_mass_weight_kg: "Fat Mass",
+              muscle_mass_kg: "Muscle Mass",
+              hydration_kg: "Hydration",
+              bone_mass_kg: "Bone Mass",
+            };
+
+            // Ensure the variable label is set for Withings variables
+            if (!variableLabels[log.variable_id]) {
+              variableLabels[log.variable_id] =
+                withingsLabels[log.variable_id] || log.variable_id;
+            }
+
+            return {
+              id: `withings_${log.id}`,
+              variable_id: log.variable_id,
+              value: log.value?.toString() || "0",
+              date: log.date,
+              notes: "Withings data",
+              source: "withings",
+              created_at: log.created_at,
+            };
+          });
+          allLogs = [...allLogs, ...processedWithingsLogs];
+        }
       }
 
-      // Process Withings logs
-      if (withingsLogsResult) {
-        const processedWithingsLogs = withingsLogsResult.map((log: any) => {
-          const withingsLabels: Record<string, string> = {
-            weight: "Weight",
-            fat_free_mass_kg: "Fat Free Mass",
-            fat_ratio: "Fat Ratio",
-            fat_mass_weight_kg: "Fat Mass",
-            muscle_mass_kg: "Muscle Mass",
-            hydration_kg: "Hydration",
-            bone_mass_kg: "Bone Mass",
-          };
+      // 3. Fetch manual/modular health data
+      console.log("[CorrelationAnalysis] Fetching Modular Health data...");
+      const { data: rawManualLogs, error: manualError } = await supabase
+        .from("data_points")
+        .select(
+          "id, user_id, date, variable_id, value, notes, source, created_at"
+        )
+        .eq("user_id", userId)
+        .gte("date", startDateTime)
+        .lte("date", endDateTime)
+        .order("date", { ascending: false })
+        .limit(5000); // Reasonable limit for manual data
 
-          variableLabels[log.variable] =
-            withingsLabels[log.variable] || log.variable;
+      if (manualError) {
+        console.error("Error fetching manual data:", manualError);
+      } else {
+        console.log(
+          "[CorrelationAnalysis] Fetched",
+          rawManualLogs?.length || 0,
+          "Modular Health records"
+        );
 
-          return {
-            id: `withings_${log.id}`,
-            variable_id: log.variable,
-            value: log.value,
-            date: log.date,
-            notes: "Withings data",
-            source: "withings",
-            created_at: log.created_at,
-          };
-        });
-        allLogs = [...allLogs, ...processedWithingsLogs];
+        // Process manual logs
+        if (rawManualLogs) {
+          const processedManualLogs = rawManualLogs.map((log: any) => {
+            // Handle both joined data structure and fallback structure
+            const varData = varsMap[log.variable_id];
+            if (varData && varData.label) {
+              variableLabels[log.variable_id] = varData.label;
+            }
+
+            // Determine the source type based on the source field
+            let source: string = "manual";
+            if (log.source && Array.isArray(log.source)) {
+              const sourceValue = log.source[0];
+              if (sourceValue === "routine" || sourceValue === "auto") {
+                source = sourceValue;
+              }
+            } else if (log.source === "routine" || log.source === "auto") {
+              source = log.source;
+            }
+
+            return {
+              id: log.id,
+              variable_id: log.variable_id,
+              value: log.value?.toString() || "0",
+              date: format(parseISO(log.date), "yyyy-MM-dd"),
+              notes: log.notes,
+              source: source,
+              created_at: log.created_at,
+            };
+          });
+          allLogs = [...allLogs, ...processedManualLogs];
+        }
       }
+
+      console.log(
+        "[CorrelationAnalysis] Variable labels mapping:",
+        variableLabels
+      );
+      console.log(
+        "[CorrelationAnalysis] Total logs processed:",
+        allLogs.length
+      );
+      console.log("[CorrelationAnalysis] Data breakdown:", {
+        oura: allLogs.filter((l) => l.source === "oura").length,
+        withings: allLogs.filter((l) => l.source === "withings").length,
+        manual: allLogs.filter((l) => l.source === "manual").length,
+        routine: allLogs.filter((l) => l.source === "routine").length,
+        auto: allLogs.filter((l) => l.source === "auto").length,
+      });
+
+      // Debug: Check what variables are being used in correlations
+      const uniqueVariables = [
+        ...new Set(allLogs.map((log) => log.variable_id)),
+      ];
+      console.log(
+        "[CorrelationAnalysis] Unique variables found:",
+        uniqueVariables
+      );
+      console.log(
+        "[CorrelationAnalysis] Variable labels for unique variables:",
+        uniqueVariables.map((vid) => ({ id: vid, label: variableLabels[vid] }))
+      );
 
       setLogs(allLogs);
       setVariables(variableLabels);
@@ -858,81 +956,6 @@ export default function CorrelationAnalysis({
         </CardContent>
       </Card>
 
-      {/* Analysis Controls */}
-      <Box
-        sx={{
-          mb: 3,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: 2,
-        }}
-      >
-        <Typography variant="h6" component="h4">
-          Variable Analysis Settings
-        </Typography>
-        <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-          <FormControl size="small" sx={{ minWidth: 120 }}>
-            <InputLabel>Time Range</InputLabel>
-            <Select
-              value={timeRange}
-              label="Time Range"
-              onChange={handleTimeRangeChange}
-            >
-              <MenuItem value="30">Last 30 days</MenuItem>
-              <MenuItem value="90">Last 90 days</MenuItem>
-              <MenuItem value="180">Last 6 months</MenuItem>
-              <MenuItem value="365">Last year</MenuItem>
-            </Select>
-          </FormControl>
-          <FormControl size="small" sx={{ minWidth: 150 }}>
-            <InputLabel>Variable 1</InputLabel>
-            <Select
-              value={selectedVar1}
-              label="Variable 1"
-              onChange={handleVar1Change}
-            >
-              {numericVariables.map((variable) => (
-                <MenuItem key={variable} value={variable}>
-                  <VariableLinkSimple
-                    variableId={variable}
-                    variables={variables}
-                    variant="inherit"
-                    underline={false}
-                    onClick={() => {}} // Prevent navigation when in dropdown
-                    forceAsText={true}
-                  />
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <FormControl size="small" sx={{ minWidth: 150 }}>
-            <InputLabel>Variable 2</InputLabel>
-            <Select
-              value={selectedVar2}
-              label="Variable 2"
-              onChange={handleVar2Change}
-            >
-              {numericVariables
-                .filter((v) => v !== selectedVar1)
-                .map((variable) => (
-                  <MenuItem key={variable} value={variable}>
-                    <VariableLinkSimple
-                      variableId={variable}
-                      variables={variables}
-                      variant="inherit"
-                      underline={false}
-                      onClick={() => {}} // Prevent navigation when in dropdown
-                      forceAsText={true}
-                    />
-                  </MenuItem>
-                ))}
-            </Select>
-          </FormControl>
-        </Box>
-      </Box>
-
       {/* Filter Controls */}
       <Box sx={{ mb: 3 }}>
         <Typography variant="subtitle2" gutterBottom color="text.secondary">
@@ -976,55 +999,6 @@ export default function CorrelationAnalysis({
           </FormControl>
         </Box>
       </Box>
-
-      {/* Data Source Breakdown */}
-      {logs.length > 0 && (
-        <Box sx={{ mb: 3 }}>
-          <Card variant="outlined">
-            <CardContent sx={{ py: 2 }}>
-              <Typography
-                variant="subtitle2"
-                gutterBottom
-                color="textSecondary"
-              >
-                Data Sources Included in Analysis
-              </Typography>
-              <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-                <Chip
-                  label={`Manual: ${
-                    logs.filter((log) => !log.source || log.source === "manual")
-                      .length
-                  }`}
-                  size="small"
-                  color="primary"
-                  variant="outlined"
-                />
-                <Chip
-                  label={`Oura: ${
-                    logs.filter((log) => log.source === "oura").length
-                  }`}
-                  size="small"
-                  color="secondary"
-                  variant="outlined"
-                />
-                <Chip
-                  label={`Withings: ${
-                    logs.filter((log) => log.source === "withings").length
-                  }`}
-                  size="small"
-                  color="warning"
-                  variant="outlined"
-                />
-                <Chip
-                  label={`Total: ${logs.length} data points`}
-                  size="small"
-                  color="default"
-                />
-              </Box>
-            </CardContent>
-          </Card>
-        </Box>
-      )}
 
       {/* Main Correlation Table */}
       {allCorrelations.length > 0 ? (
@@ -1450,16 +1424,16 @@ export default function CorrelationAnalysis({
                                                 }}
                                               >
                                                 <Typography variant="body2">
-                                                  Data Quality:
+                                                  Data Quantity:
                                                 </Typography>
                                                 <Chip
                                                   label={
                                                     chartData.matchedData
                                                       .length >= 10
-                                                      ? "Good"
+                                                      ? "Sufficient"
                                                       : chartData.matchedData
                                                           .length >= 5
-                                                      ? "Fair"
+                                                      ? "Moderate"
                                                       : "Limited"
                                                   }
                                                   size="small"

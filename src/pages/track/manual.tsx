@@ -1243,7 +1243,7 @@ export default function ManualTrackPage() {
           </Typography>
           <LinearProgress sx={{ mb: 2 }} />
           <Typography variant="body2" color="text.secondary">
-            Fetching variables, experiments, and today's data points
+            Loading your personalized health tracking interface...
           </Typography>
         </Box>
       </Container>

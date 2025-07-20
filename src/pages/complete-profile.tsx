@@ -146,7 +146,7 @@ export default function CompleteProfilePage() {
   return (
     <Container maxWidth="sm" sx={{ py: 8 }}>
       <Typography variant="h4" gutterBottom>
-        Complete Your Profile
+        Complete Your Account
       </Typography>
 
       {/* Show Google profile picture if available */}
@@ -171,7 +171,7 @@ export default function CompleteProfilePage() {
       )}
       {success && (
         <Alert severity="success" sx={{ mb: 2 }}>
-          Profile updated!
+          Account updated!
         </Alert>
       )}
       <Box

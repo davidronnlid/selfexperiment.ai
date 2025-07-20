@@ -23,7 +23,7 @@ import {
 } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { FaShare, FaLock, FaUsers, FaCog } from "react-icons/fa";
-import { getVariables } from "../utils/variableUtils";
+import { getVariables, getVariablesWithUserData } from "../utils/variableUtils";
 import { Variable } from "../types/variables";
 import { VariableLinkSimple } from "./VariableLink";
 
@@ -54,7 +54,7 @@ export default function VariableSharingManager({
   const loadVariables = async () => {
     setVariablesLoading(true);
     try {
-      const variables = await getVariables(user.id);
+      const variables = await getVariablesWithUserData(user.id);
       setVariables(variables);
     } catch (err) {
       console.error("Failed to load variables:", err);

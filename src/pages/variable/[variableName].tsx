@@ -210,7 +210,7 @@ export default function VariableDataPointsPage() {
           .from("oura_variable_data_points")
           .select("id, date, variable_id, value, raw, created_at")
           .eq("user_id", user.id)
-          .eq("variable_id", variableInfo.slug) // Oura uses slug as variable_id
+          .eq("variable_id", variableInfo.id) // Use the actual UUID from variables table
           .order("date", { ascending: false })
           .limit(50);
 

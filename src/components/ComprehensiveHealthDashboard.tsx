@@ -30,14 +30,17 @@ import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
+  TextField,
+  InputAdornment,
 } from "@mui/material";
-import { Line, Scatter } from "react-chartjs-2";
+import { Line, Scatter, Bar } from "react-chartjs-2";
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip as ChartTooltip,
   Legend,
@@ -62,6 +65,7 @@ import {
   Link as LinkIcon,
   Refresh as RefreshIcon,
   Settings as SettingsIcon,
+  Search as SearchIcon,
 } from "@mui/icons-material";
 import {
   getOuraVariableLabel,
@@ -70,6 +74,8 @@ import {
   getOuraVariableInterpretation,
   OURA_VARIABLES,
 } from "@/utils/ouraVariableUtils";
+import { formatLargeNumber } from "@/utils/numberFormatting";
+import ChartSelection from "./ChartSelection";
 
 // Register Chart.js components
 ChartJS.register(
@@ -77,6 +83,7 @@ ChartJS.register(
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   ChartTooltip,
   Legend,
@@ -85,7 +92,7 @@ ChartJS.register(
 
 interface HealthData {
   id: string;
-  source: "oura" | "withings" | "manual";
+  source: "oura" | "withings" | "manual" | "routine" | "auto";
   variable: string;
   date: string;
   value: number | string | null;
@@ -231,20 +238,25 @@ export default function ComprehensiveHealthDashboard({
 }: HealthIntegrationProps) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<HealthData[]>([]);
-  const [timeRange, setTimeRange] = useState<string>("30");
-  const [selectedVariable, setSelectedVariable] = useState<string>("");
-  const [selectedSource, setSelectedSource] = useState<
-    "all" | "oura" | "withings" | "manual"
-  >("all");
   const [expandedMetrics, setExpandedMetrics] = useState<Set<string>>(
     new Set()
   );
-  const [activeTab, setActiveTab] = useState(0);
   const [ouraConnected, setOuraConnected] = useState(false);
   const [withingsConnected, setWithingsConnected] = useState(false);
   const [syncingOura, setSyncingOura] = useState(false);
   const [syncingWithings, setSyncingWithings] = useState(false);
-  const [correlations, setCorrelations] = useState<CorrelationData[]>([]);
+  const [selectedVariable, setSelectedVariable] = useState<string>("");
+  const [variableLabels, setVariableLabels] = useState<Record<string, string>>(
+    {}
+  );
+  const [searchQuery, setSearchQuery] = useState<string>("");
+
+  // Add state for chart configuration
+  const [chartConfig, setChartConfig] = useState({
+    selectedVariables: ["", ""],
+    timeRange: "30",
+    chartType: "line",
+  });
 
   // Utility functions
   const formatDate = (dateString: string) => {
@@ -255,11 +267,29 @@ export default function ComprehensiveHealthDashboard({
     }
   };
 
+  const formatDateWithYear = (dateString: string) => {
+    try {
+      const date = parseISO(dateString);
+      const month = format(date, "MMM dd");
+      const year = format(date, "yyyy");
+
+      // Check if this is the first occurrence of this year in the dataset
+      return { month, year, fullDate: date };
+    } catch {
+      return { month: dateString, year: "", fullDate: new Date() };
+    }
+  };
+
   const getVariableColor = (variable: string) => {
     return VARIABLE_COLORS[variable] || "#3b82f6";
   };
 
   const getVariableLabel = (variable: string) => {
+    // First try to get from dynamic labels (database)
+    if (variableLabels[variable]) {
+      return variableLabels[variable];
+    }
+    // Fall back to hardcoded labels for legacy variables
     return VARIABLE_LABELS[variable] || variable;
   };
 
@@ -267,17 +297,43 @@ export default function ComprehensiveHealthDashboard({
     return VARIABLE_ICONS[variable] || <TrendingUpIcon />;
   };
 
+  // Chart options
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: true,
+        position: "top" as const,
+      },
+      tooltip: {
+        mode: "index" as const,
+        intersect: false,
+      },
+    },
+    scales: {
+      x: {
+        display: true,
+        title: {
+          display: true,
+          text: "Date",
+        },
+      },
+      y: {
+        display: true,
+        title: {
+          display: true,
+          text: "Value",
+        },
+      },
+    },
+  };
+
   // Memoize unique variables
   const uniqueVariables = useMemo(() => {
     const variables = new Set(data.map((item) => item.variable));
     return Array.from(variables).sort();
   }, [data]);
-
-  // Filter data by source
-  const filteredData = useMemo(() => {
-    if (selectedSource === "all") return data;
-    return data.filter((item) => item.source === selectedSource);
-  }, [data, selectedSource]);
 
   // Calculate variable statistics
   const calculateStats = useCallback(
@@ -367,13 +423,13 @@ export default function ComprehensiveHealthDashboard({
   // Get data for a specific variable
   const getVariableData = useCallback(
     (variable: string) => {
-      return filteredData
+      return data
         .filter((item) => item.variable === variable)
         .sort(
           (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
         );
     },
-    [filteredData]
+    [data]
   );
 
   // Format value based on variable type
@@ -444,135 +500,44 @@ export default function ComprehensiveHealthDashboard({
     []
   );
 
-  // Calculate correlations between variables
-  const calculateCorrelations = useCallback(
-    (data: HealthData[], variables: string[]) => {
-      const correlations: CorrelationData[] = [];
-      const filteredVariables = variables.filter((v) => {
-        const variableData = data.filter((item) => item.variable === v);
-        return variableData.length >= 5; // Need at least 5 data points
-      });
-
-      for (let i = 0; i < filteredVariables.length; i++) {
-        for (let j = i + 1; j < filteredVariables.length; j++) {
-          const var1 = filteredVariables[i];
-          const var2 = filteredVariables[j];
-
-          const data1 = data.filter((item) => item.variable === var1);
-          const data2 = data.filter((item) => item.variable === var2);
-
-          // Create date-value maps for both variables
-          const map1 = new Map(data1.map((d) => [d.date, d.value || 0]));
-          const map2 = new Map(data2.map((d) => [d.date, d.value || 0]));
-
-          // Find common dates
-          const commonDates = Array.from(map1.keys()).filter((date) =>
-            map2.has(date)
-          );
-
-          if (commonDates.length >= 5) {
-            const values1 = commonDates.map((date) => {
-              const val = map1.get(date)!;
-              return typeof val === "string" ? parseFloat(val) : val;
-            });
-            const values2 = commonDates.map((date) => {
-              const val = map2.get(date)!;
-              return typeof val === "string" ? parseFloat(val) : val;
-            });
-
-            // Ensure all values are numbers
-            const numericValues1 = values1.filter(
-              (v): v is number => typeof v === "number" && !isNaN(v)
-            );
-            const numericValues2 = values2.filter(
-              (v): v is number => typeof v === "number" && !isNaN(v)
-            );
-
-            if (
-              numericValues1.length !== numericValues2.length ||
-              numericValues1.length < 5
-            ) {
-              continue; // Skip if we don't have enough numeric data
-            }
-
-            // Calculate correlation coefficient
-            const n = numericValues1.length;
-            const sum1 = numericValues1.reduce((a, b) => a + b, 0);
-            const sum2 = numericValues2.reduce((a, b) => a + b, 0);
-            const sum1Sq = numericValues1.reduce((a, b) => a + b * b, 0);
-            const sum2Sq = numericValues2.reduce((a, b) => a + b * b, 0);
-            const pSum = numericValues1.reduce(
-              (a, b, i) => a + b * numericValues2[i],
-              0
-            );
-
-            const num = pSum - (sum1 * sum2) / n;
-            const den = Math.sqrt(
-              (sum1Sq - (sum1 * sum1) / n) * (sum2Sq - (sum2 * sum2) / n)
-            );
-
-            const correlation = den === 0 ? 0 : num / den;
-
-            // Simple p-value approximation (not statistically rigorous)
-            const t =
-              correlation *
-              Math.sqrt((n - 2) / (1 - correlation * correlation));
-            const pValue = Math.exp(-0.5 * t * t) / Math.sqrt(2 * Math.PI);
-
-            correlations.push({
-              variable1: var1,
-              variable2: var2,
-              correlation,
-              pValue,
-              dataPoints: numericValues1.length,
-            });
-          }
-        }
-      }
-
-      // Sort by absolute correlation strength
-      correlations.sort(
-        (a, b) => Math.abs(b.correlation) - Math.abs(a.correlation)
-      );
-
-      return correlations;
-    },
-    []
-  );
-
   // Fetch all health data
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
 
-      // Fetch Oura data
+      // Fetch Oura data (select only existing columns)
       const { data: ouraData, error: ouraError } = await supabase
         .from("oura_variable_data_points")
-        .select("*")
+        .select("id, user_id, date, variable_id, value, created_at, updated_at")
         .eq("user_id", userId)
-        .order("date", { ascending: false });
+        .order("date", { ascending: false })
+        .limit(20000); // Set high limit to get all records
 
       if (ouraError) {
         console.error("Error fetching Oura data:", ouraError);
       }
 
-      // Fetch Withings data
+      // Fetch Withings data (select only existing columns)
       const { data: withingsData, error: withingsError } = await supabase
         .from("withings_variable_data_points")
-        .select("*")
+        .select("id, user_id, date, variable_id, value, created_at, updated_at")
         .eq("user_id", userId)
-        .order("date", { ascending: false });
+        .order("date", { ascending: false })
+        .limit(5000); // Set high limit for Withings data
 
       if (withingsError) {
         console.error("Error fetching Withings data:", withingsError);
       }
 
-      // Fetch manual data points
+      // Fetch manual data points (select only existing columns)
       const { data: manualData, error: manualError } = await supabase
         .from("data_points")
-        .select("*")
+        .select(
+          "id, user_id, date, variable_id, value, notes, created_at, source"
+        )
         .eq("user_id", userId)
-        .order("date", { ascending: false });
+        .order("date", { ascending: false })
+        .limit(1000); // Set limit for manual data
 
       if (manualError) {
         console.error("Error fetching manual data:", manualError);
@@ -595,7 +560,7 @@ export default function ComprehensiveHealthDashboard({
         ...(withingsData || []).map((item) => ({
           id: item.id,
           source: "withings" as const,
-          variable: item.variable,
+          variable: item.variable_id,
           date: item.date,
           value:
             typeof item.value === "string"
@@ -607,7 +572,7 @@ export default function ComprehensiveHealthDashboard({
         ...(manualData || []).map((item) => ({
           id: item.id,
           source: "manual" as const,
-          variable: item.variable || "unknown",
+          variable: item.variable_id || "unknown",
           date: item.date,
           value:
             typeof item.value === "string"
@@ -615,7 +580,7 @@ export default function ComprehensiveHealthDashboard({
               : item.value || 0, // Handle string and null values
           user_id: item.user_id,
           created_at: item.created_at,
-          unit: item.unit,
+          unit: undefined, // unit not available in selected columns
         })),
       ];
 
@@ -627,19 +592,12 @@ export default function ComprehensiveHealthDashboard({
       });
 
       setData(combinedData);
-
-      // Calculate correlations
-      const variables = Array.from(
-        new Set(combinedData.map((item) => item.variable))
-      ).sort();
-      const newCorrelations = calculateCorrelations(combinedData, variables);
-      setCorrelations(newCorrelations);
     } catch (error) {
       console.error("Error fetching health data:", error);
     } finally {
       setLoading(false);
     }
-  }, [userId, calculateCorrelations]);
+  }, [userId]);
 
   // Check connection status
   const checkConnections = useCallback(async () => {
@@ -666,18 +624,96 @@ export default function ComprehensiveHealthDashboard({
     }
   }, [userId]);
 
-  // Sync Oura data
+  // Incremental sync Oura data (last 90 days)
+  const syncOuraIncremental = async () => {
+    try {
+      setSyncingOura(true);
+      const response = await fetch("/api/oura/sync-incremental", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: userId,
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log(
+          `[ComprehensiveHealthDashboard] Incrementally synced ${
+            result.data?.totalUpserted || 0
+          } Oura data points`
+        );
+        await fetchData();
+      } else {
+        const errorData = await response.json();
+        console.error("Oura incremental sync error:", errorData);
+      }
+    } catch (error) {
+      console.error("Error syncing Oura data incrementally:", error);
+    } finally {
+      setSyncingOura(false);
+    }
+  };
+
+  // Incremental sync Withings data (last 30 days)
+  const syncWithingsIncremental = async () => {
+    try {
+      setSyncingWithings(true);
+
+      const response = await fetch("/api/withings/sync-incremental", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          console.log(
+            `[ComprehensiveHealthDashboard] Incrementally synced ${
+              result.data?.totalUpserted || 0
+            } Withings data points`
+          );
+          await fetchData();
+        } else {
+          console.error("Withings incremental sync failed:", result.error);
+        }
+      } else {
+        console.error("Failed to sync Withings data incrementally");
+      }
+    } catch (error) {
+      console.error("Error syncing Withings data incrementally:", error);
+    } finally {
+      setSyncingWithings(false);
+    }
+  };
+
+  // Legacy full sync functions (keep for backward compatibility)
   const syncOura = async () => {
     try {
       setSyncingOura(true);
-      const response = await fetch("/api/oura/fetch", {
+      const response = await fetch("/api/v1/functions/oura-sync-all", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          userId: userId,
+          startYear: 2020,
+          clearExisting: false,
+        }),
       });
 
       if (response.ok) {
         await fetchData();
+      } else {
+        const errorData = await response.json();
+        console.error("Oura sync error:", errorData);
       }
     } catch (error) {
       console.error("Error syncing Oura data:", error);
@@ -686,31 +722,20 @@ export default function ComprehensiveHealthDashboard({
     }
   };
 
-  // Sync Withings data
+  // Legacy full sync for Withings
   const syncWithings = async () => {
     try {
       setSyncingWithings(true);
-      const now = new Date();
-      const startDate = new Date("2009-01-01");
-      const startdate = Math.floor(startDate.getTime() / 1000);
-      const enddate = Math.floor(now.getTime() / 1000);
 
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/withings-sync`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify({
-            userId,
-            startdate,
-            enddate,
-            meastype: [1, 5, 6, 8, 76, 77, 88],
-          }),
-        }
-      );
+      const response = await fetch("/api/withings/sync-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          clearExisting: false, // Don't clear existing data during sync
+          startYear: 2020, // Sync from 2020 onwards
+        }),
+      });
 
       if (response.ok) {
         const result = await response.json();
@@ -718,7 +743,7 @@ export default function ComprehensiveHealthDashboard({
           await fetchData();
           console.log(
             `[ComprehensiveHealthDashboard] Synced ${
-              result.upserted || 0
+              result.data?.totalUpserted || 0
             } Withings data points`
           );
         } else {
@@ -734,23 +759,6 @@ export default function ComprehensiveHealthDashboard({
     }
   };
 
-  // Handle time range change
-  const handleTimeRangeChange = (event: SelectChangeEvent) => {
-    setTimeRange(event.target.value);
-  };
-
-  // Handle variable change
-  const handleVariableChange = (event: SelectChangeEvent) => {
-    setSelectedVariable(event.target.value);
-  };
-
-  // Handle source change
-  const handleSourceChange = (event: SelectChangeEvent) => {
-    setSelectedSource(
-      event.target.value as "all" | "oura" | "withings" | "manual"
-    );
-  };
-
   // Toggle metric expansion
   const toggleMetricExpansion = (variable: string) => {
     const newExpanded = new Set(expandedMetrics);
@@ -762,50 +770,7 @@ export default function ComprehensiveHealthDashboard({
     setExpandedMetrics(newExpanded);
   };
 
-  // Chart data for selected variable
-  const chartData = useMemo(() => {
-    if (!selectedVariable) return null;
-
-    const variableData = getVariableData(selectedVariable);
-    if (variableData.length === 0) return null;
-
-    return {
-      labels: variableData.map((d) => formatDate(d.date)),
-      datasets: [
-        {
-          label: getVariableLabel(selectedVariable),
-          data: variableData.map((d) => d.value || 0), // Handle null values
-          borderColor: getVariableColor(selectedVariable),
-          backgroundColor: `${getVariableColor(selectedVariable)}20`,
-          fill: true,
-          tension: 0.2,
-        },
-      ],
-    };
-  }, [selectedVariable, getVariableData]);
-
-  // Chart options
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-    },
-    scales: {
-      y: {
-        beginAtZero: false,
-      },
-    },
-  };
-
-  // Stats for selected variable
-  const variableStats = useMemo(() => {
-    if (!selectedVariable) return null;
-    const variableData = getVariableData(selectedVariable);
-    return calculateStats(variableData);
-  }, [selectedVariable, getVariableData, calculateStats]);
-
-  // Available metrics by source
+  // Available metrics
   const availableMetrics = useMemo(() => {
     const metrics = uniqueVariables.filter((variable) => {
       const variableData = getVariableData(variable);
@@ -814,99 +779,498 @@ export default function ComprehensiveHealthDashboard({
     return metrics;
   }, [uniqueVariables, getVariableData]);
 
+  // Filter and sort available metrics based on search query
+  const filteredAndSortedMetrics = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return availableMetrics;
+    }
+
+    const query = searchQuery.toLowerCase();
+
+    // Create a scoring system for better search results
+    const scoredMetrics = availableMetrics.map((variable) => {
+      const label = getVariableLabel(variable).toLowerCase();
+      const variableLower = variable.toLowerCase();
+
+      let score = 0;
+
+      // Exact matches get highest score
+      if (label === query || variableLower === query) {
+        score += 1000;
+      }
+      // Starts with query gets high score
+      else if (label.startsWith(query) || variableLower.startsWith(query)) {
+        score += 500;
+      }
+      // Contains query gets medium score
+      else if (label.includes(query) || variableLower.includes(query)) {
+        score += 100;
+      }
+      // Partial word matches get lower score
+      else if (
+        label.split(" ").some((word) => word.startsWith(query)) ||
+        variableLower.split("_").some((word) => word.startsWith(query))
+      ) {
+        score += 50;
+      }
+
+      return { variable, score };
+    });
+
+    // Sort by score (highest first) and filter out non-matches
+    return scoredMetrics
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map((item) => item.variable);
+  }, [availableMetrics, searchQuery, getVariableLabel]);
+
+  // Add chart configuration handler
+  const handleChartConfigChange = useCallback(
+    (config: {
+      selectedVariables: string[];
+      timeRange: string;
+      chartType: string;
+    }) => {
+      setChartConfig(config);
+    },
+    []
+  );
+
+  // Fetch data with proper joins
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
 
-        // Fetch Oura data
-        const { data: ouraData, error: ouraError } = await supabase
-          .from("oura_variable_data_points")
-          .select("*")
-          .eq("user_id", userId)
-          .order("date", { ascending: false });
+        // Check authentication status first
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
 
-        if (ouraError) {
-          console.error("Error fetching Oura data:", ouraError);
+        console.log("[ComprehensiveHealthDashboard] Auth check:", {
+          hasSession: !!session,
+          userId: session?.user?.id,
+          providedUserId: userId,
+          sessionError: sessionError?.message,
+        });
+
+        if (!session?.user) {
+          console.warn(
+            "[ComprehensiveHealthDashboard] No authenticated session found - queries will likely fail with 400 errors"
+          );
+          console.log(
+            "[ComprehensiveHealthDashboard] 💡 User needs to be logged in for data to load properly"
+          );
+
+          // Don't return here, let the top-level auth check handle it
+          // Just continue with limited data
+        } else {
+          // Verify the authenticated user matches the provided userId
+          if (session.user.id !== userId) {
+            console.error("[ComprehensiveHealthDashboard] User ID mismatch:", {
+              sessionUserId: session.user.id,
+              providedUserId: userId,
+            });
+            console.log(
+              "[ComprehensiveHealthDashboard] 💡 This could cause RLS to block data access"
+            );
+          }
         }
 
-        // Fetch Withings data
-        const { data: withingsData, error: withingsError } = await supabase
+        // Fetch variable labels from the variables table
+        console.log("[ComprehensiveHealthDashboard] Fetching variables...");
+        const { data: variablesData, error: variablesError } = await supabase
+          .from("variables")
+          .select("id, label, slug")
+          .eq("is_active", true);
+
+        if (variablesError) {
+          console.error(
+            "[ComprehensiveHealthDashboard] Variables fetch error:",
+            {
+              code: variablesError.code,
+              message: variablesError.message,
+              details: variablesError.details,
+              hint: variablesError.hint,
+            }
+          );
+        } else {
+          console.log(
+            `[ComprehensiveHealthDashboard] ✅ Fetched ${
+              variablesData?.length || 0
+            } variables`
+          );
+          // Create a mapping of variable IDs to labels
+          const labelsMap: Record<string, string> = {};
+          variablesData?.forEach((variable) => {
+            labelsMap[variable.id] = variable.label;
+            labelsMap[variable.slug] = variable.label; // Also map by slug for backward compatibility
+          });
+          setVariableLabels(labelsMap);
+        }
+
+        // Fetch Oura data with variable joins - Using pagination to get all records
+        let ouraData: any[] = [];
+        let ouraError: any = null;
+
+        try {
+          // Fetch all Oura data using pagination (Supabase has 1000 record limit per query)
+          let from = 0;
+          const limit = 1000;
+          let hasMore = true;
+          let pageCount = 0;
+
+          console.log(
+            `[ComprehensiveHealthDashboard] Starting Oura pagination for user: ${userId}`
+          );
+
+          while (hasMore) {
+            pageCount++;
+            console.log(
+              `[ComprehensiveHealthDashboard] Fetching Oura page ${pageCount} (records ${from}-${
+                from + limit - 1
+              })`
+            );
+
+            const { data: pageData, error: pageError } = await supabase
+              .from("oura_variable_data_points")
+              .select(
+                `
+                id, 
+                user_id, 
+                date, 
+                variable_id, 
+                value, 
+                created_at,
+                variables!inner(id, slug, label)
+              `
+              )
+              .eq("user_id", userId)
+              .order("date", { ascending: false })
+              .range(from, from + limit - 1);
+
+            if (pageError) {
+              console.error(
+                `[ComprehensiveHealthDashboard] Oura page ${pageCount} error:`,
+                pageError
+              );
+              console.error(`[ComprehensiveHealthDashboard] Error details:`, {
+                code: pageError.code,
+                message: pageError.message,
+                details: pageError.details,
+                hint: pageError.hint,
+              });
+              ouraError = pageError;
+              break;
+            }
+
+            console.log(
+              `[ComprehensiveHealthDashboard] Oura page ${pageCount} success: ${
+                pageData?.length || 0
+              } records`
+            );
+
+            if (pageData && pageData.length > 0) {
+              ouraData = [...ouraData, ...pageData];
+
+              if (pageData.length < limit) {
+                hasMore = false; // Last page
+                console.log(
+                  `[ComprehensiveHealthDashboard] Oura pagination complete - last page reached`
+                );
+              } else {
+                from += limit;
+              }
+            } else {
+              hasMore = false;
+              console.log(
+                `[ComprehensiveHealthDashboard] Oura pagination complete - no more data`
+              );
+            }
+
+            // Safety limit to prevent infinite loops
+            if (from > 20000) {
+              hasMore = false;
+              console.warn(
+                `[ComprehensiveHealthDashboard] Oura pagination stopped at safety limit (20,000 records)`
+              );
+            }
+          }
+
+          console.log(
+            `[ComprehensiveHealthDashboard] ✅ Fetched ${ouraData.length} Oura records via pagination (${pageCount} pages)`
+          );
+        } catch (error) {
+          console.error(
+            `[ComprehensiveHealthDashboard] Oura pagination failed:`,
+            error
+          );
+          ouraError = error;
+        }
+
+        if (ouraError) {
+          console.error(
+            "[ComprehensiveHealthDashboard] ❌ Oura join query failed, trying fallback:",
+            ouraError
+          );
+
+          // Fallback: try fetching without variable joins using pagination
+          try {
+            console.log(
+              "[ComprehensiveHealthDashboard] 🔄 Starting Oura fallback pagination (no joins)..."
+            );
+            let fallbackOuraData: any[] = [];
+            let from = 0;
+            const limit = 1000;
+            let hasMore = true;
+            let fallbackPageCount = 0;
+
+            while (hasMore) {
+              fallbackPageCount++;
+              console.log(
+                `[ComprehensiveHealthDashboard] Fallback page ${fallbackPageCount} (records ${from}-${
+                  from + limit - 1
+                })`
+              );
+
+              const { data: pageData, error: pageError } = await supabase
+                .from("oura_variable_data_points")
+                .select("id, user_id, date, variable_id, value, created_at")
+                .eq("user_id", userId)
+                .order("date", { ascending: false })
+                .range(from, from + limit - 1);
+
+              if (pageError) {
+                console.error(
+                  `[ComprehensiveHealthDashboard] Fallback page ${fallbackPageCount} error:`,
+                  {
+                    code: pageError.code,
+                    message: pageError.message,
+                    details: pageError.details,
+                    hint: pageError.hint,
+                  }
+                );
+                break;
+              }
+
+              console.log(
+                `[ComprehensiveHealthDashboard] Fallback page ${fallbackPageCount} success: ${
+                  pageData?.length || 0
+                } records`
+              );
+
+              if (pageData && pageData.length > 0) {
+                fallbackOuraData = [...fallbackOuraData, ...pageData];
+
+                if (pageData.length < limit) {
+                  hasMore = false;
+                  console.log(
+                    "[ComprehensiveHealthDashboard] Fallback pagination complete - last page reached"
+                  );
+                } else {
+                  from += limit;
+                }
+              } else {
+                hasMore = false;
+                console.log(
+                  "[ComprehensiveHealthDashboard] Fallback pagination complete - no more data"
+                );
+              }
+
+              // Safety limit
+              if (from > 20000) {
+                hasMore = false;
+                console.warn(
+                  "[ComprehensiveHealthDashboard] Fallback pagination stopped at safety limit"
+                );
+              }
+            }
+
+            if (fallbackOuraData.length > 0) {
+              // Use fallback data without variable labels
+              const processedFallbackData = fallbackOuraData.map(
+                (item: any) => ({
+                  ...item,
+                  variables: {
+                    id: item.variable_id,
+                    slug: item.variable_id,
+                    label: `Variable ${item.variable_id}`,
+                  },
+                })
+              );
+              console.log(
+                `[ComprehensiveHealthDashboard] ✅ Using Oura fallback data: ${processedFallbackData.length} records (${fallbackPageCount} pages)`
+              );
+              ouraData = processedFallbackData;
+            } else {
+              console.warn(
+                "[ComprehensiveHealthDashboard] ⚠️ No Oura data found even with fallback"
+              );
+            }
+          } catch (fallbackError) {
+            console.error(
+              "[ComprehensiveHealthDashboard] ❌ Fallback query also failed:",
+              fallbackError
+            );
+          }
+        }
+
+        // Fetch Withings data with variable joins - Updated to use proper relationships
+        let { data: withingsData, error: withingsError } = await supabase
           .from("withings_variable_data_points")
-          .select("*")
+          .select(
+            `
+            id, 
+            user_id, 
+            date, 
+            variable_id, 
+            value, 
+            created_at,
+            variables!inner(id, slug, label)
+          `
+          )
           .eq("user_id", userId)
-          .order("date", { ascending: false });
+          .order("created_at", { ascending: false })
+          .limit(5000); // Set high limit for Withings data
 
         if (withingsError) {
           console.error("Error fetching Withings data:", withingsError);
+
+          // Fallback: try fetching without variable joins (fixed column reference)
+          const { data: withingsFallback, error: withingsFallbackError } =
+            await supabase
+              .from("withings_variable_data_points")
+              .select("id, user_id, date, variable_id, value, created_at")
+              .eq("user_id", userId)
+              .order("created_at", { ascending: false })
+              .limit(5000); // Set high limit for Withings data
+
+          if (!withingsFallbackError && withingsFallback) {
+            // Use fallback data without variable labels
+            const fallbackWithingsData = withingsFallback.map((item: any) => ({
+              ...item,
+              variables: {
+                id: item.variable_id,
+                slug: item.variable_id,
+                label: `Variable ${item.variable_id}`,
+              },
+            }));
+            console.log(
+              "[ComprehensiveHealthDashboard] Using Withings fallback data:",
+              fallbackWithingsData.length
+            );
+            withingsData = fallbackWithingsData;
+          }
         }
 
-        // Fetch manual data points
-        const { data: manualData, error: manualError } = await supabase
-          .from("data_points")
-          .select("*")
-          .eq("user_id", userId)
-          .order("date", { ascending: false });
+        // Fetch Modular Health data points (manual and auto-tracked) with variable joins
+        let { data: modularHealthData, error: modularHealthError } =
+          await supabase
+            .from("data_points")
+            .select(
+              `
+              id, 
+              user_id, 
+              date, 
+              variable_id, 
+              value, 
+              source, 
+              created_at,
+              variables!inner(id, slug, label)
+            `
+            )
+            .eq("user_id", userId)
+            .order("date", { ascending: false })
+            .limit(1000); // Set limit for manual data
 
-        if (manualError) {
-          console.error("Error fetching manual data:", manualError);
+        if (modularHealthError) {
+          console.error(
+            "Error fetching Modular Health data:",
+            modularHealthError
+          );
+
+          // Fallback: try fetching without variable joins
+          const { data: modularFallback, error: modularFallbackError } =
+            await supabase
+              .from("data_points")
+              .select(
+                "id, user_id, date, variable_id, value, source, created_at"
+              )
+              .eq("user_id", userId)
+              .order("date", { ascending: false })
+              .limit(1000); // Set limit for manual data
+
+          if (!modularFallbackError && modularFallback) {
+            // Use fallback data without variable labels
+            const fallbackModularData = modularFallback.map((item: any) => ({
+              ...item,
+              variables: {
+                id: item.variable_id,
+                slug: item.variable_id,
+                label: `Variable ${item.variable_id}`,
+              },
+            }));
+            console.log(
+              "[ComprehensiveHealthDashboard] Using Modular Health fallback data:",
+              fallbackModularData.length
+            );
+            modularHealthData = fallbackModularData;
+          }
         }
 
-        // Combine and transform data
+        // Combine and transform data - Updated to use consistent variable handling
         const combinedData: HealthData[] = [
-          ...(ouraData || []).map((item) => ({
+          ...(ouraData || []).map((item: any) => ({
             id: item.id,
             source: "oura" as const,
-            variable: item.variable_id,
+            variable: item.variables?.slug || item.variable_id,
             date: item.date,
-            value: item.value || 0, // Ensure value is never null
+            value: item.value || 0,
             user_id: item.user_id,
             created_at: item.created_at,
           })),
-          ...(withingsData || []).map((item) => ({
+          ...(withingsData || []).map((item: any) => ({
             id: item.id,
             source: "withings" as const,
-            variable: item.variable,
+            variable: item.variables?.slug || item.variable_id, // Use slug from joined variables table
             date: item.date,
-            value: item.value || 0, // Ensure value is never null
+            value: item.value || 0,
             user_id: item.user_id,
             created_at: item.created_at,
           })),
-          ...(manualData || []).map((item) => ({
-            id: item.id,
-            source: "manual" as const,
-            variable: item.variable || "unknown",
-            date: item.date,
-            value: item.value || 0, // Ensure value is never null
-            user_id: item.user_id,
-            created_at: item.created_at,
-            unit: item.unit,
-          })),
+          ...(modularHealthData || []).map((item: any) => {
+            // Determine the source type based on the source field
+            let source: "manual" | "routine" | "auto" = "manual";
+            if (item.source && Array.isArray(item.source)) {
+              const sourceValue = item.source[0];
+              if (sourceValue === "routine" || sourceValue === "auto") {
+                source = sourceValue as "routine" | "auto";
+              }
+            } else if (item.source === "routine" || item.source === "auto") {
+              source = item.source as "routine" | "auto";
+            }
+
+            return {
+              id: item.id,
+              source: source,
+              variable: item.variables?.slug || item.variable_id || "unknown",
+              date: item.date,
+              value: item.value || 0,
+              user_id: item.user_id,
+              created_at: item.created_at,
+            };
+          }),
         ];
 
         console.log("[ComprehensiveHealthDashboard] Fetched data:", {
           oura: ouraData?.length || 0,
           withings: withingsData?.length || 0,
-          manual: manualData?.length || 0,
+          modularHealth: modularHealthData?.length || 0,
           total: combinedData.length,
         });
 
         setData(combinedData);
-
-        // Calculate correlations
-        try {
-          const variables = Array.from(
-            new Set(combinedData.map((item) => item.variable))
-          ).sort();
-          const newCorrelations = calculateCorrelations(
-            combinedData,
-            variables
-          );
-          setCorrelations(newCorrelations);
-        } catch (error) {
-          console.error("Error calculating correlations:", error);
-          setCorrelations([]);
-        }
       } catch (error) {
         console.error("Error fetching health data:", error);
       } finally {
@@ -914,33 +1278,24 @@ export default function ComprehensiveHealthDashboard({
       }
     };
 
-    const checkConnections = async () => {
-      try {
-        // Check Oura connection
-        const { data: ouraTokens } = await supabase
-          .from("oura_tokens")
-          .select("access_token")
-          .eq("user_id", userId)
-          .limit(1);
-
-        setOuraConnected(!!ouraTokens && ouraTokens.length > 0);
-
-        // Check Withings connection
-        const { data: withingsTokens } = await supabase
-          .from("withings_tokens")
-          .select("access_token")
-          .eq("user_id", userId)
-          .limit(1);
-
-        setWithingsConnected(!!withingsTokens && withingsTokens.length > 0);
-      } catch (error) {
-        console.error("Error checking connections:", error);
-      }
-    };
-
     fetchData();
     checkConnections();
-  }, [userId, calculateCorrelations]);
+  }, [userId]);
+
+  // Check if user is authenticated - MUST be at the top level, not conditional
+  const [authChecked, setAuthChecked] = React.useState(false);
+  const [isAuthenticated, setIsAuthenticated] = React.useState(false);
+
+  React.useEffect(() => {
+    const checkAuth = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      setIsAuthenticated(!!session?.user);
+      setAuthChecked(true);
+    };
+    checkAuth();
+  }, []);
 
   // Set first available variable as selected if none selected
   useEffect(() => {
@@ -949,10 +1304,33 @@ export default function ComprehensiveHealthDashboard({
     }
   }, [selectedVariable, availableMetrics]);
 
-  if (loading) {
+  if (loading || !authChecked) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
         <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <Box sx={{ p: 4, textAlign: "center" }}>
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          <Typography variant="h6" sx={{ mb: 1 }}>
+            Authentication Required
+          </Typography>
+          <Typography>
+            Please log in to view your health analytics. The 400 errors you're
+            seeing are due to unauthenticated requests.
+          </Typography>
+        </Alert>
+        <Button
+          variant="contained"
+          onClick={() => (window.location.href = "/auth")}
+          sx={{ mt: 2 }}
+        >
+          Go to Login
+        </Button>
       </Box>
     );
   }
@@ -963,7 +1341,418 @@ export default function ComprehensiveHealthDashboard({
         📊 Comprehensive Health Analytics
       </Typography>
 
-      {/* Connection Management */}
+      {/* Overview Content */}
+      <Box>
+        <Typography variant="h6" sx={{ mb: 2 }}>
+          📈 Quick Overview
+        </Typography>
+
+        {/* Search Input */}
+        <Box sx={{ mb: 3 }}>
+          <TextField
+            fullWidth
+            variant="outlined"
+            placeholder="Search variables (e.g., 'sleep', 'weight', 'calories')..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+            }}
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                backgroundColor: "background.paper",
+              },
+            }}
+          />
+          {searchQuery && (
+            <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+              Found {filteredAndSortedMetrics.length} matching variables
+            </Typography>
+          )}
+        </Box>
+
+        <Grid container spacing={2}>
+          {filteredAndSortedMetrics.slice(0, 8).map((variable) => {
+            const variableData = getVariableData(variable);
+            const stats = calculateStats(variableData);
+            const isExpanded = expandedMetrics.has(variable);
+
+            return (
+              <Grid size={{ xs: 12, md: 6 }} key={variable}>
+                <Card variant="outlined">
+                  <CardContent>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <Box sx={{ display: "flex", alignItems: "center" }}>
+                        {getVariableIcon(variable)}
+                        <Box sx={{ ml: 1 }}>
+                          <Typography variant="subtitle1">
+                            {getVariableLabel(variable)}
+                          </Typography>
+                          <Typography variant="body2" color="textSecondary">
+                            Latest: {formatValue(variable, stats.latest)}
+                          </Typography>
+                        </Box>
+                      </Box>
+                      <IconButton
+                        onClick={() => toggleMetricExpansion(variable)}
+                        size="small"
+                      >
+                        {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                      </IconButton>
+                    </Box>
+
+                    <Collapse in={isExpanded}>
+                      <Box sx={{ mt: 2 }}>
+                        <Grid container spacing={2} sx={{ mb: 2 }}>
+                          <Grid size={4}>
+                            <Typography variant="body2" color="textSecondary">
+                              Average
+                            </Typography>
+                            <Typography variant="body1">
+                              {formatValue(variable, stats.average)}
+                            </Typography>
+                          </Grid>
+                          <Grid size={4}>
+                            <Typography variant="body2" color="textSecondary">
+                              Min
+                            </Typography>
+                            <Typography variant="body1">
+                              {formatValue(variable, stats.min)}
+                            </Typography>
+                          </Grid>
+                          <Grid size={4}>
+                            <Typography variant="body2" color="textSecondary">
+                              Max
+                            </Typography>
+                            <Typography variant="body1">
+                              {formatValue(variable, stats.max)}
+                            </Typography>
+                          </Grid>
+                        </Grid>
+
+                        <Box sx={{ height: 200 }}>
+                          <Line
+                            data={{
+                              labels: variableData.map((d, index) => {
+                                const dateInfo = formatDateWithYear(d.date);
+                                const prevData =
+                                  index > 0 ? variableData[index - 1] : null;
+                                const prevDateInfo = prevData
+                                  ? formatDateWithYear(prevData.date)
+                                  : null;
+
+                                // Show year if it's the first occurrence of this year or if it's January
+                                const showYear =
+                                  !prevDateInfo ||
+                                  dateInfo.year !== prevDateInfo.year ||
+                                  dateInfo.month.startsWith("Jan");
+
+                                return showYear
+                                  ? `${dateInfo.month} ${dateInfo.year}`
+                                  : dateInfo.month;
+                              }),
+                              datasets: [
+                                {
+                                  label: getVariableLabel(variable),
+                                  data: variableData.map((d) => d.value || 0), // Handle null values
+                                  borderColor: getVariableColor(variable),
+                                  backgroundColor: `${getVariableColor(
+                                    variable
+                                  )}20`,
+                                  fill: false,
+                                  tension: 0.2,
+                                },
+                              ],
+                            }}
+                            options={chartOptions}
+                          />
+                        </Box>
+                      </Box>
+                    </Collapse>
+                  </CardContent>
+                </Card>
+              </Grid>
+            );
+          })}
+        </Grid>
+
+        {filteredAndSortedMetrics.length === 0 && searchQuery && (
+          <Box sx={{ textAlign: "center", py: 4 }}>
+            <Typography variant="body1" color="textSecondary">
+              No variables found matching "{searchQuery}"
+            </Typography>
+            <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+              Try searching for different terms like "sleep", "weight",
+              "calories", etc.
+            </Typography>
+          </Box>
+        )}
+      </Box>
+
+      {/* Chart Selection - Added between Quick Overview and Data Source Connections */}
+      <Box sx={{ mt: 4, mb: 4 }}>
+        <ChartSelection
+          userId={userId}
+          onChartConfigChange={handleChartConfigChange}
+        />
+      </Box>
+
+      {/* Custom Chart Display */}
+      {chartConfig.selectedVariables.some((v) => v !== "") && (
+        <Box sx={{ mt: 4, mb: 4 }}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                📊 Custom Chart
+              </Typography>
+              <Box sx={{ height: 400 }}>
+                {(() => {
+                  const selectedVars = chartConfig.selectedVariables.filter(
+                    (v): v is string => v !== ""
+                  );
+                  if (selectedVars.length === 0) {
+                    return (
+                      <Box
+                        sx={{
+                          display: "flex",
+                          justifyContent: "center",
+                          alignItems: "center",
+                          height: "100%",
+                        }}
+                      >
+                        <Typography variant="body2" color="textSecondary">
+                          Select variables in the chart selection above to view
+                          your custom chart
+                        </Typography>
+                      </Box>
+                    );
+                  }
+
+                  // Get data for selected variables
+                  const days = parseInt(chartConfig.timeRange);
+                  const startDate = new Date();
+                  startDate.setTime(
+                    startDate.getTime() - days * 24 * 60 * 60 * 1000
+                  ); // Use milliseconds for safe date calculation
+
+                  const filteredData = data.filter(
+                    (item) =>
+                      selectedVars.includes(item.variable) &&
+                      new Date(item.date) >= startDate
+                  );
+
+                  if (filteredData.length === 0) {
+                    return (
+                      <Box
+                        sx={{
+                          display: "flex",
+                          justifyContent: "center",
+                          alignItems: "center",
+                          height: "100%",
+                        }}
+                      >
+                        <Typography variant="body2" color="textSecondary">
+                          No data found for the selected variables and time
+                          range
+                        </Typography>
+                      </Box>
+                    );
+                  }
+
+                  // Get all unique dates
+                  const allDates = [
+                    ...new Set(filteredData.map((item) => item.date)),
+                  ].sort(
+                    (a, b) =>
+                      new Date(a || "").getTime() - new Date(b || "").getTime()
+                  );
+
+                  // Create labels with year separators
+                  const labelsWithYears = allDates.map((date, index) => {
+                    const dateInfo = formatDateWithYear(date);
+                    const prevDate =
+                      index > 0
+                        ? formatDateWithYear(allDates[index - 1])
+                        : null;
+
+                    // Show year if it's the first occurrence of this year or if it's January
+                    const showYear =
+                      !prevDate ||
+                      dateInfo.year !== prevDate.year ||
+                      dateInfo.month.startsWith("Jan");
+
+                    return showYear
+                      ? `${dateInfo.month} ${dateInfo.year}`
+                      : dateInfo.month;
+                  });
+
+                  const chartData = {
+                    labels: labelsWithYears,
+                    datasets: selectedVars.map((variableId, index) => {
+                      const variableData = filteredData.filter(
+                        (item) => item.variable === variableId
+                      );
+                      const color = getVariableColor(variableId);
+
+                      // Create data array aligned with all dates
+                      const data = allDates.map((date) => {
+                        const item = variableData.find((d) => d.date === date);
+                        return item
+                          ? typeof item.value === "number"
+                            ? item.value
+                            : parseFloat(item.value) || 0
+                          : 0; // Use 0 instead of null for missing data points
+                      });
+
+                      return {
+                        label: getVariableLabel(variableId || "unknown"),
+                        data,
+                        borderColor: color,
+                        backgroundColor: color + "20",
+                        fill: false,
+                        tension: 0.2,
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        yAxisID: index === 0 ? "y" : "y1",
+                      };
+                    }),
+                  };
+
+                  const chartOptions = {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                      legend: {
+                        display: true,
+                        position: "top" as const,
+                      },
+                      tooltip: {
+                        mode: "index" as const,
+                        intersect: false,
+                      },
+                    },
+                    scales: {
+                      x: {
+                        display: true,
+                        title: {
+                          display: true,
+                          text: "Date",
+                        },
+                        ticks: {
+                          callback: function (
+                            value: any,
+                            index: number
+                          ): string | number {
+                            // Get the label from the chart data labels array
+                            const labels: any[] =
+                              (this as any).chart?.data?.labels || [];
+                            const label: any = labels[index] || value;
+                            // Make year labels bold and slightly larger
+                            if (
+                              typeof label === "string" &&
+                              label.includes("202")
+                            ) {
+                              return label;
+                            }
+                            return label;
+                          },
+                          font: {
+                            weight: function (context: any): "normal" | "bold" {
+                              const label =
+                                context.chart.data.labels[context.dataIndex];
+                              return label &&
+                                typeof label === "string" &&
+                                label.includes("202")
+                                ? "bold"
+                                : "normal";
+                            },
+                          },
+                        },
+                        grid: {
+                          color: function (context: any) {
+                            const label =
+                              context.chart.data.labels[context.dataIndex];
+                            // Make year boundary lines more prominent
+                            if (
+                              label &&
+                              typeof label === "string" &&
+                              label.includes("202")
+                            ) {
+                              return "rgba(255, 255, 255, 0.3)";
+                            }
+                            return "rgba(255, 255, 255, 0.1)";
+                          },
+                          lineWidth: function (context: any) {
+                            const label =
+                              context.chart.data.labels[context.dataIndex];
+                            return label &&
+                              typeof label === "string" &&
+                              label.includes("202")
+                              ? 2
+                              : 1;
+                          },
+                        },
+                      },
+                      y: {
+                        type: "linear" as const,
+                        display: true,
+                        position: "left" as const,
+                        title: {
+                          display: true,
+                          text:
+                            selectedVars[0] && selectedVars[0] !== ""
+                              ? getVariableLabel(selectedVars[0])
+                              : "Value",
+                        },
+                      },
+                      y1: {
+                        type: "linear" as const,
+                        display: selectedVars.length > 1,
+                        position: "right" as const,
+                        title: {
+                          display: true,
+                          text:
+                            selectedVars[1] && selectedVars[1] !== ""
+                              ? getVariableLabel(selectedVars[1])
+                              : "Value",
+                        },
+                        grid: {
+                          drawOnChartArea: false,
+                        },
+                      },
+                    },
+                  };
+
+                  switch (chartConfig.chartType) {
+                    case "line":
+                      return <Line data={chartData} options={chartOptions} />;
+                    case "bar":
+                      return <Bar data={chartData} options={chartOptions} />;
+                    case "scatter":
+                      return (
+                        <Scatter data={chartData} options={chartOptions} />
+                      );
+                    default:
+                      return <Line data={chartData} options={chartOptions} />;
+                  }
+                })()}
+              </Box>
+            </CardContent>
+          </Card>
+        </Box>
+      )}
+
+      {/* Connection Management - moved below Overview tab */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
           <Typography variant="h6" sx={{ mb: 2 }}>
@@ -1075,458 +1864,8 @@ export default function ComprehensiveHealthDashboard({
         </CardContent>
       </Card>
 
-      {/* Summary Cards */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: "flex", alignItems: "center" }}>
-                <BedIcon sx={{ mr: 1, color: "primary.main" }} />
-                <Box>
-                  <Typography variant="h6">
-                    {data.filter((d) => d.source === "oura").length}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Oura Records
-                  </Typography>
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: "flex", alignItems: "center" }}>
-                <ScaleIcon sx={{ mr: 1, color: "secondary.main" }} />
-                <Box>
-                  <Typography variant="h6">
-                    {data.filter((d) => d.source === "withings").length}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Withings Records
-                  </Typography>
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: "flex", alignItems: "center" }}>
-                <TimelineIcon sx={{ mr: 1, color: "success.main" }} />
-                <Box>
-                  <Typography variant="h6">
-                    {data.filter((d) => d.source === "manual").length}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Manual Records
-                  </Typography>
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: "flex", alignItems: "center" }}>
-                <BarChartIcon sx={{ mr: 1, color: "warning.main" }} />
-                <Box>
-                  <Typography variant="h6">
-                    {availableMetrics.length}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Metrics Tracked
-                  </Typography>
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {/* Tabs */}
-      <Paper sx={{ mb: 3 }}>
-        <Tabs
-          value={activeTab}
-          onChange={(_, newValue) => setActiveTab(newValue)}
-        >
-          <Tab label="Overview" />
-          <Tab label="Detailed Charts" />
-          <Tab label="Correlations" />
-          <Tab label="All Data" />
-        </Tabs>
-      </Paper>
-
-      {/* Overview Tab */}
-      {activeTab === 0 && (
-        <Box>
-          <Typography variant="h6" sx={{ mb: 2 }}>
-            📈 Quick Overview
-          </Typography>
-          <Grid container spacing={2}>
-            {availableMetrics.slice(0, 8).map((variable) => {
-              const variableData = getVariableData(variable);
-              const stats = calculateStats(variableData);
-              const isExpanded = expandedMetrics.has(variable);
-
-              return (
-                <Grid size={{ xs: 12, md: 6 }} key={variable}>
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Box
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                        }}
-                      >
-                        <Box sx={{ display: "flex", alignItems: "center" }}>
-                          {getVariableIcon(variable)}
-                          <Box sx={{ ml: 1 }}>
-                            <Typography variant="subtitle1">
-                              {getVariableLabel(variable)}
-                            </Typography>
-                            <Typography variant="body2" color="textSecondary">
-                              Latest: {formatValue(variable, stats.latest)}
-                            </Typography>
-                          </Box>
-                        </Box>
-                        <IconButton
-                          onClick={() => toggleMetricExpansion(variable)}
-                          size="small"
-                        >
-                          {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                        </IconButton>
-                      </Box>
-
-                      <Collapse in={isExpanded}>
-                        <Box sx={{ mt: 2 }}>
-                          <Grid container spacing={2} sx={{ mb: 2 }}>
-                            <Grid size={4}>
-                              <Typography variant="body2" color="textSecondary">
-                                Average
-                              </Typography>
-                              <Typography variant="body1">
-                                {formatValue(variable, stats.average)}
-                              </Typography>
-                            </Grid>
-                            <Grid size={4}>
-                              <Typography variant="body2" color="textSecondary">
-                                Min
-                              </Typography>
-                              <Typography variant="body1">
-                                {formatValue(variable, stats.min)}
-                              </Typography>
-                            </Grid>
-                            <Grid size={4}>
-                              <Typography variant="body2" color="textSecondary">
-                                Max
-                              </Typography>
-                              <Typography variant="body1">
-                                {formatValue(variable, stats.max)}
-                              </Typography>
-                            </Grid>
-                          </Grid>
-
-                          <Box sx={{ height: 200 }}>
-                            <Line
-                              data={{
-                                labels: variableData.map((d) =>
-                                  formatDate(d.date)
-                                ),
-                                datasets: [
-                                  {
-                                    label: getVariableLabel(variable),
-                                    data: variableData.map((d) => d.value || 0), // Handle null values
-                                    borderColor: getVariableColor(variable),
-                                    backgroundColor: `${getVariableColor(
-                                      variable
-                                    )}20`,
-                                    fill: false,
-                                    tension: 0.2,
-                                  },
-                                ],
-                              }}
-                              options={chartOptions}
-                            />
-                          </Box>
-                        </Box>
-                      </Collapse>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              );
-            })}
-          </Grid>
-        </Box>
-      )}
-
-      {/* Detailed Charts Tab */}
-      {activeTab === 1 && (
-        <Box>
-          <Typography variant="h6" sx={{ mb: 2 }}>
-            📊 Detailed Analysis
-          </Typography>
-
-          {/* Filter Controls */}
-          <Box sx={{ display: "flex", gap: 2, mb: 3, flexWrap: "wrap" }}>
-            <FormControl size="small" sx={{ minWidth: 120 }}>
-              <InputLabel>Source</InputLabel>
-              <Select
-                value={selectedSource}
-                label="Source"
-                onChange={handleSourceChange}
-              >
-                <MenuItem value="all">All Sources</MenuItem>
-                <MenuItem value="oura">Oura Only</MenuItem>
-                <MenuItem value="withings">Withings Only</MenuItem>
-                <MenuItem value="manual">Manual Only</MenuItem>
-              </Select>
-            </FormControl>
-            <FormControl size="small" sx={{ minWidth: 200 }}>
-              <InputLabel>Metric</InputLabel>
-              <Select
-                value={selectedVariable}
-                label="Metric"
-                onChange={handleVariableChange}
-              >
-                {availableMetrics.map((variable) => (
-                  <MenuItem key={variable} value={variable}>
-                    {getVariableLabel(variable)}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
-
-          {selectedVariable && variableStats && (
-            <Box>
-              {/* Stats Cards */}
-              <Grid container spacing={2} sx={{ mb: 3 }}>
-                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                  <Card>
-                    <CardContent>
-                      <Box
-                        sx={{ display: "flex", alignItems: "center", mb: 1 }}
-                      >
-                        <BarChartIcon sx={{ mr: 1, color: "primary.main" }} />
-                        <Typography variant="h6">
-                          {formatValue(selectedVariable, variableStats.average)}
-                        </Typography>
-                      </Box>
-                      <Typography variant="body2" color="text.secondary">
-                        Average
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                  <Card>
-                    <CardContent>
-                      <Box
-                        sx={{ display: "flex", alignItems: "center", mb: 1 }}
-                      >
-                        <TimelineIcon sx={{ mr: 1, color: "secondary.main" }} />
-                        <Typography variant="h6">
-                          {formatValue(selectedVariable, variableStats.latest)}
-                        </Typography>
-                      </Box>
-                      <Typography variant="body2" color="text.secondary">
-                        Latest
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                  <Tooltip
-                    title={`${
-                      variableStats.changePercentage > 0 ? "+" : ""
-                    }${variableStats.changePercentage.toFixed(1)}% change`}
-                    placement="top"
-                    arrow
-                  >
-                    <Card sx={{ cursor: "help" }}>
-                      <CardContent>
-                        <Box
-                          sx={{ display: "flex", alignItems: "center", mb: 1 }}
-                        >
-                          {variableStats.trend === "up" && (
-                            <TrendingUpIcon
-                              sx={{ mr: 1, color: "success.main" }}
-                            />
-                          )}
-                          {variableStats.trend === "down" && (
-                            <TrendingDownIcon
-                              sx={{ mr: 1, color: "error.main" }}
-                            />
-                          )}
-                          {variableStats.trend === "stable" && (
-                            <TrendingFlatIcon
-                              sx={{ mr: 1, color: "info.main" }}
-                            />
-                          )}
-                          <Typography variant="h6">
-                            {variableStats.changePercentage > 0 ? "+" : ""}
-                            {variableStats.changePercentage.toFixed(1)}%
-                          </Typography>
-                        </Box>
-                        <Typography variant="body2" color="text.secondary">
-                          Trend
-                        </Typography>
-                      </CardContent>
-                    </Card>
-                  </Tooltip>
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                  <Card>
-                    <CardContent>
-                      <Box
-                        sx={{ display: "flex", alignItems: "center", mb: 1 }}
-                      >
-                        <LocalFireDepartmentIcon
-                          sx={{ mr: 1, color: "warning.main" }}
-                        />
-                        <Typography variant="h6">
-                          {variableStats.streak}
-                        </Typography>
-                      </Box>
-                      <Typography variant="body2" color="text.secondary">
-                        Day Streak
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              </Grid>
-
-              {/* Chart */}
-              {chartData && (
-                <Card>
-                  <CardContent>
-                    <Typography variant="h6" component="h4" sx={{ mb: 1 }}>
-                      {getVariableLabel(selectedVariable)}
-                    </Typography>
-                    <Box
-                      sx={{ display: "flex", gap: 1, mb: 2, flexWrap: "wrap" }}
-                    >
-                      <Chip
-                        label={`${variableStats.totalLogs} data points`}
-                        size="small"
-                        color="primary"
-                      />
-                      <Chip
-                        label={`Latest: ${formatValue(
-                          selectedVariable,
-                          variableStats.latest
-                        )}`}
-                        size="small"
-                        color="secondary"
-                      />
-                      <Chip
-                        label={`Range: ${formatValue(
-                          selectedVariable,
-                          variableStats.min
-                        )} - ${formatValue(
-                          selectedVariable,
-                          variableStats.max
-                        )}`}
-                        size="small"
-                        variant="outlined"
-                      />
-                    </Box>
-                    <Box sx={{ height: 400 }}>
-                      <Line data={chartData} options={chartOptions} />
-                    </Box>
-                  </CardContent>
-                </Card>
-              )}
-            </Box>
-          )}
-        </Box>
-      )}
-
-      {/* Correlations Tab */}
-      {activeTab === 2 && (
-        <Box>
-          <Typography variant="h6" sx={{ mb: 2 }}>
-            🔗 Variable Correlations
-          </Typography>
-
-          {correlations.length === 0 ? (
-            <Alert severity="info">
-              Not enough data to calculate correlations. Need at least 5 data
-              points for each variable pair.
-            </Alert>
-          ) : (
-            <Box>
-              <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                Showing correlations between variables with at least 5 common
-                data points. Correlation ranges from -1 (perfect negative) to +1
-                (perfect positive).
-              </Typography>
-
-              <TableContainer component={Paper} variant="outlined">
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Variable 1</TableCell>
-                      <TableCell>Variable 2</TableCell>
-                      <TableCell align="right">Correlation</TableCell>
-                      <TableCell align="right">Strength</TableCell>
-                      <TableCell align="right">Data Points</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {correlations.slice(0, 20).map((corr, index) => {
-                      const strength = Math.abs(corr.correlation);
-                      let strengthLabel = "Weak";
-                      let strengthColor = "default";
-
-                      if (strength >= 0.7) {
-                        strengthLabel = "Strong";
-                        strengthColor = "success";
-                      } else if (strength >= 0.4) {
-                        strengthLabel = "Moderate";
-                        strengthColor = "warning";
-                      } else if (strength >= 0.2) {
-                        strengthLabel = "Weak";
-                        strengthColor = "info";
-                      }
-
-                      return (
-                        <TableRow key={index}>
-                          <TableCell>
-                            {getVariableLabel(corr.variable1)}
-                          </TableCell>
-                          <TableCell>
-                            {getVariableLabel(corr.variable2)}
-                          </TableCell>
-                          <TableCell align="right">
-                            {corr.correlation.toFixed(3)}
-                          </TableCell>
-                          <TableCell align="right">
-                            <Chip
-                              label={strengthLabel}
-                              size="small"
-                              color={strengthColor as any}
-                            />
-                          </TableCell>
-                          <TableCell align="right">{corr.dataPoints}</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </Box>
-          )}
-        </Box>
-      )}
-
-      {/* All Data Tab */}
-      {activeTab === 3 && (
+      {/* HIDDEN: All Data Tab - uncomment to show manual logs table */}
+      {/* {activeTab === 3 && (
         <Box>
           <Typography variant="h6" sx={{ mb: 2 }}>
             📋 All Health Data ({data.length} records)
@@ -1579,7 +1918,7 @@ export default function ComprehensiveHealthDashboard({
             </Table>
           </TableContainer>
         </Box>
-      )}
+      )} */}
     </Box>
   );
 }

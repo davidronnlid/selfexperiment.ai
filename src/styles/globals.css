@@ -69,11 +69,19 @@ body {
   padding: 0;
   /* Prevent horizontal scroll on mobile */
   overflow-x: hidden;
+  /* Allow vertical scrolling */
+  overflow-y: auto;
   /* Improve touch scrolling on iOS */
   -webkit-overflow-scrolling: touch;
   /* Performance optimizations */
   text-rendering: optimizeLegibility;
   font-feature-settings: "kern" 1, "liga" 1;
+}
+
+/* Ensure pages can scroll */
+#__next {
+  min-height: 100vh;
+  overflow-y: auto;
 }
 
 /* Mobile-first responsive typography */

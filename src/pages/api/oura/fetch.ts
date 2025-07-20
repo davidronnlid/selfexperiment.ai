@@ -257,13 +257,13 @@ export default async function handler(
       );
     }
 
-    console.log(`📝 Inserting ${inserts.length} items to oura_variable_logs...`);
+    console.log(`📝 Inserting ${inserts.length} items to oura_variable_data_points...`);
     
     // Debug: Log some sample inserts
     console.log("Sample inserts:", inserts.slice(0, 5));
     
     const { error: insertErr } = await supabase
-      .from("oura_variable_logs")
+      .from("oura_variable_data_points")
       .upsert(inserts, { onConflict: "user_id,variable_id,date" });
 
     if (insertErr) {

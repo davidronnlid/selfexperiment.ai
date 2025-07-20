@@ -16,7 +16,7 @@ I've successfully updated the header component to display the user's profile pic
 
 ### 2. **Key Features**
 
-- **Automatic Updates**: When a user uploads a new profile picture on the `/profile` page, it will automatically appear in the header after a page refresh
+- **Automatic Updates**: When a user uploads a new profile picture on the `/account` page, it will automatically appear in the header after a page refresh
 - **Multiple Sources**: The header now supports both custom uploads and OAuth profile pictures
 - **Performance**: The avatar is fetched once when the component mounts and cached in state
 - **Error Handling**: Includes try-catch blocks to handle any errors during avatar fetching
@@ -31,8 +31,9 @@ I've successfully updated the header component to display the user's profile pic
 ### 4. **Testing**
 
 To test the implementation:
+
 1. Log in to the application
-2. Go to `/profile` page
+2. Go to `/account` page
 3. Upload a profile picture using the "Change Picture" button
 4. Navigate to any other page (or refresh)
 5. The profile picture should now be visible in the header

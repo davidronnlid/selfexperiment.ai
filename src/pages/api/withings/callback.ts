@@ -33,13 +33,16 @@ async function fetchAndStoreAllWithingsData(
   user_id: string,
   access_token: string
 ): Promise<number> {
-  // Fetch in 30-day batches from 1990-01-01 to today
-  const startDate = new Date("1990-01-01");
+  // Fetch in 30-day batches from last 6 months to avoid rate limits
   const endDate = new Date();
+  const startDate = new Date();
+  startDate.setMonth(startDate.getMonth() - 6);
   let batchStart = new Date(startDate);
   let batchEnd = new Date(startDate);
   batchEnd.setDate(batchEnd.getDate() + 29);
   const allRows: { [key: string]: any }[] = [];
+  
+  console.log(`[Withings Callback] Starting data fetch from ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
   while (batchStart < endDate) {
     const startUnix = Math.floor(batchStart.getTime() / 1000);
@@ -53,6 +56,19 @@ async function fetchAndStoreAllWithingsData(
     )}&category=1&startdate=${startUnix}&enddate=${endUnix}&access_token=${access_token}`;
     const resp = await fetch(url);
     const data = await resp.json();
+    console.log(`[Withings Callback] API response for batch ${batchStart.toISOString()}-${batchEnd.toISOString()}:`, {
+      status: data.status,
+      measuregrps: data.body?.measuregrps?.length || 0,
+      error: data.error
+    });
+    
+    // Handle rate limiting
+    if (data.status === 601) {
+      console.log(`[Withings Callback] Rate limited, waiting 2 seconds before continuing...`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      continue; // Retry this batch
+    }
+    
     if (data.body && data.body.measuregrps) {
       for (const grp of data.body.measuregrps) {
         const date = new Date(grp.date * 1000).toISOString();
@@ -75,6 +91,10 @@ async function fetchAndStoreAllWithingsData(
         }
       }
     }
+    
+    // Add delay between requests to avoid rate limiting
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
     // Move to next batch
     batchStart.setDate(batchStart.getDate() + 30);
     batchEnd.setDate(batchEnd.getDate() + 30);
@@ -91,6 +111,8 @@ async function fetchAndStoreAllWithingsData(
     }, {} as Record<string, any>)
   );
 
+  console.log(`[Withings Callback] Total rows collected: ${allRows.length}, Deduplicated: ${deduplicatedRows.length}`);
+  
   // Upsert all rows in batches of 100
   for (let i = 0; i < deduplicatedRows.length; i += 100) {
     await supabaseClient
@@ -204,5 +226,5 @@ export default async function handler(
     console.error("[Withings Callback] Error fetching Withings data:", err);
   }
 
-  res.redirect("/analytics?withings=success");
+  res.redirect("/withings-test?withings=success");
 }
