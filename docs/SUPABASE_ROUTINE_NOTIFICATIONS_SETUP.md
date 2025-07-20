@@ -26,9 +26,9 @@ node scripts/deploy-routine-notifications-scheduler.js
 Go to your [Supabase Dashboard](https://supabase.com/dashboard) → Functions → Settings:
 
 ```env
-VAPID_PUBLIC_KEY=BPgRWQdtvSId2Qj6A0MTvDZ4dxtRWnoyid8q403eNoGPYTWJ1Num5YWSS-Zz4cxAbTp2xWUR9ty_RsZp1CREuK4
-VAPID_PRIVATE_KEY=wko1q777MhSqDerav7M23NGEHBomd5GR1KDVgBTUuVo
-VAPID_SUBJECT=mailto:support@selfdevapp.com
+VAPID_PUBLIC_KEY=your_vapid_public_key_here
+VAPID_PRIVATE_KEY=your_vapid_private_key_here
+VAPID_SUBJECT=mailto:your-email@domain.com
 ```
 
 Or use the CLI:
@@ -100,7 +100,7 @@ supabase functions list
 
 ```bash
 supabase secrets set VAPID_PUBLIC_KEY="BPgRWQdtvSId2Qj6A0MTvDZ4dxtRWnoyid8q403eNoGPYTWJ1Num5YWSS-Zz4cxAbTp2xWUR9ty_RsZp1CREuK4"
-supabase secrets set VAPID_PRIVATE_KEY="wko1q777MhSqDerav7M23NGEHBomd5GR1KDVgBTUuVo"
+supabase secrets set VAPID_PRIVATE_KEY="your_vapid_private_key_here"
 supabase secrets set VAPID_SUBJECT="mailto:support@selfdevapp.com"
 ```
 
