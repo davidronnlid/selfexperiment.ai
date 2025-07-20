@@ -152,84 +152,48 @@ export default function VariableDataPointsPage() {
   }, [variableName]);
 
   const fetchDataPoints = useCallback(async () => {
-    if (!user || !variableName || !variableInfo) {
-      console.log("[DEBUG] fetchDataPoints: Missing required data", {
-        user: !!user,
-        variableName,
-        variableInfo: !!variableInfo,
-      });
-      return;
-    }
-    try {
-      console.log("[DEBUG] fetchDataPoints: Starting query", {
-        userId: user.id,
-        variableId: variableInfo.id,
-        variableName: variableInfo.label,
-        sourceType: variableInfo.source_type,
-      });
+    if (!user || !variableName || !variableInfo) return;
 
+    try {
       let mappedDataPoints: DataPointEntry[] = [];
 
       // Check if this is an Oura variable
       if (variableInfo.source_type === "oura") {
-        console.log(
-          "[DEBUG] Fetching Oura variable logs for:",
-          variableInfo.slug
-        );
-
         const { data: ouraLogs, error: ouraError } = await supabase
           .from("oura_variable_data_points")
-          .select("id, date, variable_id, value, raw, created_at")
+          .select("id, date, variable_id, value, created_at")
           .eq("user_id", user.id)
-          .eq("variable_id", variableInfo.id) // Use the actual UUID from variables table
+          .eq("variable_id", variableInfo.id)
           .order("date", { ascending: false })
-          .limit(100); // Increased limit for better user experience
+          .limit(20); // Reduced limit for better performance
 
-        console.log("[DEBUG] Oura logs query result:", {
-          data: ouraLogs,
-          error: ouraError,
-          count: ouraLogs?.length || 0,
-        });
-
-        if (ouraError) {
-          console.error("[DEBUG] Error fetching Oura logs:", ouraError);
-          return; // Early return on error
-        } else {
-          mappedDataPoints = (ouraLogs || []).map((log: any) => ({
+        if (!ouraError && ouraLogs) {
+          mappedDataPoints = ouraLogs.map((log: any) => ({
             id: log.id,
             date: log.date,
-            variable: variableInfo?.label || "Unknown Variable",
+            variable: variableInfo.label,
             value: log.value?.toString() || "0",
-            notes: "Oura Ring data", // Clean, simple note for Oura data
+            notes: "Oura Ring data",
             created_at: log.created_at,
             user_id: user.id,
             variable_id: log.variable_id,
           }));
         }
       } else {
-        // Regular variable - fetch from data_points table using variable_id (UUID)
+        // Regular variable - fetch from data_points table
         const { data: uuidLogs, error: uuidError } = await supabase
           .from("data_points")
           .select("id, created_at, date, variable_id, value, notes, user_id")
           .eq("user_id", user.id)
           .eq("variable_id", variableInfo.id)
           .order("created_at", { ascending: false })
-          .limit(100); // Increased limit for better user experience
+          .limit(20); // Reduced limit for better performance
 
-        console.log("[DEBUG] Regular logs query result:", {
-          data: uuidLogs,
-          error: uuidError,
-          count: uuidLogs?.length || 0,
-        });
-
-        if (uuidError) {
-          console.error("[DEBUG] Error fetching regular logs:", uuidError);
-          return; // Early return on error
-        } else {
-          mappedDataPoints = (uuidLogs || []).map((log: any) => ({
+        if (!uuidError && uuidLogs) {
+          mappedDataPoints = uuidLogs.map((log: any) => ({
             id: log.id,
-            date: log.date || log.created_at, // Use date field (local time) if available, fallback to created_at
-            variable: variableInfo?.label || "Unknown Variable",
+            date: log.date || log.created_at,
+            variable: variableInfo.label,
             value: log.value,
             notes: log.notes,
             created_at: log.created_at,
@@ -239,10 +203,9 @@ export default function VariableDataPointsPage() {
         }
       }
 
-      console.log("[DEBUG] Final mapped data points:", mappedDataPoints);
       setDataPoints(mappedDataPoints);
     } catch (error) {
-      console.error("[DEBUG] Error fetching data points:", error);
+      setDataPoints([]);
     }
   }, [user, variableName, variableInfo]);
 
@@ -330,18 +293,6 @@ export default function VariableDataPointsPage() {
     }
   }, [editDataPointId, dataPoints, user?.id, variableName]);
 
-  useEffect(() => {
-    if (user) {
-      console.log("[DEBUG] Current user.id:", user.id);
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (variableInfo) {
-      console.log("[DEBUG] Current variableInfo:", variableInfo);
-    }
-  }, [variableInfo]);
-
   const handleSharingToggle = async (shared: boolean) => {
     if (!user || !variableName) return;
 
@@ -360,12 +311,6 @@ export default function VariableDataPointsPage() {
 
       // Skip the table test - just try the upsert directly
 
-      console.log("[DEBUG] Attempting to upsert sharing setting...", {
-        user_id: user.id,
-        variable_id: variableInfo?.id,
-        is_shared: shared,
-      });
-
       const { data, error } = await supabase
         .from("user_variable_preferences")
         .upsert({
@@ -375,20 +320,7 @@ export default function VariableDataPointsPage() {
         })
         .select();
 
-      console.log("[DEBUG] Upsert result:", { data, error });
-
-      if (error) {
-        console.error("Upsert failed with error:", error);
-        console.error("Error details:", {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-        });
-        throw error;
-      }
-
-      console.log("Upsert successful:", data);
+      if (error) throw error;
 
       // Force refresh the sharing status to ensure UI is in sync
       await fetchSharingStatus();
@@ -430,100 +362,66 @@ export default function VariableDataPointsPage() {
 
     setDistributionLoading(true);
     try {
-      // First, get users who have shared this variable (with limit for performance)
+      // Simplified and faster distribution query for mobile
       const { data: sharedUsers, error: usersError } = await supabase
         .from("user_variable_preferences")
         .select("user_id")
         .eq("variable_id", variableInfo.id)
         .eq("is_shared", true)
-        .limit(100); // Limit to prevent excessive data loading
+        .limit(20); // Reduced limit for mobile performance
 
-      if (usersError) {
-        console.warn(
-          "Could not fetch shared users for distribution:",
-          usersError
-        );
-        setDistributionData([]);
-        return;
-      }
-
-      // If no shared users, return empty data
-      if (!sharedUsers || sharedUsers.length === 0) {
+      if (usersError || !sharedUsers || sharedUsers.length === 0) {
         setDistributionData([]);
         return;
       }
 
       const userIds = sharedUsers.map((row) => row.user_id);
 
-      // Then, get data points for those users (with limit)
+      // Get recent data points only
       const { data, error } = await supabase
         .from("data_points")
-        .select("value, user_id")
+        .select("value")
         .eq("variable_id", variableInfo.id)
         .in("user_id", userIds)
-        .limit(500); // Limit total data points for performance
+        .limit(50) // Much smaller limit for mobile performance
+        .order("created_at", { ascending: false });
 
-      if (error) {
-        throw error;
+      if (error || !data || data.length === 0) {
+        setDistributionData([]);
+        return;
       }
 
-      if (data && data.length > 0) {
-        // Group data points by user and calculate average value for each user
-        const userAverages = new Map<string, number>();
-        const userDataPointCounts = new Map<string, number>();
+      // Simplified histogram calculation
+      const values = data
+        .map((d) => parseFloat(d.value))
+        .filter((v) => !isNaN(v));
 
-        data.forEach((dataPoint) => {
-          const value = parseFloat(dataPoint.value);
-          if (!isNaN(value)) {
-            const userId = dataPoint.user_id;
-            const currentSum = userAverages.get(userId) || 0;
-            const currentCount = userDataPointCounts.get(userId) || 0;
+      if (values.length > 0) {
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        const bins = 3; // Fixed small number of bins for simplicity
+        const binWidth = (max - min) / bins;
 
-            userAverages.set(userId, currentSum + value);
-            userDataPointCounts.set(userId, currentCount + 1);
-          }
+        const histogram = Array.from({ length: bins }, (_, i) => {
+          const binStart = min + i * binWidth;
+          const binEnd = min + (i + 1) * binWidth;
+          const count = values.filter((val) =>
+            i === bins - 1 ? val <= binEnd : val >= binStart && val < binEnd
+          ).length;
+
+          return {
+            range: `${binStart.toFixed(1)}-${binEnd.toFixed(1)}`,
+            count,
+            binStart,
+            binEnd,
+          };
         });
 
-        // Calculate average for each user
-        const userAverageValues: number[] = [];
-        userAverages.forEach((sum, userId) => {
-          const count = userDataPointCounts.get(userId) || 1;
-          userAverageValues.push(sum / count);
-        });
-
-        if (userAverageValues.length > 0) {
-          const min = Math.min(...userAverageValues);
-          const max = Math.max(...userAverageValues);
-          const bins = Math.min(
-            10,
-            Math.max(5, Math.ceil(Math.sqrt(userAverageValues.length)))
-          );
-          const binWidth = (max - min) / bins;
-
-          const histogram = Array.from({ length: bins }, (_, i) => {
-            const binStart = min + i * binWidth;
-            const binEnd = min + (i + 1) * binWidth;
-            const count = userAverageValues.filter((val) =>
-              i === bins - 1 ? val <= binEnd : val >= binStart && val < binEnd
-            ).length;
-
-            return {
-              range: `${binStart.toFixed(1)}-${binEnd.toFixed(1)}`,
-              count,
-              binStart,
-              binEnd,
-            };
-          });
-
-          setDistributionData(histogram);
-        } else {
-          setDistributionData([]);
-        }
+        setDistributionData(histogram);
       } else {
         setDistributionData([]);
       }
     } catch (error) {
-      console.error("Error fetching distribution data:", error);
       setDistributionData([]);
     } finally {
       setDistributionLoading(false);
@@ -644,49 +542,26 @@ export default function VariableDataPointsPage() {
     }
   };
 
-  // Calculate summary statistics for data points
+  // Simplified statistics calculation for better mobile performance
   const calculateStatistics = () => {
     if (dataPoints.length === 0) return null;
 
     const values = dataPoints
       .map((dataPoint) => parseFloat(dataPoint.value))
-      .filter((val) => !isNaN(val))
-      .sort((a, b) => a - b);
+      .filter((val) => !isNaN(val));
 
     if (values.length === 0) return null;
 
     const sum = values.reduce((acc, val) => acc + val, 0);
     const mean = sum / values.length;
-    const min = values[0];
-    const max = values[values.length - 1];
-
-    // Calculate median
-    const median =
-      values.length % 2 === 0
-        ? (values[values.length / 2 - 1] + values[values.length / 2]) / 2
-        : values[Math.floor(values.length / 2)];
-
-    // Calculate standard deviation
-    const variance =
-      values.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) /
-      values.length;
-    const standardDeviation = Math.sqrt(variance);
-
-    // Calculate quartiles
-    const q1Index = Math.floor(values.length * 0.25);
-    const q3Index = Math.floor(values.length * 0.75);
-    const q1 = values[q1Index];
-    const q3 = values[q3Index];
+    const min = Math.min(...values);
+    const max = Math.max(...values);
 
     return {
       count: values.length,
       mean: mean.toFixed(1),
-      median: median.toFixed(1),
       min: min.toFixed(1),
       max: max.toFixed(1),
-      standardDeviation: standardDeviation.toFixed(1),
-      q1: q1.toFixed(1),
-      q3: q3.toFixed(1),
       range: (max - min).toFixed(1),
     };
   };
@@ -893,13 +768,6 @@ export default function VariableDataPointsPage() {
                   {isShared ? "Shared with community" : "Private"}
                 </Typography>
                 {sharingUpdateLoading && <CircularProgress size={16} />}
-                <Button
-                  size="small"
-                  onClick={() => fetchSharingStatus()}
-                  sx={{ ml: 1 }}
-                >
-                  🔄 Refresh
-                </Button>
               </Box>
             </Grid>
           </Grid>
@@ -939,7 +807,7 @@ export default function VariableDataPointsPage() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {dataPoints.slice(0, 20).map((dataPoint) => (
+                  {dataPoints.slice(0, 10).map((dataPoint) => (
                     <TableRow
                       key={dataPoint.id}
                       id={`data-point-${dataPoint.id}`}

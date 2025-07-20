@@ -201,12 +201,12 @@ export default function NotificationManager({
           return registration.pushManager.getSubscription();
         })
         .then((subscription) => {
-          info.pushSubscription.exists = !!subscription;
+          info.pushSubscription.exists = !!subscription ? "true" : "false";
           info.pushSubscription.endpoint = subscription?.endpoint || "none";
           setDebugInfo({ ...info });
         })
         .catch(() => {
-          info.pushSubscription.exists = false;
+          info.pushSubscription.exists = "false";
           info.pushSubscription.endpoint = "failed_to_check";
           setDebugInfo({ ...info });
         });
