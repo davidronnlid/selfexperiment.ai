@@ -47,6 +47,9 @@ import {
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
   Edit as EditIcon,
+  TrendingDown as TrendingDownIcon,
+  TrendingFlat as TrendingFlatIcon,
+  LocalFireDepartment as LocalFireDepartmentIcon,
 } from "@mui/icons-material";
 import { format, parseISO } from "date-fns";
 import { supabase } from "@/utils/supaBase";
@@ -560,7 +563,11 @@ export default function UnifiedHealthDashboard({
                 dataPoint.source === "routine" ||
                 dataPoint.source === "auto"
               ) {
-                return "🖊️ Click to edit (Modular Health data)";
+                return [
+                  "",
+                  "🖊️ Click directly on this data point to edit",
+                  "📝 Modular Health data - editable",
+                ];
               }
             }
             return "";
@@ -579,7 +586,38 @@ export default function UnifiedHealthDashboard({
         const dataset = chartData?.datasets[0];
         if (dataset && dataset.data && dataset.data[elementIndex]) {
           const dataPoint = dataset.data[elementIndex];
-          handleEditDataPoint(dataPoint);
+
+          // Check if this is editable data (Modular Health data)
+          if (
+            dataPoint.source === "manual" ||
+            dataPoint.source === "routine" ||
+            dataPoint.source === "auto"
+          ) {
+            // Improved click sensitivity - check if click is close to data point
+            const chart = elements[0].chart;
+            const canvasPosition = chart.canvas.getBoundingClientRect();
+            const clickX = event.x || event.clientX;
+            const clickY = event.y || event.clientY;
+
+            // Get the data point position on canvas
+            const meta = chart.getDatasetMeta(0);
+            const pointElement = meta.data[elementIndex];
+
+            if (pointElement) {
+              const pointX = pointElement.x + canvasPosition.left;
+              const pointY = pointElement.y + canvasPosition.top;
+
+              // Calculate distance from click to data point
+              const distance = Math.sqrt(
+                Math.pow(clickX - pointX, 2) + Math.pow(clickY - pointY, 2)
+              );
+
+              // Only proceed if click is within reasonable distance (25px) of the data point
+              if (distance <= 25) {
+                handleEditDataPoint(dataPoint);
+              }
+            }
+          }
         }
       }
     },
@@ -870,7 +908,43 @@ export default function UnifiedHealthDashboard({
                                     const elementIndex = elements[0].index;
                                     const dataPoint =
                                       variableData[elementIndex];
-                                    handleEditDataPoint(dataPoint);
+
+                                    // Check if this is editable data (Modular Health data)
+                                    if (
+                                      dataPoint.source === "manual" ||
+                                      dataPoint.source === "routine" ||
+                                      dataPoint.source === "auto"
+                                    ) {
+                                      // Improved click sensitivity - check if click is close to data point
+                                      const chart = elements[0].chart;
+                                      const canvasPosition =
+                                        chart.canvas.getBoundingClientRect();
+                                      const clickX = event.x || event.clientX;
+                                      const clickY = event.y || event.clientY;
+
+                                      // Get the data point position on canvas
+                                      const meta = chart.getDatasetMeta(0);
+                                      const pointElement =
+                                        meta.data[elementIndex];
+
+                                      if (pointElement) {
+                                        const pointX =
+                                          pointElement.x + canvasPosition.left;
+                                        const pointY =
+                                          pointElement.y + canvasPosition.top;
+
+                                        // Calculate distance from click to data point
+                                        const distance = Math.sqrt(
+                                          Math.pow(clickX - pointX, 2) +
+                                            Math.pow(clickY - pointY, 2)
+                                        );
+
+                                        // Only proceed if click is within reasonable distance (25px) of the data point
+                                        if (distance <= 25) {
+                                          handleEditDataPoint(dataPoint);
+                                        }
+                                      }
+                                    }
                                   }
                                 },
                               }}

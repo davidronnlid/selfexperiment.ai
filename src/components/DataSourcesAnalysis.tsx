@@ -7,9 +7,11 @@ import {
   Chip,
   CircularProgress,
   IconButton,
+  Button,
 } from "@mui/material";
 import { supabase } from "@/utils/supaBase";
 import SyncIcon from "@mui/icons-material/Sync";
+import LinkIcon from "@mui/icons-material/Link";
 
 interface DataSourcesAnalysisProps {
   userId: string;
@@ -28,9 +30,46 @@ export default function DataSourcesAnalysis({
     loading: true,
   });
 
+  // Connection status state
+  const [connectionStatus, setConnectionStatus] = useState({
+    ouraConnected: false,
+    withingsConnected: false,
+    loading: true,
+  });
+
   // Sync states
   const [syncingOura, setSyncingOura] = useState(false);
   const [syncingWithings, setSyncingWithings] = useState(false);
+
+  // Helper function to check connection status
+  const checkConnectionStatus = async () => {
+    if (!userId) return;
+
+    try {
+      // Check Oura connection
+      const { data: ouraTokens } = await supabase
+        .from("oura_tokens")
+        .select("id")
+        .eq("user_id", userId)
+        .limit(1);
+
+      // Check Withings connection
+      const { data: withingsTokens } = await supabase
+        .from("withings_tokens")
+        .select("id")
+        .eq("user_id", userId)
+        .limit(1);
+
+      setConnectionStatus({
+        ouraConnected: !!ouraTokens && ouraTokens.length > 0,
+        withingsConnected: !!withingsTokens && withingsTokens.length > 0,
+        loading: false,
+      });
+    } catch (error) {
+      console.error("Error checking connection status:", error);
+      setConnectionStatus((prev) => ({ ...prev, loading: false }));
+    }
+  };
 
   // Helper function to fetch data counts
   const fetchDataCounts = async () => {
@@ -80,6 +119,17 @@ export default function DataSourcesAnalysis({
       console.error("Error fetching data counts:", error);
       setDataCounts((prev) => ({ ...prev, loading: false }));
     }
+  };
+
+  // Connect functions
+  const connectOura = () => {
+    const ouraAuthUrl = "/api/oura/auth";
+    window.location.href = ouraAuthUrl;
+  };
+
+  const connectWithings = () => {
+    const withingsAuthUrl = "/api/withings/auth";
+    window.location.href = withingsAuthUrl;
   };
 
   // Sync functions
@@ -136,6 +186,7 @@ export default function DataSourcesAnalysis({
   };
 
   useEffect(() => {
+    checkConnectionStatus();
     fetchDataCounts();
   }, [userId]);
 
@@ -167,7 +218,7 @@ export default function DataSourcesAnalysis({
             alignItems: "center",
           }}
         >
-          {dataCounts.loading ? (
+          {dataCounts.loading || connectionStatus.loading ? (
             <CircularProgress size={20} />
           ) : (
             <>
@@ -180,67 +231,113 @@ export default function DataSourcesAnalysis({
                 variant="outlined"
               />
 
-              <Chip
-                label={
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                    <span>{`Oura: ${formatLargeNumber(
-                      dataCounts.oura
-                    )} data points`}</span>
-                    <IconButton
-                      size="small"
-                      onClick={syncOura}
-                      disabled={syncingOura}
-                      sx={{
-                        width: 22,
-                        height: 22,
-                        color: "secondary.main",
-                        "&:hover": { backgroundColor: "secondary.light" },
-                        ml: 0.25,
-                      }}
+              {/* Oura Connection */}
+              {connectionStatus.ouraConnected ? (
+                <Chip
+                  label={
+                    <Box
+                      sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
                     >
-                      {syncingOura ? (
-                        <CircularProgress size={12} />
-                      ) : (
-                        <SyncIcon sx={{ fontSize: 12 }} />
-                      )}
-                    </IconButton>
-                  </Box>
-                }
-                size="small"
-                color="secondary"
-                variant="outlined"
-              />
+                      <span>{`Oura: ${formatLargeNumber(
+                        dataCounts.oura
+                      )} data points`}</span>
+                      <IconButton
+                        size="small"
+                        onClick={syncOura}
+                        disabled={syncingOura}
+                        sx={{
+                          width: 22,
+                          height: 22,
+                          color: "secondary.main",
+                          "&:hover": { backgroundColor: "secondary.light" },
+                          ml: 0.25,
+                        }}
+                      >
+                        {syncingOura ? (
+                          <CircularProgress size={12} />
+                        ) : (
+                          <SyncIcon sx={{ fontSize: 12 }} />
+                        )}
+                      </IconButton>
+                    </Box>
+                  }
+                  size="small"
+                  color="secondary"
+                  variant="outlined"
+                />
+              ) : (
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<LinkIcon />}
+                  onClick={connectOura}
+                  sx={{
+                    textTransform: "none",
+                    color: "secondary.main",
+                    borderColor: "secondary.main",
+                    "&:hover": {
+                      backgroundColor: "secondary.light",
+                      borderColor: "secondary.main",
+                    },
+                  }}
+                >
+                  Connect Oura
+                </Button>
+              )}
 
-              <Chip
-                label={
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                    <span>{`Withings: ${formatLargeNumber(
-                      dataCounts.withings
-                    )} data points`}</span>
-                    <IconButton
-                      size="small"
-                      onClick={syncWithings}
-                      disabled={syncingWithings}
-                      sx={{
-                        width: 22,
-                        height: 22,
-                        color: "warning.main",
-                        "&:hover": { backgroundColor: "warning.light" },
-                        ml: 0.25,
-                      }}
+              {/* Withings Connection */}
+              {connectionStatus.withingsConnected ? (
+                <Chip
+                  label={
+                    <Box
+                      sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
                     >
-                      {syncingWithings ? (
-                        <CircularProgress size={12} />
-                      ) : (
-                        <SyncIcon sx={{ fontSize: 12 }} />
-                      )}
-                    </IconButton>
-                  </Box>
-                }
-                size="small"
-                color="warning"
-                variant="outlined"
-              />
+                      <span>{`Withings: ${formatLargeNumber(
+                        dataCounts.withings
+                      )} data points`}</span>
+                      <IconButton
+                        size="small"
+                        onClick={syncWithings}
+                        disabled={syncingWithings}
+                        sx={{
+                          width: 22,
+                          height: 22,
+                          color: "warning.main",
+                          "&:hover": { backgroundColor: "warning.light" },
+                          ml: 0.25,
+                        }}
+                      >
+                        {syncingWithings ? (
+                          <CircularProgress size={12} />
+                        ) : (
+                          <SyncIcon sx={{ fontSize: 12 }} />
+                        )}
+                      </IconButton>
+                    </Box>
+                  }
+                  size="small"
+                  color="warning"
+                  variant="outlined"
+                />
+              ) : (
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<LinkIcon />}
+                  onClick={connectWithings}
+                  sx={{
+                    textTransform: "none",
+                    color: "warning.main",
+                    borderColor: "warning.main",
+                    "&:hover": {
+                      backgroundColor: "warning.light",
+                      borderColor: "warning.main",
+                    },
+                  }}
+                >
+                  Connect Withings
+                </Button>
+              )}
 
               <Chip
                 label={`Total: ${formatLargeNumber(

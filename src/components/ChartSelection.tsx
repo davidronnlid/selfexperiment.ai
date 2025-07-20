@@ -3,13 +3,6 @@ import {
   Typography,
   Card,
   CardContent,
-  Chip,
-  FormControlLabel,
-  Checkbox,
-  TextField,
-  InputAdornment,
-  Alert,
-  CircularProgress,
   Grid,
   FormControl,
   InputLabel,
@@ -18,7 +11,6 @@ import {
   SelectChangeEvent,
 } from "@mui/material";
 import { supabase } from "@/utils/supaBase";
-import { Search as SearchIcon } from "@mui/icons-material";
 
 interface DataPoint {
   id: number;

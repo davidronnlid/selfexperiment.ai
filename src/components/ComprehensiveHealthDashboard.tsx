@@ -14,7 +14,7 @@ import {
   InputAdornment,
   Button,
 } from "@mui/material";
-import { Line } from "react-chartjs-2";
+import { Line, Bar, Scatter } from "react-chartjs-2";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -1065,11 +1065,13 @@ export default function ComprehensiveHealthDashboard({
                 created_at: string;
               }) => ({
                 ...item,
-                variables: {
-                  id: item.variable_id,
-                  slug: item.variable_id,
-                  label: `Variable ${item.variable_id}`,
-                },
+                variables: [
+                  {
+                    id: item.variable_id,
+                    slug: item.variable_id,
+                    label: `Variable ${item.variable_id}`,
+                  },
+                ],
               })
             );
             console.log(
@@ -1497,7 +1499,11 @@ export default function ComprehensiveHealthDashboard({
                                           dataPoint.source === "routine" ||
                                           dataPoint.source === "auto"
                                         ) {
-                                          return "🖊️ Click to edit (Modular Health data)";
+                                          return [
+                                            "",
+                                            "🖊️ Click directly on this data point to edit",
+                                            "📝 Modular Health data - editable",
+                                          ];
                                         }
                                       }
                                       return "";
@@ -1543,11 +1549,42 @@ export default function ComprehensiveHealthDashboard({
                                       dataPoint.source === "routine" ||
                                       dataPoint.source === "auto"
                                     ) {
-                                      const variableSlug = dataPoint.variable;
-                                      const dataPointId = dataPoint.id;
-                                      router.push(
-                                        `/variable/${variableSlug}?edit=${dataPointId}`
-                                      );
+                                      // Check if click is close to a data point (improved sensitivity)
+                                      const chart = elements[0].chart;
+                                      const canvasPosition =
+                                        chart.canvas.getBoundingClientRect();
+                                      const clickX =
+                                        (event as any).x || event.clientX;
+                                      const clickY =
+                                        (event as any).y || event.clientY;
+
+                                      // Get the data point position on canvas
+                                      const meta = chart.getDatasetMeta(0);
+                                      const pointElement =
+                                        meta.data[elementIndex];
+
+                                      if (pointElement) {
+                                        const pointX =
+                                          pointElement.x + canvasPosition.left;
+                                        const pointY =
+                                          pointElement.y + canvasPosition.top;
+
+                                        // Calculate distance from click to data point
+                                        const distance = Math.sqrt(
+                                          Math.pow(clickX - pointX, 2) +
+                                            Math.pow(clickY - pointY, 2)
+                                        );
+
+                                        // Only proceed if click is within reasonable distance (20px) of the data point
+                                        if (distance <= 20) {
+                                          const variableSlug =
+                                            dataPoint.variable;
+                                          const dataPointId = dataPoint.id;
+                                          router.push(
+                                            `/variable/${variableSlug}?edit=${dataPointId}`
+                                          );
+                                        }
+                                      }
                                     }
                                   }
                                 }

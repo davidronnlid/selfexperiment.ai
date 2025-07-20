@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Box,
   Typography,
@@ -18,9 +18,21 @@ import {
   ListItem,
   ListItemText,
   ListItemSecondaryAction,
+  Paper,
+  Tabs,
+  Tab,
+  Divider,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from "@mui/material";
+import { FaUsers, FaEye, FaCog, FaGlobe, FaLock } from "react-icons/fa";
 import { supabase } from "@/utils/supaBase";
-import { useRouter } from "next/router";
+import { useUser } from "@/pages/_app";
+import { VariableLinkSimple } from "./VariableLink";
+import LogPrivacyManager from "./LogPrivacyManager";
+import { UserVariablePreference } from "@/types/variables";
+import { LOG_LABELS } from "@/utils/logLabels";
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -213,9 +225,14 @@ export default function AnalyzePrivacySection() {
           )
           .filter((pref) => pref.variable_name !== variableName)
           .concat({
+            id: `temp-${Date.now()}`, // Temporary ID for local state
+            user_id: user?.id || "",
+            variable_id: variable.id,
             variable_name: variableName,
             is_shared: isShared,
             variable_type: "predefined",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
           })
       );
       setMessage({ type: "success", text: "Variable sharing setting updated" });

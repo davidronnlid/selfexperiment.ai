@@ -101,6 +101,7 @@ interface VariableInfo {
 export default function VariableDataPointsPage() {
   const router = useRouter();
   const { variableName } = router.query;
+  const editDataPointId = router.query.edit as string; // Get edit parameter
   const { user, loading: userLoading } = useUser();
   const [dataPoints, setDataPoints] = useState<DataPointEntry[]>([]);
   const [variableInfo, setVariableInfo] = useState<VariableInfo | null>(null);
@@ -143,6 +144,47 @@ export default function VariableDataPointsPage() {
       fetchSharingStatus();
     }
   }, [variableInfo, user]);
+
+  // Handle edit query parameter - auto-start editing when data point is loaded
+  useEffect(() => {
+    if (editDataPointId && dataPoints.length > 0) {
+      const dataPointToEdit = dataPoints.find(
+        (dp) => dp.id.toString() === editDataPointId
+      );
+      if (dataPointToEdit) {
+        // Check if user owns this data point
+        if (dataPointToEdit.user_id && dataPointToEdit.user_id !== user?.id) {
+          setErrorMessage("You can only edit your own data points.");
+          setShowError(true);
+          return;
+        }
+
+        // Start editing this data point
+        setEditingLogId(dataPointToEdit.id);
+        setEditValue(dataPointToEdit.value);
+        setEditNotes(dataPointToEdit.notes || "");
+
+        // Scroll to the data point after a brief delay to ensure table is rendered
+        setTimeout(() => {
+          const element = document.getElementById(
+            `data-point-${dataPointToEdit.id}`
+          );
+          if (element) {
+            element.scrollIntoView({ behavior: "smooth", block: "center" });
+            // Add visual highlight
+            element.style.backgroundColor = "#fff3cd";
+            setTimeout(() => {
+              element.style.backgroundColor = "";
+            }, 3000);
+          }
+        }, 100);
+
+        // Remove edit parameter from URL without triggering a reload
+        const newUrl = `/variable/${variableName}`;
+        window.history.replaceState({}, "", newUrl);
+      }
+    }
+  }, [editDataPointId, dataPoints, user?.id, variableName]);
 
   useEffect(() => {
     if (user) {
@@ -851,7 +893,10 @@ export default function VariableDataPointsPage() {
                 </TableHead>
                 <TableBody>
                   {dataPoints.slice(0, 20).map((dataPoint) => (
-                    <TableRow key={dataPoint.id}>
+                    <TableRow
+                      key={dataPoint.id}
+                      id={`data-point-${dataPoint.id}`}
+                    >
                       <TableCell>
                         {new Date(dataPoint.date).toLocaleDateString()}
                       </TableCell>
