@@ -1,0 +1,32 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  # Exclude public keys from secrets scanning
+  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_VAPID_PUBLIC_KEY,NEXT_PUBLIC_SUPABASE_ANON_KEY"
+  # Temporary: Disable secrets scanning if needed for urgent deploy
+  # SECRETS_SCAN_ENABLED = "false"
+  
+[functions]
+  external_node_modules = ["sharp"]
+
+# Cache Next.js build output
+[[headers]]
+  for = "/_next/static/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]  
+  for = "/_next/image*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Security headers
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "strict-origin-when-cross-origin" 
