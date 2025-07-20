@@ -288,9 +288,18 @@ export default function ComprehensiveHealthDashboard({
   // Utility functions
   const formatDateWithYear = (dateString: string) => {
     try {
-      return format(parseISO(dateString), "MMM d, yyyy");
+      const date = parseISO(dateString);
+      return {
+        year: format(date, "yyyy"),
+        month: format(date, "MMM d"),
+        formatted: format(date, "MMM d, yyyy"),
+      };
     } catch {
-      return dateString;
+      return {
+        year: "Unknown",
+        month: dateString,
+        formatted: dateString,
+      };
     }
   };
 
@@ -1132,18 +1141,20 @@ export default function ComprehensiveHealthDashboard({
                 created_at: string;
               }) => ({
                 ...item,
-                variables: {
-                  id: item.variable_id,
-                  slug: item.variable_id,
-                  label: `Variable ${item.variable_id}`,
-                },
+                variables: [
+                  {
+                    id: item.variable_id,
+                    slug: item.variable_id,
+                    label: `Variable ${item.variable_id}`,
+                  },
+                ],
               })
             );
             console.log(
               "[ComprehensiveHealthDashboard] Using Modular Health fallback data:",
               fallbackModularData.length
             );
-            modularHealthData = fallbackModularData;
+            modularHealthData = fallbackModularData as typeof modularHealthData;
           }
         }
 
@@ -1401,14 +1412,13 @@ export default function ComprehensiveHealthDashboard({
                                 // Show year if it's the first occurrence of this year or if it's January
                                 const showYear =
                                   !prevDateInfo ||
-                                  !prevDateInfo.includes(
-                                    new Date().getFullYear().toString()
-                                  ) ||
-                                  dateInfo.startsWith("Jan");
+                                  !prevDateInfo.year ||
+                                  prevDateInfo.year !== dateInfo.year ||
+                                  dateInfo.month.startsWith("Jan");
 
                                 return showYear
-                                  ? dateInfo
-                                  : dateInfo.replace(/, \d{4}/, "");
+                                  ? dateInfo.formatted
+                                  : dateInfo.month;
                               }),
                               datasets: [
                                 {
@@ -1419,7 +1429,6 @@ export default function ComprehensiveHealthDashboard({
                                     date: d.date,
                                     id: d.id,
                                     source: d.source,
-                                    variable_id: d.variable_id,
                                     variable: d.variable,
                                   })),
                                   borderColor: getVariableColor(variable),
@@ -1440,20 +1449,12 @@ export default function ComprehensiveHealthDashboard({
                                   mode: "index" as const,
                                   intersect: false,
                                   callbacks: {
-                                    title: function (
-                                      context: Array<{
-                                        dataIndex: number;
-                                        dataset: {
-                                          data: Array<{
-                                            date: string;
-                                          }>;
-                                        };
-                                        label: string;
-                                      }>
-                                    ) {
-                                      const dataIndex = context[0]?.dataIndex;
+                                    title: function (tooltipItems: any[]) {
+                                      const dataIndex =
+                                        tooltipItems[0]?.dataIndex;
                                       if (dataIndex !== undefined) {
-                                        const dataset = context[0]?.dataset;
+                                        const dataset =
+                                          tooltipItems[0]?.dataset;
                                         if (
                                           dataset &&
                                           dataset.data &&
@@ -1469,22 +1470,12 @@ export default function ComprehensiveHealthDashboard({
                                           }
                                         }
                                       }
-                                      return context[0]?.label || "";
+                                      return tooltipItems[0]?.label || "";
                                     },
-                                    label: function (context: {
-                                      dataset: { label: string };
-                                      parsed: { y: number };
-                                    }) {
+                                    label: function (context: any) {
                                       return `${context.dataset.label}: ${context.parsed.y}`;
                                     },
-                                    afterLabel: function (context: {
-                                      dataIndex: number;
-                                      dataset: {
-                                        data: Array<{
-                                          source: string;
-                                        }>;
-                                      };
-                                    }) {
+                                    afterLabel: function (context: any) {
                                       const dataIndex = context.dataIndex;
                                       const dataset = context.dataset;
                                       if (
@@ -1516,23 +1507,7 @@ export default function ComprehensiveHealthDashboard({
                                   beginAtZero: false,
                                 },
                               },
-                              onClick: (
-                                event: MouseEvent,
-                                elements: Array<{
-                                  index: number;
-                                  chart: {
-                                    data: {
-                                      datasets: Array<{
-                                        data: Array<{
-                                          source: string;
-                                          variable: string;
-                                          id: string;
-                                        }>;
-                                      }>;
-                                    };
-                                  };
-                                }>
-                              ) => {
+                              onClick: (event: any, elements: any[]) => {
                                 if (elements.length > 0) {
                                   const elementIndex = elements[0].index;
                                   const dataset =
@@ -1706,9 +1681,7 @@ export default function ComprehensiveHealthDashboard({
                       dateInfo.year !== prevDate.year ||
                       dateInfo.month.startsWith("Jan");
 
-                    return showYear
-                      ? `${dateInfo.month} ${dateInfo.year}`
-                      : dateInfo.month;
+                    return showYear ? dateInfo.formatted : dateInfo.month;
                   });
 
                   const chartData = {
@@ -1725,7 +1698,9 @@ export default function ComprehensiveHealthDashboard({
                         return item
                           ? typeof item.value === "number"
                             ? item.value
-                            : parseFloat(item.value) || 0
+                            : item.value !== null
+                            ? parseFloat(String(item.value)) || 0
+                            : 0
                           : 0; // Use 0 instead of null for missing data points
                       });
 
@@ -1960,12 +1935,25 @@ export default function ComprehensiveHealthDashboard({
                     <Button
                       variant="contained"
                       size="small"
-                      onClick={() => {
+                      onClick={async () => {
+                        // Get current user info from Supabase to get real email
+                        const {
+                          data: { user },
+                        } = await supabase.auth.getUser();
+
+                        if (!user) {
+                          console.error(
+                            "No user found for Withings connection"
+                          );
+                          // Redirect to login if no user
+                          window.location.href = "/auth";
+                          return;
+                        }
+
+                        // Pass real user info as query parameters to avoid session issues
                         const authUrl = `/api/withings/auth?user_id=${encodeURIComponent(
-                          userId
-                        )}&user_email=${encodeURIComponent(
-                          "user@example.com"
-                        )}`;
+                          user.id
+                        )}&user_email=${encodeURIComponent(user.email || "")}`;
                         window.location.href = authUrl;
                       }}
                     >

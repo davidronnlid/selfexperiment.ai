@@ -68,6 +68,7 @@ interface ManualDataPoint {
 interface ManualDataPointsChartProps {
   userId: string;
   maxRows?: number;
+  maxDays?: number;
 }
 
 interface ChartData {

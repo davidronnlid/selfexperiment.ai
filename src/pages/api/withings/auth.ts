@@ -43,69 +43,71 @@ export default async function handler(
 ) {
   // Debug: print cookies received
   console.log("[Withings Auth] req.headers.cookie:", req.headers.cookie);
-  console.log("[Withings Auth] All headers:", req.headers);
+  console.log("[Withings Auth] Query params:", req.query);
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return getCookiesFromReq(req);
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => {
-            res.setHeader("Set-Cookie", `${name}=${value}; Path=/; HttpOnly`);
-          });
-        },
-      },
+  // First try to get user from headers or query params (client-side approach)
+  const headerUser = getUserFromRequest(req);
+  let user = null;
+  
+  if (headerUser) {
+    console.log("[Withings Auth] Using user from query/headers:", headerUser.id);
+    user = headerUser;
+  } else {
+    // Only try Supabase auth if we have cookies
+    if (req.headers.cookie) {
+      const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          cookies: {
+            getAll() {
+              return getCookiesFromReq(req);
+            },
+            setAll(cookiesToSet) {
+              cookiesToSet.forEach(({ name, value, options }) => {
+                const cookieValue = options 
+                  ? `${name}=${value}; Path=${options.path || '/'}; ${options.httpOnly ? 'HttpOnly; ' : ''}${options.secure ? 'Secure; ' : ''}${options.sameSite ? `SameSite=${options.sameSite}; ` : ''}`
+                  : `${name}=${value}; Path=/; HttpOnly`;
+                res.setHeader("Set-Cookie", cookieValue);
+              });
+            },
+          },
+        }
+      );
+
+      try {
+        console.log("[Withings Auth] Trying Supabase auth with cookies...");
+        const {
+          data: { user: userData },
+          error: userError,
+        } = await supabase.auth.getUser();
+        
+        console.log("[Withings Auth] Supabase user data:", userData ? "FOUND" : "NOT FOUND");
+        
+        if (userData && !userError) {
+          user = userData;
+          console.log("[Withings Auth] Using user from Supabase:", user.id);
+        } else {
+          console.log("[Withings Auth] Supabase auth failed:", userError?.message || "No user found");
+        }
+      } catch (error) {
+        console.log("[Withings Auth] Supabase auth error:", error);
+      }
+    } else {
+      console.log("[Withings Auth] No cookies found, skipping Supabase auth");
     }
-  );
+  }
+
+  // If we still don't have a user, return an error
+  if (!user) {
+    console.log("[Withings Auth] No user found from any method");
+    return res.status(401).json({ 
+      error: "Authentication failed", 
+      message: "Please log in to connect your Withings account. Make sure to access this page from the application."
+    });
+  }
 
   try {
-    // Debug: print all headers to understand the session issue
-    console.log("[Withings Auth] All request headers:", Object.keys(req.headers));
-    console.log("[Withings Auth] Cookie header:", req.headers.cookie);
-    
-    // First try to get user from headers or query params (client-side approach)
-    const headerUser = getUserFromRequest(req);
-    let user = null;
-    
-    if (headerUser) {
-      console.log("[Withings Auth] Using user from headers:", headerUser.id);
-      user = headerUser;
-    } else {
-      // Fallback to Supabase auth
-      console.log("[Withings Auth] No user in headers, trying Supabase auth...");
-      const {
-        data: { user: userData },
-        error: userError,
-      } = await supabase.auth.getUser();
-      
-      console.log("[Withings Auth] User data:", userData ? "FOUND" : "NOT FOUND");
-      console.log("[Withings Auth] User error:", userError);
-      
-      if (userError) {
-        console.error("[Withings Auth] Authentication error:", userError);
-        return res.status(401).json({ 
-          error: "Authentication failed", 
-          details: userError.message,
-          message: "Please log in to connect your Withings account"
-        });
-      }
-      
-      if (!userData) {
-      console.log("[Withings Auth] No user found");
-      return res.status(401).json({ 
-        error: "Not authenticated",
-        message: "Please log in to connect your Withings account"
-      });
-      }
-      
-      user = userData;
-      console.log("[Withings Auth] Using user from Supabase:", user.id);
-    }
-
     const clientId = process.env.WITHINGS_ClientID;
     if (!clientId) {
       console.error("[Withings Auth] WITHINGS_ClientID not configured");
@@ -117,7 +119,7 @@ export default async function handler(
     const baseUrl =
       process.env.NEXTAUTH_URL ||
       process.env.VERCEL_URL ||
-      "http://localhost:3000"; // Updated to use port 3000
+      "http://localhost:3000";
     const redirectUri = `${baseUrl}/api/withings/callback`;
     const state = `withings_${user.id}_${Math.random().toString(36).slice(2)}`;
 

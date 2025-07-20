@@ -5,6 +5,15 @@ import InputAdornment from "@mui/material/InputAdornment";
 import { validateValue, getInputProps, LOG_LABELS } from "@/utils/logLabels";
 import { FaCheckCircle } from "react-icons/fa";
 
+interface Constraints {
+  min?: number;
+  max?: number;
+  scaleMin?: number;
+  scaleMax?: number;
+  unit?: string;
+  maxLength?: number;
+}
+
 interface ConstrainedInputProps {
   label: string;
   value: string;
@@ -17,7 +26,7 @@ interface ConstrainedInputProps {
   size?: "small" | "medium";
   fullWidth?: boolean;
   variant?: "outlined" | "filled" | "standard";
-  sx?: unknown;
+  sx?: any;
 }
 
 export default function ConstrainedInput({
@@ -79,14 +88,17 @@ export default function ConstrainedInput({
     [variable, onChange]
   );
 
-  const handleNumberInput = (newValue: string, constraints: unknown) => {
+  const handleNumberInput = (
+    newValue: string,
+    constraints: Constraints | undefined
+  ) => {
     // Allow empty string, minus sign, and decimal point
     if (newValue === "" || newValue === "-" || newValue === ".") {
       onChange(newValue);
       return;
     }
 
-    // Check if it's a valid number format
+    // Check if the new value matches number format
     const numberRegex = /^-?\d*\.?\d*$/;
     if (!numberRegex.test(newValue)) {
       return; // Don't allow invalid number formats
@@ -107,7 +119,10 @@ export default function ConstrainedInput({
     onChange(newValue);
   };
 
-  const handleScaleInput = (newValue: string, constraints: unknown) => {
+  const handleScaleInput = (
+    newValue: string,
+    constraints: Constraints | undefined
+  ) => {
     // Allow empty string
     if (newValue === "") {
       onChange(newValue);
@@ -138,52 +153,38 @@ export default function ConstrainedInput({
     onChange(newValue);
   };
 
-  const handleTimeInput = (newValue: string, constraints: unknown) => {
+  const handleTimeInput = (
+    newValue: string,
+    constraints: Constraints | undefined
+  ) => {
     // Allow empty string
     if (newValue === "") {
       onChange(newValue);
       return;
     }
 
-    // Time input formatting - only allow valid time characters
-    const timeRegex = /^[0-2]?[0-9]?:?[0-5]?[0-9]?$/;
-    if (!timeRegex.test(newValue)) {
-      return; // Don't allow invalid time format
+    // Time format validation (HH:MM or H:MM)
+    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+    if (timeRegex.test(newValue)) {
+      onChange(newValue);
     }
-
-    // Auto-format time input
-    let formattedValue = newValue;
-
-    // Auto-add colon after 2 digits
-    if (formattedValue.length === 2 && !formattedValue.includes(":")) {
-      formattedValue = formattedValue + ":";
-    }
-
-    // Validate hours and minutes if we have a complete time
-    if (formattedValue.includes(":")) {
-      const [hours, minutes] = formattedValue.split(":");
-
-      if (hours && parseInt(hours) > 23) {
-        return; // Don't allow hours > 23
-      }
-      if (minutes && parseInt(minutes) > 59) {
-        return; // Don't allow minutes > 59
-      }
-    }
-
-    onChange(formattedValue);
   };
 
-  const handleTextInput = (newValue: string, constraints: unknown) => {
+  const handleTextInput = (
+    newValue: string,
+    constraints: Constraints | undefined
+  ) => {
     // Check max length constraint
     if (constraints?.maxLength && newValue.length > constraints.maxLength) {
       return; // Don't allow text longer than max length
     }
-
     onChange(newValue);
   };
 
-  const handleYesNoInput = (newValue: string, constraints: unknown) => {
+  const handleYesNoInput = (
+    newValue: string,
+    constraints: Constraints | undefined
+  ) => {
     // Allow empty string
     if (newValue === "") {
       onChange(newValue);
@@ -297,7 +298,7 @@ export default function ConstrainedInput({
         variant={variant}
         size={size}
         placeholder={placeholder}
-        sx={sx}
+        sx={sx as any}
         InputProps={{
           startAdornment: (
             <InputAdornment position="start">{getInputIcon()}</InputAdornment>

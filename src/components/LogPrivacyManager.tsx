@@ -27,9 +27,11 @@ interface DataPointEntry {
   id: number;
   date: string;
   variable_id: string;
+  label?: string;
   value: string;
   notes?: string;
   created_at: string;
+  is_hidden?: boolean;
 }
 
 interface DataPointPrivacyManagerProps {
@@ -62,7 +64,7 @@ export default function DataPointPrivacyManager({
       // Load logs with privacy settings
       const { data: logsData, error: logsError } = await supabase
         .from("data_points")
-        .select("id, date, label, value, notes")
+        .select("id, date, variable_id, label, value, notes, created_at")
         .eq("user_id", user?.id)
         .order("date", { ascending: false })
         .limit(50); // Assuming maxLogs is 50 for now, as it's not passed as a prop
@@ -180,7 +182,7 @@ export default function DataPointPrivacyManager({
     return logs.filter((log) => {
       const matchesSearch =
         searchTerm === "" ||
-        log.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        log.label?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         log.value.toLowerCase().includes(searchTerm.toLowerCase());
 
       const matchesVariable =

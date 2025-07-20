@@ -29,7 +29,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
     // Log to analytics service if available
     if (typeof window !== "undefined") {
-      const gtag = (window as unknown).gtag;
+      const gtag = (window as any).gtag;
       if (typeof gtag === "function") {
         gtag("event", "exception", {
           description: error.toString(),

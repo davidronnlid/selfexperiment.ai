@@ -1042,6 +1042,60 @@ export default function CorrelationAnalysis({
     }));
   };
 
+  // Handler for chart clicks
+  const handleChartClick = (
+    event: any,
+    elements: any[],
+    chart: any,
+    variable1: string,
+    variable2: string
+  ) => {
+    if (elements.length > 0) {
+      const element = elements[0];
+      if (element.datasetIndex === 0) {
+        // Only handle scatter plot points, not trend line
+        const dataIndex = element.index;
+        const matchedData = getMatchedDataPoints(variable1, variable2);
+        const dataPoint = matchedData[dataIndex];
+
+        if (dataPoint) {
+          // Determine which variable to edit based on click position
+          // For now, let's show both options if both are editable
+          if (
+            (dataPoint.var1Source === "manual" ||
+              dataPoint.var1Source === "auto") &&
+            (dataPoint.var2Source === "manual" ||
+              dataPoint.var2Source === "auto")
+          ) {
+            // Both variables are editable - edit the first one
+            const var1Slug = variableSlugs[variable1];
+            if (var1Slug) {
+              router.push(`/variable/${var1Slug}?edit=${dataPoint.var1Id}`);
+            }
+          } else if (
+            dataPoint.var1Source === "manual" ||
+            dataPoint.var1Source === "auto"
+          ) {
+            // Only var1 is editable
+            const var1Slug = variableSlugs[variable1];
+            if (var1Slug) {
+              router.push(`/variable/${var1Slug}?edit=${dataPoint.var1Id}`);
+            }
+          } else if (
+            dataPoint.var2Source === "manual" ||
+            dataPoint.var2Source === "auto"
+          ) {
+            // Only var2 is editable
+            const var2Slug = variableSlugs[variable2];
+            if (var2Slug) {
+              router.push(`/variable/${var2Slug}?edit=${dataPoint.var2Id}`);
+            }
+          }
+        }
+      }
+    }
+  };
+
   // Function to generate chart data for any correlation pair
   const getChartDataForCorrelation = (variable1: string, variable2: string) => {
     const matchedData = getMatchedDataPoints(variable1, variable2);
@@ -1203,44 +1257,6 @@ export default function CorrelationAnalysis({
         mode: "nearest" as const,
         axis: "xy" as const,
         intersect: false,
-      },
-      // Add click handler for editing data points
-      onClick: (event: any, elements: any[]) => {
-        if (elements.length > 0) {
-          const element = elements[0];
-          if (element.datasetIndex === 0) {
-            // Only handle scatter plot points, not trend line
-            const dataIndex = element.index;
-            const dataPoint = matchedData[dataIndex];
-
-            if (dataPoint) {
-              // Determine which variable to edit based on click position
-              // This is a simplified approach - in a real implementation you might want to
-              // detect which axis the user clicked closer to
-
-              // For now, let's show both options if both are editable
-              if (dataPoint.var1EditData && dataPoint.var2EditData) {
-                // Both variables are editable - show a choice dialog or edit the first one
-                const var1Slug = variableSlugs[variable1];
-                if (var1Slug) {
-                  router.push(`/variable/${var1Slug}?edit=${dataPoint.var1Id}`);
-                }
-              } else if (dataPoint.var1EditData) {
-                // Only var1 is editable
-                const var1Slug = variableSlugs[variable1];
-                if (var1Slug) {
-                  router.push(`/variable/${var1Slug}?edit=${dataPoint.var1Id}`);
-                }
-              } else if (dataPoint.var2EditData) {
-                // Only var2 is editable
-                const var2Slug = variableSlugs[variable2];
-                if (var2Slug) {
-                  router.push(`/variable/${var2Slug}?edit=${dataPoint.var2Id}`);
-                }
-              }
-            }
-          }
-        }
       },
     };
 
@@ -2168,6 +2184,10 @@ export default function CorrelationAnalysis({
                                             options={
                                               chartData.chartOptions as any
                                             }
+                                            onClick={(event: any) => {
+                                              // Chart.js onClick handler - we'll handle this differently
+                                              // handleChartClick(event, [], null, corr.variable1, corr.variable2);
+                                            }}
                                           />
                                         </Box>
                                       </CardContent>
