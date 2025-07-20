@@ -1,6 +1,6 @@
 {
   "name": "Modular Health",
-  "short_name": "ModularHealth",
+  "short_name": "Modular Health",
   "description": "Understand yourself better with AI - Track your health metrics and daily logs",
   "start_url": "/",
   "display": "standalone",

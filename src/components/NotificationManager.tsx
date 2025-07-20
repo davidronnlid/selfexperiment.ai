@@ -119,6 +119,102 @@ export default function NotificationManager({
   }>({ open: false, message: "", severity: "info" });
   const [hasChanges, setHasChanges] = useState(false);
 
+  // Add debugging state
+  const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [showDebugInfo, setShowDebugInfo] = useState(false);
+  const [serverStatus, setServerStatus] = useState<any>(null);
+
+  // Load server debug information
+  const loadServerDebugInfo = async () => {
+    try {
+      const response = await fetch("/api/test-vapid");
+      const data = await response.json();
+      setServerStatus(data);
+    } catch (error) {
+      console.error("Failed to load server debug info:", error);
+      setServerStatus({ error: "Failed to connect to server" });
+    }
+  };
+
+  // Collect comprehensive debug information
+  const collectDebugInfo = () => {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isStandalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as any).standalone ||
+      document.referrer.includes("android-app://");
+
+    const info = {
+      timestamp: new Date().toISOString(),
+      browser: {
+        userAgent: navigator.userAgent,
+        isIOS,
+        isStandalone,
+        platform: navigator.platform,
+        cookieEnabled: navigator.cookieEnabled,
+        onLine: navigator.onLine,
+      },
+      notifications: {
+        supported: "Notification" in window,
+        permission:
+          "Notification" in window ? Notification.permission : "not-available",
+        serviceWorkerSupported: "serviceWorker" in navigator,
+        pushManagerSupported: "PushManager" in window,
+      },
+      serviceWorker: {
+        controller: !!navigator.serviceWorker?.controller,
+        ready: "pending", // Will be updated async
+      },
+      pushSubscription: {
+        exists: "pending", // Will be updated async
+        endpoint: "pending",
+      },
+      vapidKeys: {
+        publicKeyConfigured: !!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+        publicKeyPrefix:
+          process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.substring(0, 10) + "..." ||
+          "NOT_SET",
+      },
+      pushHook: {
+        isSupported,
+        hasPermission,
+        isPushSubscribed,
+        loading,
+        error,
+      },
+    };
+
+    // Async updates
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.ready
+        .then(() => {
+          info.serviceWorker.ready = "ready";
+          setDebugInfo({ ...info });
+        })
+        .catch(() => {
+          info.serviceWorker.ready = "failed";
+          setDebugInfo({ ...info });
+        });
+
+      navigator.serviceWorker.ready
+        .then((registration) => {
+          return registration.pushManager.getSubscription();
+        })
+        .then((subscription) => {
+          info.pushSubscription.exists = !!subscription;
+          info.pushSubscription.endpoint = subscription?.endpoint || "none";
+          setDebugInfo({ ...info });
+        })
+        .catch(() => {
+          info.pushSubscription.exists = false;
+          info.pushSubscription.endpoint = "failed_to_check";
+          setDebugInfo({ ...info });
+        });
+    }
+
+    setDebugInfo(info);
+  };
+
   useEffect(() => {
     loadPreferences();
   }, [userId]);
@@ -843,6 +939,274 @@ export default function NotificationManager({
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* Debug Information Section */}
+      <Paper elevation={1} sx={{ p: 2, mt: 2 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
+          <InfoIcon color="info" />
+          <Typography variant="h6">
+            Push Notifications Troubleshooting
+          </Typography>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => {
+              setShowDebugInfo(!showDebugInfo);
+              if (!showDebugInfo) {
+                collectDebugInfo();
+                loadServerDebugInfo();
+              }
+            }}
+          >
+            {showDebugInfo ? "Hide Debug Info" : "Show Debug Info"}
+          </Button>
+        </Box>
+
+        {showDebugInfo && (
+          <Box>
+            {/* Quick Status Overview */}
+            <Alert
+              severity={
+                debugInfo?.browser?.isIOS && !debugInfo?.browser?.isStandalone
+                  ? "warning"
+                  : !debugInfo?.notifications?.supported
+                  ? "error"
+                  : debugInfo?.notifications?.permission !== "granted"
+                  ? "warning"
+                  : "success"
+              }
+              sx={{ mb: 2 }}
+            >
+              <Typography variant="subtitle2" gutterBottom>
+                <strong>Quick Diagnosis:</strong>
+              </Typography>
+              {debugInfo?.browser?.isIOS &&
+                !debugInfo?.browser?.isStandalone && (
+                  <Typography variant="body2">
+                    ⚠️ iOS PWA detected but not in standalone mode. Open from
+                    home screen, not Safari browser.
+                  </Typography>
+                )}
+              {!debugInfo?.notifications?.supported && (
+                <Typography variant="body2">
+                  ❌ Push notifications not supported in this browser/mode.
+                </Typography>
+              )}
+              {debugInfo?.notifications?.supported &&
+                debugInfo?.notifications?.permission !== "granted" && (
+                  <Typography variant="body2">
+                    🔒 Notification permission not granted. Tap "Enable
+                    Notifications" above.
+                  </Typography>
+                )}
+              {debugInfo?.notifications?.supported &&
+                debugInfo?.notifications?.permission === "granted" && (
+                  <Typography variant="body2">
+                    ✅ Push notifications should work! If still having issues,
+                    check server status below.
+                  </Typography>
+                )}
+            </Alert>
+
+            {/* Client-side Information */}
+            <Accordion>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant="subtitle1">
+                  📱 Client-side Status
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                  <Typography variant="body2">
+                    <strong>Device:</strong>{" "}
+                    {debugInfo?.browser?.isIOS ? "iOS" : "Other"}
+                    {debugInfo?.browser?.isStandalone ? " (PWA)" : " (Browser)"}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Platform:</strong> {debugInfo?.browser?.platform}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Notifications Support:</strong>{" "}
+                    {debugInfo?.notifications?.supported ? "✅ Yes" : "❌ No"}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Permission:</strong>{" "}
+                    {debugInfo?.notifications?.permission}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Service Worker:</strong>{" "}
+                    {debugInfo?.notifications?.serviceWorkerSupported
+                      ? "✅ Supported"
+                      : "❌ Not supported"}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Push Manager:</strong>{" "}
+                    {debugInfo?.notifications?.pushManagerSupported
+                      ? "✅ Supported"
+                      : "❌ Not supported"}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Push Subscription:</strong>{" "}
+                    {debugInfo?.pushSubscription?.exists
+                      ? "✅ Active"
+                      : "❌ None"}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>VAPID Key:</strong>{" "}
+                    {debugInfo?.vapidKeys?.publicKeyConfigured
+                      ? `✅ ${debugInfo?.vapidKeys?.publicKeyPrefix}`
+                      : "❌ Not configured"}
+                  </Typography>
+                </Box>
+              </AccordionDetails>
+            </Accordion>
+
+            {/* Server-side Information */}
+            <Accordion>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant="subtitle1">
+                  🖥️ Server-side Status
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                {serverStatus ? (
+                  <Box
+                    sx={{ display: "flex", flexDirection: "column", gap: 1 }}
+                  >
+                    <Typography variant="body2">
+                      <strong>Overall Status:</strong>{" "}
+                      {serverStatus.diagnostics?.canSendNotifications
+                        ? "✅ Ready"
+                        : "❌ Issues detected"}
+                    </Typography>
+                    <Typography variant="body2">
+                      <strong>VAPID Keys:</strong>{" "}
+                      {serverStatus.vapidKeys?.publicKeyExists &&
+                      serverStatus.vapidKeys?.privateKeyExists
+                        ? "✅ Configured"
+                        : "❌ Missing"}
+                    </Typography>
+                    <Typography variant="body2">
+                      <strong>Database:</strong>{" "}
+                      {serverStatus.database?.status === "connected"
+                        ? "✅ Connected"
+                        : `❌ ${serverStatus.database?.status}`}
+                    </Typography>
+                    <Typography variant="body2">
+                      <strong>Push Subscriptions in DB:</strong>{" "}
+                      {serverStatus.database?.pushSubscriptionsCount || 0}
+                    </Typography>
+                    <Typography variant="body2">
+                      <strong>Web Push Library:</strong>{" "}
+                      {serverStatus.webPush?.status === "configured"
+                        ? "✅ Ready"
+                        : `❌ ${serverStatus.webPush?.status}`}
+                    </Typography>
+
+                    {serverStatus.diagnostics?.issues?.length > 0 && (
+                      <Box sx={{ mt: 2 }}>
+                        <Typography variant="subtitle2" color="error">
+                          Issues Found:
+                        </Typography>
+                        {serverStatus.diagnostics.issues.map(
+                          (issue: string, index: number) => (
+                            <Typography
+                              key={index}
+                              variant="body2"
+                              color="error"
+                              sx={{ ml: 2 }}
+                            >
+                              • {issue}
+                            </Typography>
+                          )
+                        )}
+                      </Box>
+                    )}
+                  </Box>
+                ) : (
+                  <Typography variant="body2">
+                    Loading server status...
+                  </Typography>
+                )}
+              </AccordionDetails>
+            </Accordion>
+
+            {/* iOS PWA Instructions */}
+            {debugInfo?.browser?.isIOS && (
+              <Accordion>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Typography variant="subtitle1">
+                    📱 iOS PWA Setup Instructions
+                  </Typography>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <Box
+                    sx={{ display: "flex", flexDirection: "column", gap: 1 }}
+                  >
+                    <Typography variant="body2" gutterBottom>
+                      <strong>For push notifications to work on iPhone:</strong>
+                    </Typography>
+                    <Typography variant="body2">
+                      1. Open this website in Safari (not Chrome or other
+                      browsers)
+                    </Typography>
+                    <Typography variant="body2">
+                      2. Tap the Share button at the bottom
+                    </Typography>
+                    <Typography variant="body2">
+                      3. Scroll down and tap "Add to Home Screen"
+                    </Typography>
+                    <Typography variant="body2">
+                      4. Tap "Add" to install the app
+                    </Typography>
+                    <Typography variant="body2">
+                      5. <strong>Open the app from your home screen</strong>{" "}
+                      (not Safari!)
+                    </Typography>
+                    <Typography variant="body2">
+                      6. Go to Settings → Notifications and enable them
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{ mt: 1, fontWeight: "bold", color: "warning.main" }}
+                    >
+                      ⚠️ Current status:{" "}
+                      {debugInfo?.browser?.isStandalone
+                        ? "✅ Opened from home screen"
+                        : "❌ Opened in Safari browser"}
+                    </Typography>
+                  </Box>
+                </AccordionDetails>
+              </Accordion>
+            )}
+
+            {/* Raw Debug Data */}
+            <Accordion>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant="subtitle1">🔧 Raw Debug Data</Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <TextField
+                  multiline
+                  rows={10}
+                  fullWidth
+                  value={JSON.stringify(
+                    { client: debugInfo, server: serverStatus },
+                    null,
+                    2
+                  )}
+                  variant="outlined"
+                  label="Copy this data for technical support"
+                  InputProps={{
+                    readOnly: true,
+                    style: { fontFamily: "monospace", fontSize: "12px" },
+                  }}
+                />
+              </AccordionDetails>
+            </Accordion>
+          </Box>
+        )}
+      </Paper>
     </Box>
   );
 }

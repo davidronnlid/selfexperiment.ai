@@ -34,6 +34,10 @@ import {
   TableRow,
   Tooltip,
   Snackbar,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -41,6 +45,9 @@ import {
   Delete as DeleteIcon,
   Save as SaveIcon,
   Cancel as CancelIcon,
+  ArrowUpward as ArrowUpIcon,
+  ArrowDownward as ArrowDownIcon,
+  DragIndicator as DragIcon,
 } from "@mui/icons-material";
 
 interface Variable {
@@ -77,6 +84,12 @@ interface UnitGroup {
   units: Unit[];
 }
 
+interface UnitWithPriority {
+  unit: Unit;
+  priority: number;
+  note: string;
+}
+
 export default function EditAnyVariablePage() {
   const { user, loading: userLoading, username } = useUser();
   const router = useRouter();
@@ -104,7 +117,8 @@ export default function EditAnyVariablePage() {
 
   // Form state for add/edit dialogs
   const [selectedUnitGroup, setSelectedUnitGroup] = useState("");
-  const [selectedUnit, setSelectedUnit] = useState("");
+  const [selectedUnitsWithPriorities, setSelectedUnitsWithPriorities] =
+    useState<UnitWithPriority[]>([]);
   const [priority, setPriority] = useState(1);
   const [note, setNote] = useState("");
 
@@ -220,36 +234,120 @@ export default function EditAnyVariablePage() {
     }
   };
 
-  // Create new variable unit relationship
-  const handleCreateVariableUnit = async () => {
-    if (!selectedVariable || !selectedUnit) return;
+  // Handle unit group selection - automatically select all units in the group
+  const handleUnitGroupSelect = (groupName: string) => {
+    setSelectedUnitGroup(groupName);
+
+    const group = unitGroups.find((g) => g.name === groupName);
+    if (group) {
+      // Create array of units with priorities
+      const unitsWithPriorities: UnitWithPriority[] = group.units.map(
+        (unit, index) => {
+          // Base unit gets priority 1, others get sequential priorities
+          const priority = unit.is_base
+            ? 1
+            : index + 1 + (unit.is_base ? 0 : 1);
+          return {
+            unit,
+            priority: priority,
+            note: "",
+          };
+        }
+      );
+
+      // Sort by priority to ensure base unit is first
+      unitsWithPriorities.sort((a, b) => a.priority - b.priority);
+
+      // Reassign sequential priorities
+      unitsWithPriorities.forEach((item, index) => {
+        item.priority = index + 1;
+      });
+
+      setSelectedUnitsWithPriorities(unitsWithPriorities);
+    } else {
+      setSelectedUnitsWithPriorities([]);
+    }
+  };
+
+  // Move unit up in priority (decrease priority number)
+  const moveUnitUp = (index: number) => {
+    if (index === 0) return;
+
+    const newUnits = [...selectedUnitsWithPriorities];
+    const temp = newUnits[index].priority;
+    newUnits[index].priority = newUnits[index - 1].priority;
+    newUnits[index - 1].priority = temp;
+
+    // Sort by priority to maintain order
+    newUnits.sort((a, b) => a.priority - b.priority);
+    setSelectedUnitsWithPriorities(newUnits);
+  };
+
+  // Move unit down in priority (increase priority number)
+  const moveUnitDown = (index: number) => {
+    if (index === selectedUnitsWithPriorities.length - 1) return;
+
+    const newUnits = [...selectedUnitsWithPriorities];
+    const temp = newUnits[index].priority;
+    newUnits[index].priority = newUnits[index + 1].priority;
+    newUnits[index + 1].priority = temp;
+
+    // Sort by priority to maintain order
+    newUnits.sort((a, b) => a.priority - b.priority);
+    setSelectedUnitsWithPriorities(newUnits);
+  };
+
+  // Update note for a specific unit
+  const updateUnitNote = (index: number, note: string) => {
+    const newUnits = [...selectedUnitsWithPriorities];
+    newUnits[index].note = note;
+    setSelectedUnitsWithPriorities(newUnits);
+  };
+
+  // Create new variable unit relationships for all selected units
+  const handleCreateVariableUnits = async () => {
+    if (!selectedVariable || selectedUnitsWithPriorities.length === 0) return;
 
     try {
       setLoading(true);
-      const response = await fetch("/api/variable-units", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          variable_id: selectedVariable.id,
-          unit_id: selectedUnit,
-          priority,
-          note: note || undefined,
-        }),
-      });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to create variable unit");
-      }
+      // Create all variable-unit relationships
+      const createPromises = selectedUnitsWithPriorities.map(
+        async ({ unit, priority, note }) => {
+          const response = await fetch("/api/variable-units", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              variable_id: selectedVariable.id,
+              unit_id: unit.id,
+              priority,
+              note: note || undefined,
+            }),
+          });
 
-      setSuccess("Variable unit relationship created successfully");
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(
+              errorData.error || `Failed to create unit ${unit.label}`
+            );
+          }
+
+          return response.json();
+        }
+      );
+
+      await Promise.all(createPromises);
+
+      setSuccess(
+        `Successfully added ${selectedUnitsWithPriorities.length} units to the variable`
+      );
       setAddDialogOpen(false);
       resetForm();
       await loadVariableUnits(selectedVariable.id);
     } catch (err) {
-      console.error("Error creating variable unit:", err);
+      console.error("Error creating variable units:", err);
       setError(
-        err instanceof Error ? err.message : "Failed to create variable unit"
+        err instanceof Error ? err.message : "Failed to create variable units"
       );
     } finally {
       setLoading(false);
@@ -344,22 +442,9 @@ export default function EditAnyVariablePage() {
   // Reset form state
   const resetForm = () => {
     setSelectedUnitGroup("");
-    setSelectedUnit("");
+    setSelectedUnitsWithPriorities([]);
     setPriority(1);
     setNote("");
-  };
-
-  // Handle unit group selection in add dialog
-  const handleUnitGroupSelect = (groupName: string) => {
-    setSelectedUnitGroup(groupName);
-    setSelectedUnit(""); // Reset unit selection when group changes
-  };
-
-  // Get available units for selected unit group
-  const getAvailableUnits = () => {
-    if (!selectedUnitGroup) return [];
-    const group = unitGroups.find((g) => g.name === selectedUnitGroup);
-    return group?.units || [];
   };
 
   // Show loading while checking auth
@@ -450,7 +535,7 @@ export default function EditAnyVariablePage() {
               startIcon={<AddIcon />}
               onClick={() => setAddDialogOpen(true)}
             >
-              Add Unit
+              Add Unit Group
             </Button>
           </Box>
 
@@ -476,7 +561,7 @@ export default function EditAnyVariablePage() {
             </Box>
           ) : variableUnits.length === 0 ? (
             <Alert severity="info">
-              No units assigned to this variable. Click "Add Unit" to get
+              No units assigned to this variable. Click "Add Unit Group" to get
               started.
             </Alert>
           ) : (
@@ -573,14 +658,14 @@ export default function EditAnyVariablePage() {
         </Paper>
       )}
 
-      {/* Add Unit Dialog */}
+      {/* Add Unit Group Dialog */}
       <Dialog
         open={addDialogOpen}
         onClose={() => setAddDialogOpen(false)}
-        maxWidth="sm"
+        maxWidth="md"
         fullWidth
       >
-        <DialogTitle>Add Unit to Variable</DialogTitle>
+        <DialogTitle>Add Unit Group to Variable</DialogTitle>
         <DialogContent>
           <Box sx={{ pt: 2, display: "flex", flexDirection: "column", gap: 3 }}>
             {/* Unit Group Selection */}
@@ -599,54 +684,97 @@ export default function EditAnyVariablePage() {
               </Select>
             </FormControl>
 
-            {/* Unit Selection */}
-            <FormControl fullWidth disabled={!selectedUnitGroup}>
-              <InputLabel>Unit</InputLabel>
-              <Select
-                value={selectedUnit}
-                onChange={(e) => setSelectedUnit(e.target.value)}
-                label="Unit"
-              >
-                {getAvailableUnits().map((unit) => (
-                  <MenuItem key={unit.id} value={unit.id}>
-                    {unit.label} ({unit.symbol}){" "}
-                    {unit.is_base ? " - Base Unit" : ""}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            {/* Units Priority Management */}
+            {selectedUnitsWithPriorities.length > 0 && (
+              <Box>
+                <Typography variant="h6" gutterBottom>
+                  Set Unit Priorities (1 = highest priority)
+                </Typography>
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  All units in the "{selectedUnitGroup}" group will be added.
+                  Arrange their priorities below. Base unit is initially at
+                  priority 1.
+                </Alert>
 
-            {/* Priority */}
-            <TextField
-              label="Priority"
-              type="number"
-              value={priority}
-              onChange={(e) => setPriority(parseInt(e.target.value) || 1)}
-              helperText="Lower numbers have higher priority"
-              InputProps={{ inputProps: { min: 1 } }}
-              fullWidth
-            />
+                <List>
+                  {selectedUnitsWithPriorities.map((item, index) => (
+                    <ListItem key={item.unit.id} divider>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          width: "100%",
+                          gap: 2,
+                        }}
+                      >
+                        <Chip
+                          label={item.priority}
+                          size="small"
+                          color="primary"
+                          sx={{ minWidth: 40 }}
+                        />
 
-            {/* Note */}
-            <TextField
-              label="Note (optional)"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              multiline
-              rows={2}
-              fullWidth
-            />
+                        <Box sx={{ flex: 1 }}>
+                          <Typography variant="body1">
+                            {item.unit.label} ({item.unit.symbol})
+                            {item.unit.is_base && (
+                              <Chip
+                                label="Base"
+                                size="small"
+                                color="success"
+                                sx={{ ml: 1 }}
+                              />
+                            )}
+                          </Typography>
+                        </Box>
+
+                        <TextField
+                          label="Note"
+                          value={item.note}
+                          onChange={(e) =>
+                            updateUnitNote(index, e.target.value)
+                          }
+                          size="small"
+                          sx={{ width: 200 }}
+                        />
+
+                        <Box sx={{ display: "flex", flexDirection: "column" }}>
+                          <IconButton
+                            size="small"
+                            onClick={() => moveUnitUp(index)}
+                            disabled={index === 0}
+                            color="primary"
+                          >
+                            <ArrowUpIcon />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            onClick={() => moveUnitDown(index)}
+                            disabled={
+                              index === selectedUnitsWithPriorities.length - 1
+                            }
+                            color="primary"
+                          >
+                            <ArrowDownIcon />
+                          </IconButton>
+                        </Box>
+                      </Box>
+                    </ListItem>
+                  ))}
+                </List>
+              </Box>
+            )}
           </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setAddDialogOpen(false)}>Cancel</Button>
           <Button
-            onClick={handleCreateVariableUnit}
+            onClick={handleCreateVariableUnits}
             variant="contained"
-            disabled={!selectedUnit || loading}
+            disabled={selectedUnitsWithPriorities.length === 0 || loading}
             startIcon={loading ? <CircularProgress size={16} /> : <SaveIcon />}
           >
-            Add Unit
+            Add {selectedUnitsWithPriorities.length} Units
           </Button>
         </DialogActions>
       </Dialog>

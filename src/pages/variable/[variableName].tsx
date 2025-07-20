@@ -1,5 +1,5 @@
+import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/router";
-import { useEffect, useState } from "react";
 import { supabase } from "@/utils/supaBase";
 import { clearDisplayUnitCache } from "@/utils/variableUtils";
 import { useUserDisplayUnit } from "@/hooks/useUserDisplayUnit";
@@ -106,6 +106,7 @@ export default function VariableDataPointsPage() {
   const { user, loading: userLoading } = useUser();
   const [dataPoints, setDataPoints] = useState<DataPointEntry[]>([]);
   const [variableInfo, setVariableInfo] = useState<VariableInfo | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [isShared, setIsShared] = useState(false);
   const [sharingUpdateLoading, setSharingUpdateLoading] = useState(false);
@@ -126,6 +127,142 @@ export default function VariableDataPointsPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [showError, setShowError] = useState(false);
 
+  const fetchVariableInfo = useCallback(async () => {
+    try {
+      if (typeof variableName !== "string") return;
+
+      // Regular variable lookup by slug
+      const slug = variableName.toLowerCase();
+      const { data: variableData, error } = await supabase
+        .from("variables")
+        .select("*")
+        .eq("slug", slug)
+        .single();
+
+      if (!error && variableData) {
+        setVariableInfo(variableData);
+        return;
+      }
+
+      // Fallback: not found
+      setVariableInfo(null);
+    } catch (error) {
+      console.error("Error fetching variable info:", error);
+    }
+  }, [variableName]);
+
+  const fetchDataPoints = useCallback(async () => {
+    if (!user || !variableName || !variableInfo) {
+      console.log("[DEBUG] fetchDataPoints: Missing required data", {
+        user: !!user,
+        variableName,
+        variableInfo: !!variableInfo,
+      });
+      return;
+    }
+    try {
+      console.log("[DEBUG] fetchDataPoints: Starting query", {
+        userId: user.id,
+        variableId: variableInfo.id,
+        variableName: variableInfo.label,
+        sourceType: variableInfo.source_type,
+      });
+
+      let mappedDataPoints: DataPointEntry[] = [];
+
+      // Check if this is an Oura variable
+      if (variableInfo.source_type === "oura") {
+        console.log(
+          "[DEBUG] Fetching Oura variable logs for:",
+          variableInfo.slug
+        );
+
+        const { data: ouraLogs, error: ouraError } = await supabase
+          .from("oura_variable_data_points")
+          .select("id, date, variable_id, value, raw, created_at")
+          .eq("user_id", user.id)
+          .eq("variable_id", variableInfo.id) // Use the actual UUID from variables table
+          .order("date", { ascending: false })
+          .limit(100); // Increased limit for better user experience
+
+        console.log("[DEBUG] Oura logs query result:", {
+          data: ouraLogs,
+          error: ouraError,
+          count: ouraLogs?.length || 0,
+        });
+
+        if (ouraError) {
+          console.error("[DEBUG] Error fetching Oura logs:", ouraError);
+          return; // Early return on error
+        } else {
+          mappedDataPoints = (ouraLogs || []).map((log: any) => ({
+            id: log.id,
+            date: log.date,
+            variable: variableInfo?.label || "Unknown Variable",
+            value: log.value?.toString() || "0",
+            notes: "Oura Ring data", // Clean, simple note for Oura data
+            created_at: log.created_at,
+            user_id: user.id,
+            variable_id: log.variable_id,
+          }));
+        }
+      } else {
+        // Regular variable - fetch from data_points table using variable_id (UUID)
+        const { data: uuidLogs, error: uuidError } = await supabase
+          .from("data_points")
+          .select("id, created_at, date, variable_id, value, notes, user_id")
+          .eq("user_id", user.id)
+          .eq("variable_id", variableInfo.id)
+          .order("created_at", { ascending: false })
+          .limit(100); // Increased limit for better user experience
+
+        console.log("[DEBUG] Regular logs query result:", {
+          data: uuidLogs,
+          error: uuidError,
+          count: uuidLogs?.length || 0,
+        });
+
+        if (uuidError) {
+          console.error("[DEBUG] Error fetching regular logs:", uuidError);
+          return; // Early return on error
+        } else {
+          mappedDataPoints = (uuidLogs || []).map((log: any) => ({
+            id: log.id,
+            date: log.date || log.created_at, // Use date field (local time) if available, fallback to created_at
+            variable: variableInfo?.label || "Unknown Variable",
+            value: log.value,
+            notes: log.notes,
+            created_at: log.created_at,
+            user_id: log.user_id,
+            variable_id: log.variable_id,
+          }));
+        }
+      }
+
+      console.log("[DEBUG] Final mapped data points:", mappedDataPoints);
+      setDataPoints(mappedDataPoints);
+    } catch (error) {
+      console.error("[DEBUG] Error fetching data points:", error);
+    }
+  }, [user, variableName, variableInfo]);
+
+  const fetchSharingStatus = useCallback(async () => {
+    if (!user || !variableInfo) return;
+    try {
+      const { data, error } = await supabase
+        .from("user_variable_preferences")
+        .select("is_shared")
+        .eq("user_id", user.id)
+        .eq("variable_id", variableInfo.id)
+        .single();
+      if (!error && data) {
+        setIsShared(data.is_shared);
+      }
+    } catch (error) {
+      console.error("Error fetching sharing status:", error);
+    }
+  }, [user, variableInfo]);
+
   useEffect(() => {
     if (!variableName || userLoading) return;
 
@@ -136,7 +273,7 @@ export default function VariableDataPointsPage() {
     };
 
     initializePage();
-  }, [variableName, user, userLoading]);
+  }, [variableName, user, userLoading, fetchVariableInfo]);
 
   // Separate useEffect for fetching data points after variableInfo is available
   useEffect(() => {
@@ -144,13 +281,13 @@ export default function VariableDataPointsPage() {
       fetchDataPoints();
       fetchSharingStatus();
     }
-  }, [variableInfo, user]);
+  }, [variableInfo, user, fetchDataPoints, fetchSharingStatus]);
 
   // Handle edit query parameter - auto-start editing when data point is loaded
   useEffect(() => {
     if (editDataPointId && dataPoints.length > 0) {
       const dataPointToEdit = dataPoints.find(
-        (dp) => dp.id.toString() === editDataPointId
+        (dp: any) => dp.id.toString() === editDataPointId
       );
       if (dataPointToEdit) {
         // Check if user owns this data point
@@ -198,140 +335,6 @@ export default function VariableDataPointsPage() {
       console.log("[DEBUG] Current variableInfo:", variableInfo);
     }
   }, [variableInfo]);
-
-  const fetchVariableInfo = async () => {
-    try {
-      if (typeof variableName !== "string") return;
-
-      // Regular variable lookup by slug
-      const slug = variableName.toLowerCase();
-      const { data: variableData, error } = await supabase
-        .from("variables")
-        .select("*")
-        .eq("slug", slug)
-        .single();
-
-      if (!error && variableData) {
-        setVariableInfo(variableData);
-        return;
-      }
-
-      // Fallback: not found
-      setVariableInfo(null);
-    } catch (error) {
-      console.error("Error fetching variable info:", error);
-    }
-  };
-
-  const fetchDataPoints = async () => {
-    if (!user || !variableName || !variableInfo) {
-      console.log("[DEBUG] fetchDataPoints: Missing required data", {
-        user: !!user,
-        variableName,
-        variableInfo: !!variableInfo,
-      });
-      return;
-    }
-    try {
-      console.log("[DEBUG] fetchDataPoints: Starting query", {
-        userId: user.id,
-        variableId: variableInfo.id,
-        variableName: variableInfo.label,
-        sourceType: variableInfo.source_type,
-      });
-
-      let mappedDataPoints: DataPointEntry[] = [];
-
-      // Check if this is an Oura variable
-      if (variableInfo.source_type === "oura") {
-        console.log(
-          "[DEBUG] Fetching Oura variable logs for:",
-          variableInfo.slug
-        );
-
-        const { data: ouraLogs, error: ouraError } = await supabase
-          .from("oura_variable_data_points")
-          .select("id, date, variable_id, value, raw, created_at")
-          .eq("user_id", user.id)
-          .eq("variable_id", variableInfo.id) // Use the actual UUID from variables table
-          .order("date", { ascending: false })
-          .limit(50);
-
-        console.log("[DEBUG] Oura logs query result:", {
-          data: ouraLogs,
-          error: ouraError,
-          count: ouraLogs?.length || 0,
-        });
-
-        if (ouraError) {
-          console.error("[DEBUG] Error fetching Oura logs:", ouraError);
-        } else {
-          mappedDataPoints = (ouraLogs || []).map((log: any) => ({
-            id: log.id,
-            date: log.date,
-            variable: variableInfo?.label || "Unknown Variable",
-            value: log.value?.toString() || "0",
-            notes: "Oura Ring data", // Clean, simple note for Oura data
-            created_at: log.created_at,
-            user_id: user.id,
-            variable_id: log.variable_id,
-          }));
-        }
-      } else {
-        // Regular variable - fetch from data_points table using variable_id (UUID)
-        const { data: uuidLogs, error: uuidError } = await supabase
-          .from("data_points")
-          .select("id, created_at, date, variable_id, value, notes, user_id")
-          .eq("user_id", user.id)
-          .eq("variable_id", variableInfo.id)
-          .order("created_at", { ascending: false })
-          .limit(50);
-
-        console.log("[DEBUG] Regular logs query result:", {
-          data: uuidLogs,
-          error: uuidError,
-          count: uuidLogs?.length || 0,
-        });
-
-        if (uuidError) {
-          console.error("[DEBUG] Error fetching regular logs:", uuidError);
-        } else {
-          mappedDataPoints = (uuidLogs || []).map((log: any) => ({
-            id: log.id,
-            date: log.date || log.created_at, // Use date field (local time) if available, fallback to created_at
-            variable: variableInfo?.label || "Unknown Variable",
-            value: log.value,
-            notes: log.notes,
-            created_at: log.created_at,
-            user_id: log.user_id,
-            variable_id: log.variable_id,
-          }));
-        }
-      }
-
-      console.log("[DEBUG] Final mapped data points:", mappedDataPoints);
-      setDataPoints(mappedDataPoints);
-    } catch (error) {
-      console.error("[DEBUG] Error fetching data points:", error);
-    }
-  };
-
-  const fetchSharingStatus = async () => {
-    if (!user || !variableInfo) return;
-    try {
-      const { data, error } = await supabase
-        .from("user_variable_preferences")
-        .select("is_shared")
-        .eq("user_id", user.id)
-        .eq("variable_id", variableInfo.id)
-        .single();
-      if (!error && data) {
-        setIsShared(data.is_shared);
-      }
-    } catch (error) {
-      console.error("Error fetching sharing status:", error);
-    }
-  };
 
   const handleSharingToggle = async (shared: boolean) => {
     if (!user || !variableName) return;
@@ -432,23 +435,37 @@ export default function VariableDataPointsPage() {
   };
 
   const fetchDistributionData = async () => {
-    if (!variableName) return;
+    if (!variableName || !variableInfo) return;
 
     setDistributionLoading(true);
     try {
+      // First, get users who have shared this variable (with limit for performance)
+      const { data: sharedUsers, error: usersError } = await supabase
+        .from("user_variable_preferences")
+        .select("user_id")
+        .eq("variable_id", variableInfo.id)
+        .eq("is_shared", true)
+        .limit(100); // Limit to prevent excessive data loading
+
+      if (usersError) {
+        throw usersError;
+      }
+
+      // If no shared users, return empty data
+      if (!sharedUsers || sharedUsers.length === 0) {
+        setDistributionData([]);
+        return;
+      }
+
+      const userIds = sharedUsers.map((row) => row.user_id);
+
+      // Then, get data points for those users (with limit)
       const { data, error } = await supabase
         .from("data_points")
         .select("value, user_id")
-        .eq("variable_id", variableInfo?.id)
-        .in(
-          "user_id",
-          await supabase
-            .from("user_variable_preferences")
-            .select("user_id")
-            .eq("variable_id", variableInfo?.id)
-            .eq("is_shared", true)
-            .then(({ data }) => data?.map((row) => row.user_id) || [])
-        );
+        .eq("variable_id", variableInfo.id)
+        .in("user_id", userIds)
+        .limit(500); // Limit total data points for performance
 
       if (error) {
         throw error;
@@ -503,10 +520,15 @@ export default function VariableDataPointsPage() {
           });
 
           setDistributionData(histogram);
+        } else {
+          setDistributionData([]);
         }
+      } else {
+        setDistributionData([]);
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error fetching distribution data:", error);
+      setDistributionData([]);
     } finally {
       setDistributionLoading(false);
     }
@@ -821,12 +843,25 @@ export default function VariableDataPointsPage() {
               </Typography>
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <Typography variant="body2" color="textSecondary">
-                Unit:
+              <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+                Display Unit:
               </Typography>
-              <Typography variant="body1">
-                {displayUnit || variableInfo?.canonical_unit || "No unit"}
-              </Typography>
+              <Box sx={{ maxWidth: 300 }}>
+                <VariableUnitSelector
+                  variableId={variableInfo.id}
+                  userId={user?.id || ""}
+                  currentUnit={displayUnit}
+                  onUnitChange={async (unitId, unitGroup) => {
+                    // Update the user's display unit preference
+                    await updateDisplayUnit(unitId);
+                    // Refresh the display unit
+                    await refetchDisplayUnit();
+                  }}
+                  disabled={displayUnitLoading}
+                  label="Preferred Unit"
+                  size="small"
+                />
+              </Box>
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
               <Typography variant="body2" color="textSecondary">
