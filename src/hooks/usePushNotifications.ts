@@ -49,10 +49,31 @@ export function usePushNotifications(userId: string): PushNotificationHook {
       'PushManager' in window &&
       'Notification' in window;
     
+    // Add comprehensive debugging for iOS PWA
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
+                        (window.navigator as any).standalone ||
+                        document.referrer.includes('android-app://');
+    const notificationPermission = 'Notification' in window ? Notification.permission : 'not-available';
+    
+    console.log('[DEBUG] Push support check:', {
+      supported,
+      hasServiceWorker: 'serviceWorker' in navigator,
+      hasPushManager: 'PushManager' in window,
+      hasNotification: 'Notification' in window,
+      isIOS,
+      isStandalone,
+      notificationPermission,
+      userAgent: navigator.userAgent,
+      isInSafari: !isStandalone && isIOS
+    });
+    
     setIsSupported(supported);
 
     if (supported) {
-      setHasPermission(Notification.permission === 'granted');
+      const granted = notificationPermission === 'granted';
+      setHasPermission(granted);
+      console.log('[DEBUG] Permission status:', { granted, permission: notificationPermission });
     }
   }, []);
 
@@ -62,9 +83,18 @@ export function usePushNotifications(userId: string): PushNotificationHook {
       return false;
     }
 
+    console.log('[DEBUG] Requesting permission...');
+
     try {
       const permission = await Notification.requestPermission();
       const granted = permission === 'granted';
+      
+      console.log('[DEBUG] Permission request result:', {
+        permission,
+        granted,
+        previousPermission: hasPermission
+      });
+      
       setHasPermission(granted);
       
       if (!granted) {
@@ -76,18 +106,38 @@ export function usePushNotifications(userId: string): PushNotificationHook {
       return granted;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to request permission';
+      console.log('[DEBUG] Permission request error:', err);
       setError(errorMessage);
       return false;
     }
   }, [isSupported]);
 
   const subscribeToPush = useCallback(async (): Promise<boolean> => {
+    console.log('[DEBUG] Subscribe attempt:', {
+      isSupported,
+      hasPermission,
+      notificationPermission: 'Notification' in window ? Notification.permission : 'not-available'
+    });
+
     if (!isSupported || !hasPermission) {
-      setError('Push notifications not supported or permission not granted');
+      const detailedError = !isSupported 
+        ? 'Push notifications are not supported in this browser/mode'
+        : 'Notification permission not granted';
+      
+      console.log('[DEBUG] Subscribe failed:', detailedError);
+      setError(detailedError);
       return false;
     }
 
-    if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+    // Add cache busting for VAPID key debugging
+    const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    console.log('[DEBUG] VAPID key check:', {
+      hasKey: !!vapidPublicKey,
+      keyPrefix: vapidPublicKey?.substring(0, 10) + '...',
+      buildTime: new Date().toISOString()
+    });
+
+    if (!vapidPublicKey) {
       setError('VAPID public key not configured');
       return false;
     }
@@ -109,7 +159,6 @@ export function usePushNotifications(userId: string): PushNotificationHook {
       }
 
       // Convert VAPID key to Uint8Array
-      const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
       const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
 
       // Subscribe to push notifications
