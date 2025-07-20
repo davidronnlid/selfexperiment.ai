@@ -180,7 +180,7 @@ export default function NotificationManager({
         hasPermission,
         isPushSubscribed,
         loading,
-        error,
+        pushError,
       },
     };
 

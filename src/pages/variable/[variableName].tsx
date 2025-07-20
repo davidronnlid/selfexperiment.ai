@@ -248,18 +248,24 @@ export default function VariableDataPointsPage() {
 
   const fetchSharingStatus = useCallback(async () => {
     if (!user || !variableInfo) return;
+
     try {
       const { data, error } = await supabase
         .from("user_variable_preferences")
         .select("is_shared")
         .eq("user_id", user.id)
         .eq("variable_id", variableInfo.id)
-        .single();
-      if (!error && data) {
-        setIsShared(data.is_shared);
+        .maybeSingle();
+
+      if (error) {
+        setIsShared(false);
+      } else if (data) {
+        setIsShared(Boolean(data.is_shared));
+      } else {
+        setIsShared(false);
       }
     } catch (error) {
-      console.error("Error fetching sharing status:", error);
+      setIsShared(false);
     }
   }, [user, variableInfo]);
 
@@ -352,34 +358,14 @@ export default function VariableDataPointsPage() {
         variableType = "custom";
       }
 
-      // First, let's check if the table exists by trying a simple query
-      console.log("Testing table access...");
-      const { data: testData, error: testError } = await supabase
-        .from("user_variable_preferences")
-        .select("id")
-        .limit(1);
+      // Skip the table test - just try the upsert directly
 
-      if (testError) {
-        console.error("Table access test failed:", testError);
+      console.log("[DEBUG] Attempting to upsert sharing setting...", {
+        user_id: user.id,
+        variable_id: variableInfo?.id,
+        is_shared: shared,
+      });
 
-        if (testError.code === "42P01") {
-          // Table doesn't exist
-          setErrorMessage(
-            "Database schema not set up. Please contact support or check the setup instructions."
-          );
-          setShowError(true);
-          return;
-        }
-
-        if (testError.code === "42501") {
-          // Permission denied - RLS issue
-          setErrorMessage("Permission error. Please refresh and try again.");
-          setShowError(true);
-          return;
-        }
-      }
-
-      console.log("Attempting to upsert sharing setting...");
       const { data, error } = await supabase
         .from("user_variable_preferences")
         .upsert({
@@ -388,6 +374,8 @@ export default function VariableDataPointsPage() {
           is_shared: shared,
         })
         .select();
+
+      console.log("[DEBUG] Upsert result:", { data, error });
 
       if (error) {
         console.error("Upsert failed with error:", error);
@@ -401,7 +389,10 @@ export default function VariableDataPointsPage() {
       }
 
       console.log("Upsert successful:", data);
-      setIsShared(shared);
+
+      // Force refresh the sharing status to ensure UI is in sync
+      await fetchSharingStatus();
+
       setSuccessMessage(
         shared
           ? "Variable is now shared with the community!"
@@ -448,7 +439,12 @@ export default function VariableDataPointsPage() {
         .limit(100); // Limit to prevent excessive data loading
 
       if (usersError) {
-        throw usersError;
+        console.warn(
+          "Could not fetch shared users for distribution:",
+          usersError
+        );
+        setDistributionData([]);
+        return;
       }
 
       // If no shared users, return empty data
@@ -728,17 +724,25 @@ export default function VariableDataPointsPage() {
 
     setDisplayUnitLoading(true);
     try {
-      const { error } = await supabase
-        .from("user_variable_preferences")
-        .upsert({
-          user_id: user.id,
-          variable_id: variableInfo.id,
-          display_unit: unit,
-        });
+      // Use the RPC function instead of direct upsert
+      const { data: success, error } = await supabase.rpc(
+        "set_user_unit_preference",
+        {
+          user_id_param: user.id,
+          variable_id_param: variableInfo.id,
+          unit_id_param: unit,
+        }
+      );
 
       if (error) {
         console.error("Error updating display unit:", error);
         setErrorMessage("Failed to update display unit preference");
+        setShowError(true);
+      } else if (!success) {
+        console.error(
+          "Function returned false - unit may not be available for this variable"
+        );
+        setErrorMessage("Selected unit is not available for this variable");
         setShowError(true);
       } else {
         setSuccessMessage("Display unit preference updated successfully");
@@ -889,6 +893,13 @@ export default function VariableDataPointsPage() {
                   {isShared ? "Shared with community" : "Private"}
                 </Typography>
                 {sharingUpdateLoading && <CircularProgress size={16} />}
+                <Button
+                  size="small"
+                  onClick={() => fetchSharingStatus()}
+                  sx={{ ml: 1 }}
+                >
+                  🔄 Refresh
+                </Button>
               </Box>
             </Grid>
           </Grid>

@@ -665,18 +665,18 @@ export async function getUserDisplayUnit(
   }
   
   try {
-    const { data, error } = await supabase
-      .from("user_variable_preferences")
-      .select("display_unit")
-      .eq("user_id", userId)
-      .eq("variable_id", variableId)
-      .single();
+    // Use the RPC function instead of direct table access
+    const { data, error } = await supabase.rpc('get_user_preferred_unit', {
+      user_id_param: userId,
+      variable_id_param: variableId
+    });
     
     let displayUnit = "";
-    if (!error && data && data.display_unit) {
-      displayUnit = data.display_unit;
+    if (!error && data && data.length > 0) {
+      // RPC function returns an array, get the first result
+      displayUnit = data[0].unit_id || data[0].symbol || "";
     } else {
-      // Fallback to variable's canonical unit (deprecated - use variable_units table)
+      // Fallback to variable's canonical unit
       displayUnit = variable?.canonical_unit || "";
     }
     
@@ -685,7 +685,7 @@ export async function getUserDisplayUnit(
     return displayUnit;
   } catch (error) {
     console.error("Failed to get user display unit:", error);
-    const fallback = variable?.canonical_unit || ""; // deprecated - use variable_units table
+    const fallback = variable?.canonical_unit || "";
     displayUnitCache.set(cacheKey, fallback);
     return fallback;
   }
