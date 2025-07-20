@@ -33,6 +33,7 @@ import {
   IconButton,
   Tooltip,
   Badge,
+  Paper,
 } from "@mui/material";
 import {
   Notifications as NotificationsIcon,
@@ -51,12 +52,14 @@ import {
 } from "@mui/icons-material";
 import { supabase } from "@/utils/supaBase";
 import { useNotifications } from "@/hooks/useNotifications";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 interface NotificationPreferences {
   id?: string;
   user_id: string;
   routine_reminder_enabled: boolean;
   routine_reminder_minutes: number;
+  routine_notification_timing: "before" | "at_time" | "after";
   test_notification_enabled: boolean;
   test_notification_time?: string;
   created_at?: string;
@@ -79,10 +82,22 @@ export default function NotificationManager({
     cancelScheduledNotification,
   } = useNotifications(userId);
 
+  const {
+    isSupported: isPushSupported,
+    isPushSubscribed,
+    subscribeToPush,
+    unsubscribeFromPush,
+    sendTestPushNotification,
+    subscriptions: pushSubscriptions,
+    loading: pushLoading,
+    error: pushError,
+  } = usePushNotifications(userId);
+
   const [preferences, setPreferences] = useState<NotificationPreferences>({
     user_id: userId,
     routine_reminder_enabled: true,
     routine_reminder_minutes: 15,
+    routine_notification_timing: "before",
     test_notification_enabled: false,
   });
 
@@ -411,24 +426,64 @@ export default function NotificationManager({
 
                 {preferences.routine_reminder_enabled && (
                   <ListItem sx={{ pl: 4 }}>
-                    <FormControl size="small" sx={{ minWidth: 120 }}>
-                      <InputLabel>Remind me</InputLabel>
-                      <Select
-                        value={preferences.routine_reminder_minutes.toString()}
-                        onChange={(e) =>
-                          handlePreferenceChange(
-                            "routine_reminder_minutes",
-                            parseInt(e.target.value)
-                          )
-                        }
-                        label="Remind me"
-                      >
-                        <MenuItem value="5">5 minutes before</MenuItem>
-                        <MenuItem value="15">15 minutes before</MenuItem>
-                        <MenuItem value="30">30 minutes before</MenuItem>
-                        <MenuItem value="60">1 hour before</MenuItem>
-                      </Select>
-                    </FormControl>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        gap: 2,
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <FormControl size="small" sx={{ minWidth: 140 }}>
+                        <InputLabel>Timing</InputLabel>
+                        <Select
+                          value={
+                            preferences.routine_notification_timing || "before"
+                          }
+                          onChange={(e) =>
+                            handlePreferenceChange(
+                              "routine_notification_timing",
+                              e.target.value
+                            )
+                          }
+                          label="Timing"
+                        >
+                          <MenuItem value="before">Before routine</MenuItem>
+                          <MenuItem value="at_time">At routine time</MenuItem>
+                          <MenuItem value="after">After routine</MenuItem>
+                        </Select>
+                      </FormControl>
+
+                      {preferences.routine_notification_timing !==
+                        "at_time" && (
+                        <FormControl size="small" sx={{ minWidth: 120 }}>
+                          <InputLabel>How long</InputLabel>
+                          <Select
+                            value={Math.abs(
+                              preferences.routine_reminder_minutes
+                            ).toString()}
+                            onChange={(e) => {
+                              const minutes = parseInt(e.target.value);
+                              const timing =
+                                preferences.routine_notification_timing;
+                              // Make negative for "after" timing
+                              const finalMinutes =
+                                timing === "after" ? -minutes : minutes;
+                              handlePreferenceChange(
+                                "routine_reminder_minutes",
+                                finalMinutes
+                              );
+                            }}
+                            label="How long"
+                          >
+                            <MenuItem value="5">5 minutes</MenuItem>
+                            <MenuItem value="15">15 minutes</MenuItem>
+                            <MenuItem value="30">30 minutes</MenuItem>
+                            <MenuItem value="60">1 hour</MenuItem>
+                          </Select>
+                        </FormControl>
+                      )}
+                    </Box>
                   </ListItem>
                 )}
               </List>
@@ -526,6 +581,162 @@ export default function NotificationManager({
                         )}
                       </Box>
                     </Stack>
+                  </AccordionDetails>
+                </Accordion>
+
+                {/* Server Push Notifications Section */}
+                <Accordion>
+                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                    <Typography
+                      variant="h6"
+                      sx={{ display: "flex", alignItems: "center", gap: 1 }}
+                    >
+                      <SendIcon />
+                      Server Push Notifications
+                      {isPushSubscribed && (
+                        <Chip
+                          label="Active"
+                          color="success"
+                          size="small"
+                          sx={{ ml: 1 }}
+                        />
+                      )}
+                    </Typography>
+                  </AccordionSummary>
+                  <AccordionDetails>
+                    <Typography
+                      variant="body2"
+                      color="textSecondary"
+                      sx={{ mb: 2 }}
+                    >
+                      Server push notifications work even when the app is
+                      closed. Required for iOS PWA background notifications.
+                    </Typography>
+
+                    {pushError && (
+                      <Alert severity="error" sx={{ mb: 2 }}>
+                        {pushError}
+                      </Alert>
+                    )}
+
+                    {!isPushSupported && (
+                      <Alert severity="warning" sx={{ mb: 2 }}>
+                        Push notifications are not supported in this browser or
+                        device.
+                      </Alert>
+                    )}
+
+                    <Box
+                      sx={{ display: "flex", flexDirection: "column", gap: 2 }}
+                    >
+                      {/* Push Subscription Status */}
+                      <Paper elevation={1} sx={{ p: 2 }}>
+                        <Typography variant="subtitle2" gutterBottom>
+                          Push Subscription Status
+                        </Typography>
+
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 2,
+                            mb: 2,
+                          }}
+                        >
+                          {isPushSubscribed ? (
+                            <>
+                              <CheckCircleIcon color="success" />
+                              <Typography variant="body2" color="success.main">
+                                Subscribed to server push notifications
+                              </Typography>
+                            </>
+                          ) : (
+                            <>
+                              <WarningIcon color="warning" />
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                              >
+                                Not subscribed to server push notifications
+                              </Typography>
+                            </>
+                          )}
+                        </Box>
+
+                        <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                          {!isPushSubscribed ? (
+                            <Button
+                              variant="contained"
+                              onClick={subscribeToPush}
+                              disabled={
+                                !isPushSupported ||
+                                !hasPermission ||
+                                pushLoading
+                              }
+                              startIcon={
+                                pushLoading ? (
+                                  <CircularProgress size={16} />
+                                ) : (
+                                  <NotificationsIcon />
+                                )
+                              }
+                            >
+                              {pushLoading
+                                ? "Subscribing..."
+                                : "Enable Server Push"}
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outlined"
+                              color="warning"
+                              onClick={unsubscribeFromPush}
+                              disabled={pushLoading}
+                              startIcon={
+                                pushLoading ? (
+                                  <CircularProgress size={16} />
+                                ) : (
+                                  <NotificationsOffIcon />
+                                )
+                              }
+                            >
+                              {pushLoading
+                                ? "Unsubscribing..."
+                                : "Disable Server Push"}
+                            </Button>
+                          )}
+
+                          {isPushSubscribed && (
+                            <Button
+                              variant="outlined"
+                              onClick={sendTestPushNotification}
+                              disabled={pushLoading}
+                              startIcon={<SendIcon />}
+                            >
+                              Test Server Push
+                            </Button>
+                          )}
+                        </Box>
+                      </Paper>
+
+                      {/* iOS PWA Instructions */}
+                      <Alert severity="info" icon={<InfoIcon />}>
+                        <Typography variant="body2" sx={{ mb: 1 }}>
+                          <strong>For iOS Users:</strong>
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          component="div"
+                          sx={{ pl: 1 }}
+                        >
+                          • Must "Add to Home Screen" to install as PWA
+                          <br />
+                          • Open app from home screen (not Safari)
+                          <br />
+                          • Server push works even when app is closed
+                          <br />• Requires iOS 16.4+ and supported browser
+                        </Typography>
+                      </Alert>
+                    </Box>
                   </AccordionDetails>
                 </Accordion>
 

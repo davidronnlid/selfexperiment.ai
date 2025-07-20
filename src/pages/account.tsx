@@ -36,8 +36,7 @@ import {
   FaUserCircle,
 } from "react-icons/fa";
 import { LOG_LABELS } from "@/utils/logLabels";
-import VariableSharingManager from "../components/VariableSharingManager";
-import AnalyzePrivacySection from "../components/AnalyzePrivacySection";
+import SimpleVariableSharing from "../components/SimpleVariableSharing";
 import NotificationManager from "../components/NotificationManager";
 
 // Common timezone options for the autocomplete
@@ -63,6 +62,29 @@ interface Profile {
   avatar_url?: string | null;
   timezone: string;
 }
+
+// Helper function to detect if user signed up with Google OAuth
+const isGoogleAuthUser = (user: any): boolean => {
+  // Check if user has Google provider in app_metadata
+  if (user?.app_metadata?.providers?.includes("google")) {
+    return true;
+  }
+
+  // Check if user has Google OAuth metadata
+  if (user?.user_metadata?.iss === "https://accounts.google.com") {
+    return true;
+  }
+
+  // Check if user metadata contains Google-specific fields
+  if (
+    user?.user_metadata?.picture &&
+    user?.user_metadata?.picture.includes("googleusercontent.com")
+  ) {
+    return true;
+  }
+
+  return false;
+};
 
 function SharedVariablesViewer({ username }: { username: string }) {
   const [sharedVars, setSharedVars] = useState<any[]>([]);
@@ -146,6 +168,11 @@ export default function AccountPage() {
   const [usernameAvailable, setUsernameAvailable] = useState(true);
   const [checkingUsername, setCheckingUsername] = useState(false);
 
+  // Email-related state
+  const [emailConfirmationSent, setEmailConfirmationSent] = useState(false);
+  const [isGoogleUser, setIsGoogleUser] = useState(false);
+  const [originalEmail, setOriginalEmail] = useState("");
+
   // Privacy settings state
   const [variableSettings, setVariableSettings] = useState<any[]>([]);
   const [privacyLoading, setPrivacyLoading] = useState(true);
@@ -162,9 +189,15 @@ export default function AccountPage() {
       if (!user) return;
       setProfileLoading(true);
       setError("");
+
+      // Detect if user is a Google OAuth user
+      const googleUser = isGoogleAuthUser(user);
+      setIsGoogleUser(googleUser);
+      setOriginalEmail(user.email || "");
+
       const { data, error } = await supabase
         .from("profiles")
-        .select("username, name, date_of_birth, avatar_url, timezone")
+        .select("username, name, date_of_birth, avatar_url, timezone, email")
         .eq("id", user.id)
         .single();
       if (error) {
@@ -177,7 +210,7 @@ export default function AccountPage() {
       } else {
         const profileWithEmail = {
           ...data,
-          email: user.email || "",
+          email: data.email || user.email || "", // Use profile email first, fallback to auth email
           timezone:
             data.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
         };
@@ -259,29 +292,50 @@ export default function AccountPage() {
     e.preventDefault();
     if (!user) return;
     setSaving(true);
+    setEmailConfirmationSent(false);
+
     try {
-      // Update email in auth if it changed
-      if (form.email !== user.email) {
+      let emailChanged = false;
+
+      // Handle email changes (only for non-Google users)
+      if (!isGoogleUser && form.email !== originalEmail) {
+        console.log("Email change detected for non-Google user");
         const { error: emailError } = await supabase.auth.updateUser({
           email: form.email,
         });
         if (emailError) throw emailError;
+        emailChanged = true;
+        setEmailConfirmationSent(true);
       }
 
-      // Update profile in database
+      // Update profile in database including email
       const { error } = await supabase.from("profiles").upsert({
         id: user.id,
         username: form.username,
         name: form.name,
         date_of_birth: form.date_of_birth,
         timezone: form.timezone,
+        email: form.email, // Save email to profile table
       });
       if (error) throw error;
+
       setProfile(form);
       setEditMode(false);
-    } catch (error) {
+
+      // Show success message
+      if (emailChanged) {
+        setError(""); // Clear any previous errors
+        // The email confirmation message will be shown via the emailConfirmationSent state
+      }
+    } catch (error: any) {
       console.error("Error saving profile:", error);
-      setError("Failed to save profile.");
+      if (error.message?.includes("email")) {
+        setError(
+          "Failed to update email. Please check that the email address is valid and not already in use."
+        );
+      } else {
+        setError("Failed to save profile. Please try again.");
+      }
     } finally {
       setSaving(false);
     }
@@ -513,6 +567,37 @@ export default function AccountPage() {
                   <Grid size={{ xs: 12, md: 6 }}>
                     <TextField
                       fullWidth
+                      label="Email Address"
+                      name="email"
+                      type="email"
+                      value={form.email}
+                      onChange={handleChange}
+                      disabled={!editMode || isGoogleUser}
+                      className="mb-4"
+                      helperText={
+                        isGoogleUser
+                          ? "Email cannot be changed for Google-linked accounts"
+                          : emailConfirmationSent
+                          ? "✅ Confirmation email sent to your new address. Please check your email to verify the change."
+                          : editMode && !isGoogleUser
+                          ? "Changing your email will require email confirmation"
+                          : ""
+                      }
+                      FormHelperTextProps={{
+                        sx: {
+                          color: emailConfirmationSent
+                            ? "success.main"
+                            : isGoogleUser
+                            ? "text.secondary"
+                            : "text.secondary",
+                          fontWeight: emailConfirmationSent ? "bold" : "normal",
+                        },
+                      }}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField
+                      fullWidth
                       label="Date of Birth"
                       name="date_of_birth"
                       type="date"
@@ -569,50 +654,6 @@ export default function AccountPage() {
           </CardContent>
         </Card>
 
-        {/* Privacy Settings */}
-        <Card>
-          <CardHeader
-            title={
-              <Box className="flex items-center gap-2">
-                <FaShieldAlt className="text-gold" />
-                <Typography variant="h6" className="text-white font-semibold">
-                  Privacy Settings
-                </Typography>
-              </Box>
-            }
-          />
-          <CardContent className="p-4 lg:p-6">
-            {privacyMessage && (
-              <Alert
-                severity={privacyMessage.type}
-                className="mb-4"
-                onClose={() => setPrivacyMessage(null)}
-              >
-                {privacyMessage.text}
-              </Alert>
-            )}
-
-            <Box className="space-y-4">
-              <Typography variant="body2" className="text-text-secondary mb-4">
-                Control which variables you want to share with the community.
-                Shared variables will be visible to other users.
-              </Typography>
-
-              {user && <VariableSharingManager user={user} />}
-
-              <Box className="mt-6">
-                <Typography
-                  variant="h6"
-                  className="text-white font-semibold mb-3"
-                >
-                  Privacy Analysis
-                </Typography>
-                <AnalyzePrivacySection />
-              </Box>
-            </Box>
-          </CardContent>
-        </Card>
-
         {/* Notification Settings */}
         <Card>
           <CardHeader
@@ -630,6 +671,26 @@ export default function AccountPage() {
               Configure push notifications for reminders, insights, and updates.
             </Typography>
             {user && <NotificationManager userId={user.id} />}
+          </CardContent>
+        </Card>
+
+        {/* Privacy Settings */}
+        <Card>
+          <CardHeader
+            title={
+              <Box className="flex items-center gap-2">
+                <FaShieldAlt className="text-gold" />
+                <Typography variant="h6" className="text-white font-semibold">
+                  Privacy Settings
+                </Typography>
+              </Box>
+            }
+          />
+          <CardContent className="p-4 lg:p-6">
+            <Typography variant="body2" className="text-text-secondary mb-4">
+              Control which variables are shared with other users.
+            </Typography>
+            <SimpleVariableSharing userId={user.id} />
           </CardContent>
         </Card>
       </Box>

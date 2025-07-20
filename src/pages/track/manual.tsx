@@ -29,6 +29,7 @@ import DropdownInput from "@/components/DropdownInput";
 import ConstrainedInput from "@/components/ConstrainedInput";
 import ValidatedVariableInput from "@/components/ValidatedVariableInput";
 import VariableCreationDialog from "@/components/VariableCreationDialog";
+import VariableLabel from "@/components/VariableLabel";
 import Link from "next/link";
 import {
   Container,
@@ -103,7 +104,7 @@ const useEmojiMap = (
   return emojiMap;
 };
 
-// Helper for variable name and link
+// Helper for variable name and link - now using VariableLabel component
 function VariableNameLink({
   log,
   variables,
@@ -111,32 +112,16 @@ function VariableNameLink({
   log: any;
   variables: Variable[];
 }) {
-  let variableSlug = log.variable;
-  let variableLabel = log.variable;
-  if (log.variable_id && variables && Array.isArray(variables)) {
-    const foundVar = variables.find((v) => v.id === log.variable_id);
-    if (foundVar) {
-      variableSlug = foundVar.slug;
-      variableLabel = foundVar.label;
-    }
-  }
-  if (!variableSlug) variableSlug = log.variable_id || "unknown-variable";
-  if (!variableLabel) variableLabel = log.variable_id || "unknown-variable";
   return (
-    <Link
-      href={`/variable/${encodeURIComponent(variableSlug)}`}
-      passHref
-      style={{
-        color: "#FFD700",
-        textDecoration: "underline",
-        fontWeight: 500,
-        fontSize: "0.85em",
-        marginLeft: 4,
-      }}
-      title={`View variable: ${variableLabel}`}
-    >
-      {variableLabel}
-    </Link>
+    <VariableLabel
+      variableId={log.variable_id}
+      variableLabel={log.variable}
+      variables={variables}
+      color="#FFD700"
+      fontWeight={500}
+      fontSize="0.85em"
+      sx={{ marginLeft: 0.5 }}
+    />
   );
 }
 
@@ -2002,7 +1987,30 @@ export default function ManualTrackPage() {
                 <Chip
                   key={variable.id}
                   label={`${variable.icon || "📝"} ${variable.label}`}
-                  onClick={() => setSelectedVariable(variable)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setSelectedVariable(variable);
+                    // Also navigate to variable page on right-click or ctrl+click
+                    if (e.ctrlKey || e.metaKey || e.button === 2) {
+                      const slug =
+                        variable.slug ||
+                        variable.label.toLowerCase().replace(/\s+/g, "-");
+                      window.open(
+                        `/variable/${encodeURIComponent(slug)}`,
+                        "_blank"
+                      );
+                    }
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    const slug =
+                      variable.slug ||
+                      variable.label.toLowerCase().replace(/\s+/g, "-");
+                    window.open(
+                      `/variable/${encodeURIComponent(slug)}`,
+                      "_blank"
+                    );
+                  }}
                   color={
                     selectedVariable?.id === variable.id ? "primary" : "default"
                   }
@@ -2086,12 +2094,13 @@ export default function ManualTrackPage() {
                   {option.icon || "📝"}
                 </span>
                 <Box>
-                  <Typography
+                  <VariableLabel
+                    variable={option}
                     variant="body1"
+                    disableLink={true}
+                    color="inherit"
                     sx={{ fontSize: { xs: "0.9rem", sm: "1rem" } }}
-                  >
-                    {option.label}
-                  </Typography>
+                  />
                   {option.description && (
                     <Typography
                       variant="caption"
@@ -2126,22 +2135,29 @@ export default function ManualTrackPage() {
                 backgroundColor: "rgba(33, 150, 243, 0.1)",
                 borderRadius: 2,
                 border: "2px solid #2196f3",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+                "&:hover": {
+                  backgroundColor: "rgba(33, 150, 243, 0.15)",
+                  transform: "translateY(-1px)",
+                  boxShadow: "0 4px 12px rgba(33, 150, 243, 0.2)",
+                },
+                "&:active": {
+                  transform: "translateY(0)",
+                },
               }}
             >
               <span style={{ fontSize: "1.5rem" }}>
                 {selectedVariable.icon || "📝"}
               </span>
               <Box>
-                <Typography
+                <VariableLabel
+                  variable={selectedVariable}
                   variant="h6"
-                  sx={{
-                    fontSize: { xs: "1.1rem", sm: "1.25rem" },
-                    fontWeight: "bold",
-                    color: "#2196f3",
-                  }}
-                >
-                  {selectedVariable.label}
-                </Typography>
+                  color="#2196f3"
+                  fontWeight="bold"
+                  sx={{ fontSize: { xs: "1.1rem", sm: "1.25rem" } }}
+                />
                 {selectedVariable.description && (
                   <Typography
                     variant="body2"
@@ -2571,7 +2587,14 @@ export default function ManualTrackPage() {
                                 >
                                   <FaEdit style={{ fontSize: "1rem" }} />
                                   Editing: {getVariableIconFromLog(log)}{" "}
-                                  {getVariableNameFromLog(log)}
+                                  <VariableLabel
+                                    variableId={log.variable_id}
+                                    variableLabel={log.variable}
+                                    variables={variables}
+                                    color="#1976d2"
+                                    fontWeight="bold"
+                                    disableLink={true}
+                                  />
                                 </Typography>
                                 <Box sx={{ display: "flex", gap: 1 }}>
                                   <IconButton
@@ -2703,9 +2726,18 @@ export default function ManualTrackPage() {
                                 {/* Value Field */}
                                 <TextField
                                   fullWidth
-                                  label={`Value for ${getVariableNameFromLog(
-                                    log
-                                  )}`}
+                                  label={`Value for ${(() => {
+                                    if (
+                                      log.variable_id &&
+                                      variables.length > 0
+                                    ) {
+                                      const variable = variables.find(
+                                        (v) => v.id === log.variable_id
+                                      );
+                                      if (variable) return variable.label;
+                                    }
+                                    return log.variable || "Unknown Variable";
+                                  })()}`}
                                   value={editingValue}
                                   onChange={(e) => {
                                     const newValue = e.target.value;
@@ -2876,44 +2908,17 @@ export default function ManualTrackPage() {
                                   flex: 1,
                                 }}
                               >
-                                <Link
-                                  href={`/variable/${encodeURIComponent(
-                                    (() => {
-                                      // Get variable slug from log
-                                      if (
-                                        log.variable_id &&
-                                        variables.length > 0
-                                      ) {
-                                        const variable = variables.find(
-                                          (v) => v.id === log.variable_id
-                                        );
-                                        if (variable) {
-                                          return variable.slug;
-                                        }
-                                      }
-                                      return log.variable || "unknown-variable";
-                                    })()
-                                  )}`}
-                                  style={{
-                                    color: "#1976d2",
-                                    textDecoration: "underline",
-                                    cursor: "pointer",
+                                <VariableLabel
+                                  variableId={log.variable_id}
+                                  variableLabel={log.variable}
+                                  variables={variables}
+                                  variant="subtitle2"
+                                  color="#1976d2"
+                                  fontWeight="bold"
+                                  sx={{
+                                    fontSize: { xs: "0.9rem", sm: "1rem" },
                                   }}
-                                >
-                                  <Typography
-                                    variant="subtitle2"
-                                    fontWeight="bold"
-                                    sx={{
-                                      color: "#1976d2",
-                                      fontSize: {
-                                        xs: "0.9rem",
-                                        sm: "1rem",
-                                      },
-                                    }}
-                                  >
-                                    {getVariableNameFromLog(log)}
-                                  </Typography>
-                                </Link>
+                                />
                                 <Typography
                                   variant="h6"
                                   sx={{
@@ -3172,7 +3177,14 @@ export default function ManualTrackPage() {
                                         }}
                                       >
                                         ✏️ Editing: 🤖{" "}
-                                        {getVariableNameFromLog(log)}
+                                        <VariableLabel
+                                          variableId={log.variable_id}
+                                          variableLabel={log.variable}
+                                          variables={variables}
+                                          color="#1976d2"
+                                          fontWeight="bold"
+                                          disableLink={true}
+                                        />
                                       </Typography>
                                       <Box sx={{ display: "flex", gap: 1 }}>
                                         <IconButton
@@ -3288,9 +3300,20 @@ export default function ManualTrackPage() {
                                       {/* Value Field */}
                                       <TextField
                                         fullWidth
-                                        label={`Value for ${getVariableNameFromLog(
-                                          log
-                                        )}`}
+                                        label={`Value for ${(() => {
+                                          if (
+                                            log.variable_id &&
+                                            variables.length > 0
+                                          ) {
+                                            const variable = variables.find(
+                                              (v) => v.id === log.variable_id
+                                            );
+                                            if (variable) return variable.label;
+                                          }
+                                          return (
+                                            log.variable || "Unknown Variable"
+                                          );
+                                        })()}`}
                                         value={editingValue}
                                         onChange={(e) => {
                                           const newValue = e.target.value;
@@ -3461,48 +3484,20 @@ export default function ManualTrackPage() {
                                           flex: 1,
                                         }}
                                       >
-                                        <Link
-                                          href={`/variable/${encodeURIComponent(
-                                            (() => {
-                                              // Get variable slug from log
-                                              if (
-                                                log.variable_id &&
-                                                variables.length > 0
-                                              ) {
-                                                const variable = variables.find(
-                                                  (v) =>
-                                                    v.id === log.variable_id
-                                                );
-                                                if (variable) {
-                                                  return variable.slug;
-                                                }
-                                              }
-                                              return (
-                                                log.variable ||
-                                                "unknown-variable"
-                                              );
-                                            })()
-                                          )}`}
-                                          style={{
-                                            color: "#1976d2",
-                                            textDecoration: "underline",
-                                            cursor: "pointer",
+                                        <VariableLabel
+                                          variableId={log.variable_id}
+                                          variableLabel={log.variable}
+                                          variables={variables}
+                                          variant="subtitle2"
+                                          color="#1976d2"
+                                          fontWeight="bold"
+                                          sx={{
+                                            fontSize: {
+                                              xs: "0.9rem",
+                                              sm: "1rem",
+                                            },
                                           }}
-                                        >
-                                          <Typography
-                                            variant="subtitle2"
-                                            fontWeight="bold"
-                                            sx={{
-                                              color: "#1976d2",
-                                              fontSize: {
-                                                xs: "0.9rem",
-                                                sm: "1rem",
-                                              },
-                                            }}
-                                          >
-                                            {getVariableNameFromLog(log)}
-                                          </Typography>
-                                        </Link>
+                                        />
                                         <Typography
                                           variant="h6"
                                           sx={{

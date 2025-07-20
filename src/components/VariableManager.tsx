@@ -37,6 +37,8 @@ import {
   Variable,
   UserVariablePreference,
   CreateVariableRequest,
+  Unit,
+  VariableUnit,
 } from "../types/variables";
 import {
   createVariable,
@@ -44,6 +46,14 @@ import {
   getVariablesWithPreferences,
   updateUserVariablePreference,
 } from "../utils/variableUtils";
+import {
+  fetchVariableUnits,
+  addVariableUnit,
+  removeVariableUnit,
+  setVariableUnits,
+  getAvailableUnitsForVariable,
+} from "../utils/variableUnitsUtils";
+import { fetchUnits } from "../utils/unitsTableUtils";
 import { useUser } from "../pages/_app";
 
 interface VariableManagerProps {
@@ -75,6 +85,56 @@ function TabPanel(props: TabPanelProps) {
   );
 }
 
+// Component to display variable units
+function VariableUnitsDisplay({ variableId }: { variableId: string }) {
+  const [variableUnits, setVariableUnits] = useState<Unit[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadUnits = async () => {
+      try {
+        const units = await getAvailableUnitsForVariable(variableId);
+        setVariableUnits(units);
+      } catch (error) {
+        console.error("Failed to load variable units:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadUnits();
+  }, [variableId]);
+
+  if (loading) {
+    return <Chip label="Loading..." size="small" variant="outlined" />;
+  }
+
+  if (variableUnits.length === 0) {
+    return <Chip label="No units" size="small" variant="outlined" />;
+  }
+
+  return (
+    <>
+      {variableUnits.slice(0, 2).map((unit, index) => (
+        <Chip
+          key={unit.id}
+          label={`${unit.label} (${unit.symbol})`}
+          size="small"
+          variant="outlined"
+          color={index === 0 ? "primary" : "default"}
+        />
+      ))}
+      {variableUnits.length > 2 && (
+        <Chip
+          label={`+${variableUnits.length - 2} more`}
+          size="small"
+          variant="outlined"
+        />
+      )}
+    </>
+  );
+}
+
 export default function VariableManager({
   open,
   onClose,
@@ -88,6 +148,8 @@ export default function VariableManager({
   const [userPreferences, setUserPreferences] = useState<
     UserVariablePreference[]
   >([]);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{
     type: "success" | "error";
@@ -100,9 +162,6 @@ export default function VariableManager({
     label: "",
     description: "",
     data_type: "continuous",
-    canonical_unit: "",
-    unit_group: "",
-    convertible_units: [],
     source_type: "manual",
     category: "",
     validation_rules: {},
@@ -114,6 +173,7 @@ export default function VariableManager({
   useEffect(() => {
     if (open && user) {
       loadVariables();
+      loadUnits();
     }
   }, [open, user]);
 
@@ -140,6 +200,15 @@ export default function VariableManager({
     }
   };
 
+  const loadUnits = async () => {
+    try {
+      const allUnits = await fetchUnits();
+      setUnits(allUnits);
+    } catch (error) {
+      console.error("Failed to load units:", error);
+    }
+  };
+
   const handleCreateVariable = async () => {
     if (!user) return;
 
@@ -148,6 +217,15 @@ export default function VariableManager({
       const newVariable = await createVariable(createForm, user.id);
 
       if (newVariable) {
+        // Add selected units to the new variable
+        if (selectedUnits.length > 0) {
+          const unitConfigs = selectedUnits.map((unitId, index) => ({
+            unitId,
+            priority: index + 1,
+          }));
+          await setVariableUnits(newVariable.id, unitConfigs);
+        }
+
         setVariables((prev) => [...prev, newVariable]);
         setMessage({ type: "success", text: "Variable created successfully" });
         onVariableCreate?.(newVariable);
@@ -158,13 +236,11 @@ export default function VariableManager({
           label: "",
           description: "",
           data_type: "continuous",
-          canonical_unit: "",
-          unit_group: "",
-          convertible_units: [],
           source_type: "manual",
           category: "",
           validation_rules: {},
         });
+        setSelectedUnits([]);
       }
     } catch (error) {
       console.error("Failed to create variable:", error);
@@ -185,12 +261,20 @@ export default function VariableManager({
       );
 
       if (updatedVariable) {
+        // Update variable units
+        const unitConfigs = selectedUnits.map((unitId, index) => ({
+          unitId,
+          priority: index + 1,
+        }));
+        await setVariableUnits(editingVariable.id, unitConfigs);
+
         setVariables((prev) =>
           prev.map((v) => (v.id === updatedVariable.id ? updatedVariable : v))
         );
         setMessage({ type: "success", text: "Variable updated successfully" });
         onVariableUpdate?.(updatedVariable);
         setEditingVariable(null);
+        setSelectedUnits([]);
       }
     } catch (error) {
       console.error("Failed to update variable:", error);
@@ -232,20 +316,29 @@ export default function VariableManager({
     }
   };
 
-  const startEdit = (variable: Variable) => {
+  const startEdit = async (variable: Variable) => {
     setEditingVariable(variable);
     setCreateForm({
       slug: variable.slug,
       label: variable.label,
       description: variable.description || "",
       data_type: variable.data_type,
-      canonical_unit: variable.canonical_unit || "",
-      unit_group: variable.unit_group || "",
-      convertible_units: variable.convertible_units || [],
       source_type: variable.source_type,
       category: variable.category || "",
       validation_rules: variable.validation_rules || {},
     });
+
+    // Load existing variable units
+    try {
+      const variableUnits = await fetchVariableUnits(variable.id);
+      const unitIds = variableUnits
+        .sort((a, b) => a.priority - b.priority)
+        .map((vu) => vu.unit_id);
+      setSelectedUnits(unitIds);
+    } catch (error) {
+      console.error("Failed to load variable units:", error);
+      setSelectedUnits([]);
+    }
   };
 
   const cancelEdit = () => {
@@ -255,13 +348,11 @@ export default function VariableManager({
       label: "",
       description: "",
       data_type: "continuous",
-      canonical_unit: "",
-      unit_group: "",
-      convertible_units: [],
       source_type: "manual",
       category: "",
       validation_rules: {},
     });
+    setSelectedUnits([]);
   };
 
   const renderCreateForm = () => (
@@ -346,28 +437,40 @@ export default function VariableManager({
             </Select>
           </FormControl>
         </Box>
-        <Box sx={{ display: "flex", gap: 2 }}>
-          <TextField
-            fullWidth
-            label="Canonical Unit"
-            value={createForm.canonical_unit}
-            onChange={(e) =>
-              setCreateForm((prev) => ({
-                ...prev,
-                canonical_unit: e.target.value,
-              }))
-            }
-            helperText="Base unit for storage (e.g., kg, hours)"
-          />
-          <TextField
-            fullWidth
-            label="Unit Group"
-            value={createForm.unit_group}
-            onChange={(e) =>
-              setCreateForm((prev) => ({ ...prev, unit_group: e.target.value }))
-            }
-            helperText="Group for conversion (e.g., mass, time)"
-          />
+        {/* Unit Selection */}
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="subtitle2" gutterBottom>
+            Available Units
+          </Typography>
+          <FormControl fullWidth>
+            <InputLabel>Select Units for this Variable</InputLabel>
+            <Select
+              multiple
+              value={selectedUnits}
+              onChange={(e) => setSelectedUnits(e.target.value as string[])}
+              label="Select Units for this Variable"
+              renderValue={(selected) => (
+                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                  {(selected as string[]).map((unitId) => {
+                    const unit = units.find((u) => u.id === unitId);
+                    return (
+                      <Chip
+                        key={unitId}
+                        label={unit ? `${unit.label} (${unit.symbol})` : unitId}
+                        size="small"
+                      />
+                    );
+                  })}
+                </Box>
+              )}
+            >
+              {units.map((unit) => (
+                <MenuItem key={unit.id} value={unit.id}>
+                  {unit.label} ({unit.symbol}) - {unit.unit_group}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         </Box>
         <Box sx={{ display: "flex", gap: 2 }}>
           <TextField
@@ -578,13 +681,7 @@ export default function VariableManager({
                           variant="outlined"
                         />
                       )}
-                      {variable.canonical_unit && (
-                        <Chip
-                          label={variable.canonical_unit}
-                          size="small"
-                          variant="outlined"
-                        />
-                      )}
+                      <VariableUnitsDisplay variableId={variable.id} />
                     </Box>
 
                     {/* User Preferences */}

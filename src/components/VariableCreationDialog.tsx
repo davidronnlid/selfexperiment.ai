@@ -24,11 +24,13 @@ import {
 } from "@mui/material";
 import { FaGlobe, FaLock, FaPlus, FaQuestion, FaSmile } from "react-icons/fa";
 import { supabase } from "@/utils/supaBase";
-import UnitInput from "./UnitInput";
 import {
   generateVariableUnitConfig,
   getUnitDisplayInfo,
 } from "../utils/unitGroupUtils";
+import { addVariableUnit, setVariableUnits } from "../utils/variableUnitsUtils";
+import { fetchUnits } from "../utils/unitsTableUtils";
+import { Unit } from "../types/variables";
 
 interface VariableCreationDialogProps {
   open: boolean;
@@ -337,6 +339,18 @@ export default function VariableCreationDialog({
   const [error, setError] = useState("");
   const [emojiAnchor, setEmojiAnchor] = useState<HTMLElement | null>(null);
 
+  // New state for units table
+  const [availableUnits, setAvailableUnits] = useState<Unit[]>([]);
+  const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>([]);
+  const [unitsLoading, setUnitsLoading] = useState(false);
+
+  // Load units from database
+  useEffect(() => {
+    if (open) {
+      loadUnits();
+    }
+  }, [open]);
+
   // Reset form when dialog opens or initialVariableName changes
   useEffect(() => {
     if (open) {
@@ -353,16 +367,35 @@ export default function VariableCreationDialog({
       setIcon("📊");
       setError("");
       setEmojiAnchor(null);
+      setSelectedUnitIds([]);
     }
   }, [open, initialVariableName]);
 
-  // Clear unit when data type changes to prevent invalid unit-datatype combinations
+  // Clear invalid units when data type changes to prevent invalid unit-datatype combinations
   useEffect(() => {
-    if (unit) {
-      const availableUnits = getAvailableUnits(constraints.type);
-      const isUnitValid = availableUnits.some((u) => u.value === unit);
-      if (!isUnitValid) {
-        setUnit("");
+    if (selectedUnitIds.length > 0 && availableUnits.length > 0) {
+      const validUnitIds = selectedUnitIds.filter((unitId) => {
+        const unit = availableUnits.find((u) => u.id === unitId);
+        if (!unit) return false;
+
+        // Filter based on data type compatibility
+        if (constraints.type === "boolean") {
+          return unit.unit_group === "boolean";
+        } else if (constraints.type === "categorical") {
+          return ["option", "choice", "level", "type", "category"].includes(
+            unit.id
+          );
+        } else if (constraints.type === "text") {
+          return ["characters", "words"].includes(unit.id);
+        } else if (constraints.type === "continuous") {
+          return unit.unit_group !== "boolean";
+        }
+        return true;
+      });
+
+      if (validUnitIds.length !== selectedUnitIds.length) {
+        setSelectedUnitIds(validUnitIds);
+        // Clear constraints if units changed
         setConstraints((prev) => ({
           ...prev,
           min: "",
@@ -370,7 +403,19 @@ export default function VariableCreationDialog({
         }));
       }
     }
-  }, [constraints.type, unit]);
+  }, [constraints.type, selectedUnitIds, availableUnits]);
+
+  const loadUnits = async () => {
+    setUnitsLoading(true);
+    try {
+      const units = await fetchUnits();
+      setAvailableUnits(units);
+    } catch (error) {
+      console.error("Failed to load units:", error);
+    } finally {
+      setUnitsLoading(false);
+    }
+  };
 
   const handleUnitChange = (selectedUnit: string) => {
     const unitValue = selectedUnit || "";
@@ -515,10 +560,14 @@ export default function VariableCreationDialog({
       const validationRules: any = {};
       if (constraints.min) validationRules.min = parseFloat(constraints.min);
       if (constraints.max) validationRules.max = parseFloat(constraints.max);
-      if (unit) validationRules.unit = unit;
+      // Note: Unit information is now stored in variable_units table instead of validation_rules
 
-      // Get category based on unit selection
-      const unitCategory = getUnitCategory(unit);
+      // Get category based on unit selection - use the first selected unit for category
+      const unitCategory =
+        selectedUnitIds.length > 0
+          ? availableUnits.find((u) => u.id === selectedUnitIds[0])
+              ?.unit_group || null
+          : null;
 
       // Generate unit configuration using the new utility
       const unitConfig = generateVariableUnitConfig(
@@ -534,10 +583,7 @@ export default function VariableCreationDialog({
         data_type: constraints.type,
         validation_rules:
           Object.keys(validationRules).length > 0 ? validationRules : null,
-        canonical_unit: unitConfig.canonical_unit,
-        unit_group: unitConfig.unit_group,
-        convertible_units: unitConfig.convertible_units,
-        default_display_unit: unitConfig.default_display_unit,
+        // Remove old unit system fields - now using variable_units table
         source_type: source,
         category: unitCategory,
         is_public: isShared,
@@ -553,6 +599,38 @@ export default function VariableCreationDialog({
 
       if (variableError) {
         throw variableError;
+      }
+
+      // Create variable_units relationships for selected units
+      if (selectedUnitIds.length > 0) {
+        try {
+          const unitConfigs = selectedUnitIds.map((unitId, index) => ({
+            unitId,
+            priority: index + 1,
+          }));
+          await setVariableUnits(newVariable.id, unitConfigs);
+        } catch (unitError) {
+          console.error("Failed to create variable units:", unitError);
+          // Don't fail the whole operation for this
+        }
+      } else if (unit) {
+        // Fallback: if old unit system was used, try to find matching unit in units table
+        const matchingUnit = availableUnits.find(
+          (u) =>
+            u.id === unit ||
+            u.label.toLowerCase() === unit.toLowerCase() ||
+            u.symbol === unit
+        );
+        if (matchingUnit) {
+          try {
+            await addVariableUnit(newVariable.id, matchingUnit.id, 1);
+          } catch (unitError) {
+            console.error(
+              "Failed to create fallback variable unit:",
+              unitError
+            );
+          }
+        }
       }
 
       // Create user preference for this variable
@@ -772,17 +850,80 @@ export default function VariableCreationDialog({
               </Box>
 
               <Box>
-                <UnitInput
-                  value={unit}
-                  onChange={handleUnitChange}
-                  dataType={constraints.type}
-                  label="Unit"
-                  placeholder="Select or type a unit..."
-                  fullWidth
-                />
+                <FormControl fullWidth>
+                  <InputLabel>Available Units for this Variable</InputLabel>
+                  <Select
+                    multiple
+                    value={selectedUnitIds}
+                    onChange={(e) =>
+                      setSelectedUnitIds(e.target.value as string[])
+                    }
+                    label="Available Units for this Variable"
+                    disabled={unitsLoading}
+                    renderValue={(selected) => (
+                      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                        {(selected as string[]).map((unitId) => {
+                          const unit = availableUnits.find(
+                            (u) => u.id === unitId
+                          );
+                          return (
+                            <Chip
+                              key={unitId}
+                              label={
+                                unit ? `${unit.label} (${unit.symbol})` : unitId
+                              }
+                              size="small"
+                            />
+                          );
+                        })}
+                      </Box>
+                    )}
+                  >
+                    {availableUnits
+                      .filter((unit) => {
+                        // Filter units based on data type compatibility
+                        if (constraints.type === "boolean") {
+                          return unit.unit_group === "boolean";
+                        } else if (constraints.type === "categorical") {
+                          return [
+                            "option",
+                            "choice",
+                            "level",
+                            "type",
+                            "category",
+                          ].includes(unit.id);
+                        } else if (constraints.type === "text") {
+                          return ["characters", "words"].includes(unit.id);
+                        } else if (constraints.type === "continuous") {
+                          return unit.unit_group !== "boolean";
+                        }
+                        return true;
+                      })
+                      .map((unit) => (
+                        <MenuItem key={unit.id} value={unit.id}>
+                          <Box
+                            sx={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              width: "100%",
+                            }}
+                          >
+                            <span>
+                              {unit.label} ({unit.symbol})
+                            </span>
+                            <Chip
+                              label={unit.unit_group}
+                              size="small"
+                              variant="outlined"
+                            />
+                          </Box>
+                        </MenuItem>
+                      ))}
+                  </Select>
+                </FormControl>
 
                 {/* Unit Compatibility Info */}
-                {unit && (
+                {selectedUnitIds.length > 0 && (
                   <Box
                     sx={{ mt: 1, p: 1, bgcolor: "grey.50", borderRadius: 1 }}
                   >
@@ -791,69 +932,63 @@ export default function VariableCreationDialog({
                       color="text.secondary"
                       sx={{ display: "block", mb: 0.5 }}
                     >
-                      💡 <strong>Selected Unit:</strong> {unit}
+                      💡 <strong>Selected Units:</strong>{" "}
+                      {selectedUnitIds.length} unit
+                      {selectedUnitIds.length !== 1 ? "s" : ""}
                     </Typography>
 
-                    {getUnitCategory(unit) && (
-                      <Typography
-                        variant="caption"
-                        color="primary.main"
-                        sx={{ display: "block", mb: 0.5 }}
-                      >
-                        📁 Category: {getUnitCategory(unit)}
-                      </Typography>
-                    )}
-
                     {(() => {
-                      const unitDisplayInfo = getUnitDisplayInfo(unit);
-                      if (unitDisplayInfo.isConvertible) {
+                      const selectedUnits = availableUnits.filter((u) =>
+                        selectedUnitIds.includes(u.id)
+                      );
+                      const unitGroups = [
+                        ...new Set(selectedUnits.map((u) => u.unit_group)),
+                      ];
+
+                      if (unitGroups.length === 1 && selectedUnits.length > 1) {
                         return (
-                          <Box sx={{ mt: 0.5 }}>
-                            <Typography
-                              variant="caption"
-                              color="success.main"
-                              sx={{ display: "block", mb: 0.5 }}
-                            >
-                              🔄 <strong>Convertible to:</strong>{" "}
-                              {unitDisplayInfo.convertibleUnits.join(", ")}
-                            </Typography>
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                              sx={{ fontSize: "0.65rem" }}
-                            >
-                              ℹ️ Users can switch between these units and values
-                              will convert automatically
-                            </Typography>
-                            {unitDisplayInfo.group && (
-                              <Typography
-                                variant="caption"
-                                color="info.main"
-                                sx={{
-                                  display: "block",
-                                  fontSize: "0.65rem",
-                                  mt: 0.5,
-                                }}
-                              >
-                                {unitDisplayInfo.icon} <strong>Group:</strong>{" "}
-                                {unitDisplayInfo.group.name}
-                              </Typography>
-                            )}
-                          </Box>
+                          <Typography
+                            variant="caption"
+                            color="success.main"
+                            sx={{ display: "block", mb: 0.5 }}
+                          >
+                            🔄 <strong>Convertible:</strong> All selected units
+                            can convert between each other
+                          </Typography>
+                        );
+                      } else if (unitGroups.length > 1) {
+                        return (
+                          <Typography
+                            variant="caption"
+                            color="warning.main"
+                            sx={{ display: "block", mb: 0.5 }}
+                          >
+                            ⚠️ <strong>Mixed Groups:</strong> Units from
+                            different groups cannot convert between each other
+                          </Typography>
                         );
                       } else {
                         return (
                           <Typography
                             variant="caption"
-                            color="warning.main"
-                            sx={{ display: "block", fontSize: "0.65rem" }}
+                            color="info.main"
+                            sx={{ display: "block", mb: 0.5 }}
                           >
-                            ⚠️ This unit may not have automatic conversions
-                            available
+                            📊 <strong>Single Unit:</strong> This will be the
+                            primary unit for the variable
                           </Typography>
                         );
                       }
                     })()}
+
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: "block", fontSize: "0.65rem" }}
+                    >
+                      ℹ️ The first selected unit will be the primary unit. Users
+                      can switch between selected units when logging data.
+                    </Typography>
                   </Box>
                 )}
               </Box>
@@ -870,14 +1005,7 @@ export default function VariableCreationDialog({
                 >
                   <TextField
                     fullWidth
-                    label={
-                      unit &&
-                      !getAvailableUnits(constraints.type).find(
-                        (u) => u.value === unit
-                      )
-                        ? "Minimum Characters"
-                        : "Minimum Value"
-                    }
+                    label="Minimum Value"
                     type="number"
                     value={constraints.min}
                     onChange={(e) =>
@@ -887,25 +1015,15 @@ export default function VariableCreationDialog({
                       }))
                     }
                     helperText={
-                      unit &&
-                      !getAvailableUnits(constraints.type).find(
-                        (u) => u.value === unit
-                      )
-                        ? "Minimum number of characters"
+                      selectedUnitIds.length > 0
+                        ? `Minimum allowed value (using selected units)`
                         : "Minimum allowed value"
                     }
                   />
 
                   <TextField
                     fullWidth
-                    label={
-                      unit &&
-                      !getAvailableUnits(constraints.type).find(
-                        (u) => u.value === unit
-                      )
-                        ? "Maximum Characters"
-                        : "Maximum Value"
-                    }
+                    label="Maximum Value"
                     type="number"
                     value={constraints.max}
                     onChange={(e) =>
@@ -915,11 +1033,8 @@ export default function VariableCreationDialog({
                       }))
                     }
                     helperText={
-                      unit &&
-                      !getAvailableUnits(constraints.type).find(
-                        (u) => u.value === unit
-                      )
-                        ? "Maximum number of characters"
+                      selectedUnitIds.length > 0
+                        ? `Maximum allowed value (using selected units)`
                         : "Maximum allowed value"
                     }
                   />

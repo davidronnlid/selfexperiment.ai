@@ -34,6 +34,7 @@ export default function CompleteProfilePage() {
   const [form, setForm] = useState({
     username: "",
     name: "",
+    email: "",
     date_of_birth: "",
     avatar_url: "",
     timezone: "",
@@ -52,7 +53,9 @@ export default function CompleteProfilePage() {
         try {
           const { data, error } = await supabase
             .from("profiles")
-            .select("username, name, date_of_birth, avatar_url, timezone")
+            .select(
+              "username, name, date_of_birth, avatar_url, timezone, email"
+            )
             .eq("id", user.id)
             .single();
 
@@ -73,6 +76,7 @@ export default function CompleteProfilePage() {
             setForm({
               username: data.username || "",
               name: data.name || user.user_metadata?.name || "", // Pre-populate name from Google
+              email: data.email || user.email || "", // Use profile email first, fallback to auth email
               date_of_birth: data.date_of_birth || "",
               avatar_url: data.avatar_url || googleProfilePic || "",
               timezone: data.timezone || detectedTimezone,
@@ -82,6 +86,7 @@ export default function CompleteProfilePage() {
             setForm({
               username: "",
               name: user.user_metadata?.name || "",
+              email: user.email || "", // Use auth email
               date_of_birth: "",
               avatar_url: googleProfilePic || "",
               timezone: detectedTimezone,
@@ -122,6 +127,7 @@ export default function CompleteProfilePage() {
       .update({
         username: form.username,
         name: form.name,
+        email: form.email,
         date_of_birth: form.date_of_birth,
         avatar_url: form.avatar_url,
         timezone: form.timezone,

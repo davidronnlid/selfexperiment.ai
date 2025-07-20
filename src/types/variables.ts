@@ -17,6 +17,13 @@ export interface Unit {
   updated_at: string;
 }
 
+export interface VariableUnit {
+  variable_id: string;
+  unit_id: string;
+  priority: number;
+  note?: string;
+}
+
 export interface Variable {
   id: string;
   slug: string;
@@ -49,6 +56,9 @@ export interface Variable {
 
   // User preferences
   user_preferences?: any; // User-specific preferences
+
+  // Variable Units (from variable_units table)
+  variable_units?: VariableUnit[];
 
   // Metadata
   created_at: string;

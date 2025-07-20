@@ -2082,6 +2082,13 @@ export default function ManualTrackPage() {
               Selected Variable
             </Typography>
             <Box
+              onClick={() => {
+                // Navigate to the variable's page
+                const variableSlug =
+                  selectedVariable.slug ||
+                  selectedVariable.label.toLowerCase().replace(/\s+/g, "-");
+                router.push(`/variable/${variableSlug}`);
+              }}
               sx={{
                 display: "flex",
                 alignItems: "center",
@@ -2090,6 +2097,16 @@ export default function ManualTrackPage() {
                 backgroundColor: "rgba(33, 150, 243, 0.1)",
                 borderRadius: 2,
                 border: "2px solid #2196f3",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+                "&:hover": {
+                  backgroundColor: "rgba(33, 150, 243, 0.15)",
+                  transform: "translateY(-1px)",
+                  boxShadow: "0 4px 12px rgba(33, 150, 243, 0.2)",
+                },
+                "&:active": {
+                  transform: "translateY(0)",
+                },
               }}
             >
               <span style={{ fontSize: "1.5rem" }}>

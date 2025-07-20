@@ -64,6 +64,8 @@ export default function Auth() {
     if (error) {
       console.error("Error signing in with Google:", error);
       setError("Failed to sign in with Google. Please try again.");
+    } else {
+      console.log("OAuth initiated successfully, redirectTo:", redirectUrl);
     }
   };
 

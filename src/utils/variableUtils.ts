@@ -641,6 +641,7 @@ export function convertBooleanStringToValue(
 
 /**
  * Get user's preferred unit for a variable
+ * @deprecated Use getDefaultDisplayUnit from variableUnitsUtils instead
  */
 export function getUserPreferredUnit(variable: Variable): string {
   return variable.default_display_unit || variable.canonical_unit || "";
@@ -675,7 +676,7 @@ export async function getUserDisplayUnit(
     if (!error && data && data.display_unit) {
       displayUnit = data.display_unit;
     } else {
-      // Fallback to variable's canonical unit
+      // Fallback to variable's canonical unit (deprecated - use variable_units table)
       displayUnit = variable?.canonical_unit || "";
     }
     
@@ -684,7 +685,7 @@ export async function getUserDisplayUnit(
     return displayUnit;
   } catch (error) {
     console.error("Failed to get user display unit:", error);
-    const fallback = variable?.canonical_unit || "";
+    const fallback = variable?.canonical_unit || ""; // deprecated - use variable_units table
     displayUnitCache.set(cacheKey, fallback);
     return fallback;
   }

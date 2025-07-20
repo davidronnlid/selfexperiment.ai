@@ -4,6 +4,7 @@ import { supabase } from "@/utils/supaBase";
 import { clearDisplayUnitCache } from "@/utils/variableUtils";
 import { useUserDisplayUnit } from "@/hooks/useUserDisplayUnit";
 import { useUser } from "../_app";
+import VariableUnitSelector from "@/components/VariableUnitSelector";
 import {
   Container,
   Typography,

@@ -5,6 +5,7 @@ import {
 } from "../utils/privacyApi";
 
 export interface UserVariablePreference {
+  id?: string;
   variable_name: string;
   is_shared: boolean;
   variable_type: string;
@@ -15,6 +16,9 @@ export interface UserVariablePreference {
   preferred_unit?: string;
   display_name?: string;
   is_favorite?: boolean;
+  user_id?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export function useUserVariablePreferences(userId: string) {

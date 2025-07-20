@@ -68,112 +68,145 @@ export default function AnalyzePrivacySection() {
     type: "success" | "error";
     text: string;
   } | null>(null);
+  const [groupedVariables, setGroupedVariables] = useState<
+    Record<string, any[]>
+  >({});
 
-  // Group variables by category for better organization
-  const groupedVariables = {
-    "Mental & Emotional": LOG_LABELS.filter((v) =>
-      [
-        "Stress",
-        "Cognitive Control",
-        "Anxiety Before Bed",
-        "Mood",
-        "Emotional Event",
-      ].includes(v.label)
-    ),
-    "Sleep & Recovery": LOG_LABELS.filter((v) =>
-      [
-        "Sleep Time",
-        "Fell Asleep Time",
-        "Sleep Duration",
-        "Sleep Quality",
-        "Naps",
-      ].includes(v.label)
-    ),
-    "Physical Health": LOG_LABELS.filter((v) =>
-      [
-        "Exercise",
-        "Illness/Symptoms",
-        "Body Temp (subjective)",
-        "Menstrual Phase",
-      ].includes(v.label)
-    ),
-    "Substances & Diet": LOG_LABELS.filter((v) =>
-      [
-        "Caffeine",
-        "Alcohol",
-        "Nicotine",
-        "Cannabis/THC",
-        "Medications/Supplements",
-        "Big Meal Late",
-        "Late Sugar Intake",
-        "Intermittent Fasting",
-        "Hydration",
-      ].includes(v.label)
-    ),
-    Environment: LOG_LABELS.filter((v) =>
-      [
-        "Room Temp",
-        "Light Exposure",
-        "Noise Disturbances",
-        "Travel/Jet Lag",
-        "Altitude Change",
-      ].includes(v.label)
-    ),
-    "Oura Data": [
-      {
-        label: "Heart Rate",
-        type: "number",
-        description: "Resting heart rate data",
-        icon: "❤️",
-      },
-      {
-        label: "Sleep Score",
-        type: "number",
-        description: "Oura sleep score",
-        icon: "😴",
-      },
-      {
-        label: "Readiness Score",
-        type: "number",
-        description: "Oura readiness score",
-        icon: "⚡",
-      },
-      {
-        label: "Activity Score",
-        type: "number",
-        description: "Oura activity score",
-        icon: "🏃",
-      },
-      {
-        label: "Deep Sleep",
-        type: "number",
-        description: "Deep sleep duration",
-        icon: "🌙",
-      },
-      {
-        label: "REM Sleep",
-        type: "number",
-        description: "REM sleep duration",
-        icon: "💭",
-      },
-      {
-        label: "Light Sleep",
-        type: "number",
-        description: "Light sleep duration",
-        icon: "😌",
-      },
-    ],
-  };
+  // Load variables that the user actually has data points for
+  const loadUserVariables = useCallback(async () => {
+    if (!user?.id) return;
+
+    try {
+      // Get all variable IDs that have data points for this user from all sources
+      const [manualDataPoints, ouraDataPoints, withingsDataPoints] =
+        await Promise.all([
+          supabase
+            .from("data_points")
+            .select("variable_id")
+            .eq("user_id", user.id),
+          supabase
+            .from("oura_variable_data_points")
+            .select("variable_id")
+            .eq("user_id", user.id),
+          supabase
+            .from("withings_variable_data_points")
+            .select("variable_id")
+            .eq("user_id", user.id),
+        ]);
+
+      // Combine all variable IDs and remove duplicates
+      const allVariableIds = new Set([
+        ...(manualDataPoints.data?.map((d) => d.variable_id) || []),
+        ...(ouraDataPoints.data?.map((d) => d.variable_id) || []),
+        ...(withingsDataPoints.data?.map((d) => d.variable_id) || []),
+      ]);
+
+      if (allVariableIds.size === 0) {
+        console.log("No data points found for user");
+        setGroupedVariables({});
+        return;
+      }
+
+      // Get variable details for all variables with data points
+      const { data: variables, error: varsError } = await supabase
+        .from("variables")
+        .select(
+          `
+          id,
+          label,
+          category,
+          data_type,
+          icon,
+          description
+        `
+        )
+        .in("id", Array.from(allVariableIds));
+
+      if (varsError) {
+        console.error("Error loading variables:", varsError);
+        throw varsError;
+      }
+
+      // Group by category
+      const grouped = (variables || []).reduce((acc, variable) => {
+        const category = variable.category || "Uncategorized";
+        if (!acc[category]) {
+          acc[category] = [];
+        }
+        acc[category].push({
+          label: variable.label,
+          type: variable.data_type,
+          description: variable.description,
+          icon: variable.icon,
+          id: variable.id,
+        });
+        return acc;
+      }, {} as Record<string, any[]>);
+
+      console.log(
+        `Loaded ${
+          variables?.length || 0
+        } variables with data points, grouped into ${
+          Object.keys(grouped).length
+        } categories`
+      );
+      setGroupedVariables(grouped);
+    } catch (error) {
+      console.error("Error loading user variables:", error);
+      setMessage({
+        type: "error",
+        text: "Failed to load your variables. Please try again.",
+      });
+    }
+  }, [user?.id]);
 
   const loadVariablePreferences = useCallback(async () => {
     try {
       setLoading(true);
-      const { data: prefs, error: prefsError } = await supabase
-        .from("user_variable_preferences")
-        .select("*")
-        .eq("user_id", user?.id);
-      if (prefsError) throw prefsError;
-      setVariablePreferences(prefs || []);
+
+      // Load both user variables (those with data points) and preferences
+      await Promise.all([
+        loadUserVariables(),
+        (async () => {
+          const { data: prefs, error: prefsError } = await supabase
+            .from("user_variable_preferences")
+            .select(
+              `
+              *,
+              variables (
+                id,
+                label,
+                category,
+                data_type
+              )
+            `
+            )
+            .eq("user_id", user?.id);
+
+          if (prefsError) {
+            console.error("Error loading preferences:", prefsError);
+            // If there's an error, just set empty preferences
+            setVariablePreferences([]);
+            return;
+          }
+
+          // Transform the data to match the expected format
+          const transformedPrefs = (prefs || []).map((pref) => ({
+            id: pref.id?.toString() || "",
+            user_id: pref.user_id,
+            variable_id: pref.variable_id,
+            variable_name: pref.variables?.label || "",
+            is_shared: pref.is_shared,
+            variable_type: pref.variables?.data_type || "manual",
+            category: pref.variables?.category || "Uncategorized",
+            created_at: pref.created_at,
+            updated_at: pref.updated_at,
+          }));
+
+          console.log("Loaded preferences:", transformedPrefs);
+          setVariablePreferences(transformedPrefs);
+        })(),
+      ]);
     } catch (error) {
       console.error("Error loading variable preferences:", error);
       setMessage({
@@ -183,10 +216,12 @@ export default function AnalyzePrivacySection() {
     } finally {
       setLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, loadUserVariables]);
 
   useEffect(() => {
-    loadVariablePreferences();
+    if (user?.id) {
+      loadVariablePreferences();
+    }
   }, [loadVariablePreferences]);
 
   const handleVariableSharingChange = async (
@@ -207,35 +242,65 @@ export default function AnalyzePrivacySection() {
         throw new Error("Variable not found");
       }
 
-      const { error } = await supabase
-        .from("user_variable_preferences")
-        .upsert({
+      console.log(
+        `Updating sharing for ${variableName} (${variable.id}) to ${isShared}`
+      );
+
+      const { error } = await supabase.from("user_variable_preferences").upsert(
+        {
           user_id: user?.id,
           variable_id: variable.id,
           is_shared: isShared,
           updated_at: new Date().toISOString(),
-        });
-      if (error) throw error;
-      setVariablePreferences((prev) =>
-        prev
-          .map((pref) =>
-            pref.variable_name === variableName
-              ? { ...pref, is_shared: isShared }
-              : pref
-          )
-          .filter((pref) => pref.variable_name !== variableName)
-          .concat({
-            id: `temp-${Date.now()}`, // Temporary ID for local state
-            user_id: user?.id || "",
-            variable_id: variable.id,
-            variable_name: variableName,
-            is_shared: isShared,
-            variable_type: "predefined",
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
+        },
+        {
+          onConflict: "user_id,variable_id",
+        }
       );
-      setMessage({ type: "success", text: "Variable sharing setting updated" });
+
+      if (error) {
+        console.error("Error upserting preference:", error);
+        throw error;
+      }
+
+      // Update local state
+      setVariablePreferences((prev) => {
+        const existingIndex = prev.findIndex(
+          (p) => p.variable_id === variable.id
+        );
+
+        if (existingIndex >= 0) {
+          // Update existing preference
+          const updated = [...prev];
+          updated[existingIndex] = {
+            ...updated[existingIndex],
+            is_shared: isShared,
+            updated_at: new Date().toISOString(),
+          };
+          return updated;
+        } else {
+          // Add new preference
+          return [
+            ...prev,
+            {
+              id: `temp-${Date.now()}`,
+              user_id: user?.id || "",
+              variable_id: variable.id,
+              variable_name: variableName,
+              is_shared: isShared,
+              variable_type: "manual",
+              category: "Uncategorized",
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          ];
+        }
+      });
+
+      setMessage({
+        type: "success",
+        text: `${variableName} sharing ${isShared ? "enabled" : "disabled"}`,
+      });
     } catch (error) {
       console.error("Error updating variable sharing:", error);
       setMessage({
@@ -248,9 +313,23 @@ export default function AnalyzePrivacySection() {
   };
 
   const getVariableSharingStatus = (variableName: string) => {
+    // Try to find by variable_name
     const pref = variablePreferences.find(
       (s) => s.variable_name === variableName
     );
+
+    // Debug logging for troubleshooting
+    if (variableName === "Mood") {
+      console.log(`🔍 Checking sharing status for ${variableName}:`, {
+        found: !!pref,
+        isShared: pref?.is_shared,
+        allPrefs: variablePreferences.map((p) => ({
+          name: p.variable_name,
+          shared: p.is_shared,
+        })),
+      });
+    }
+
     return pref?.is_shared ?? false;
   };
 
@@ -305,22 +384,6 @@ export default function AnalyzePrivacySection() {
               </Box>
             }
           />
-          <Tab
-            label={
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                <FaEye />
-                <span>Individual Logs</span>
-              </Box>
-            }
-          />
-          <Tab
-            label={
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                <FaCog />
-                <span>Profile Settings</span>
-              </Box>
-            }
-          />
         </Tabs>
       </Box>
 
@@ -332,8 +395,26 @@ export default function AnalyzePrivacySection() {
         <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
           Control which health variables are shared with the community. You can
           &quot;opt-in&quot; to share specific variables while keeping others
-          private.
+          private. Only variables for which you have logged data points are
+          shown.
         </Typography>
+
+        {Object.keys(groupedVariables).length === 0 && !loading ? (
+          <Alert severity="info" sx={{ mb: 3 }}>
+            <Typography variant="body2">
+              <strong>No variables with data found.</strong> Start logging data
+              for variables to see them here and control their sharing settings.
+              You can log data from the{" "}
+              <a
+                href="/log/manual"
+                style={{ color: "inherit", textDecoration: "underline" }}
+              >
+                Manual Logging
+              </a>{" "}
+              page or connect integrations like Oura or Withings.
+            </Typography>
+          </Alert>
+        ) : null}
 
         {Object.entries(groupedVariables).map(([category, variables]) => (
           <Accordion key={category} defaultExpanded>
@@ -435,71 +516,7 @@ export default function AnalyzePrivacySection() {
             </AccordionDetails>
           </Accordion>
         ))}
-
-        <Alert severity="info" sx={{ mt: 3 }}>
-          <Typography variant="body2">
-            <strong>Note:</strong> Even when a variable type is shared, you can
-            still hide individual logged values using the &quot;Individual
-            Logs&quot; tab below.
-          </Typography>
-        </Alert>
       </TabPanel>
-
-      {/* Individual Logs Tab */}
-      <TabPanel value={tabValue} index={1}>
-        <LogPrivacyManager user={user} />
-      </TabPanel>
-
-      {/* Profile Settings Tab */}
-      <TabPanel value={tabValue} index={2}>
-        <Typography variant="h6" gutterBottom>
-          👤 Profile Privacy Settings
-        </Typography>
-        <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-          Control your overall profile visibility and sharing preferences.
-        </Typography>
-
-        <Alert severity="info" sx={{ mb: 3 }}>
-          <Typography variant="body2">
-            Profile privacy settings are coming soon. This will include options
-            for:
-          </Typography>
-          <Box component="ul" sx={{ mt: 1, pl: 2 }}>
-            <li>Profile visibility (public, private, followers only)</li>
-            <li>Allow follow requests</li>
-            <li>Show username in shared data</li>
-            <li>Anonymize shared data</li>
-          </Box>
-        </Alert>
-
-        <Paper elevation={1} sx={{ p: 3, bgcolor: "grey.50" }}>
-          <Typography variant="body2" color="textSecondary">
-            🔮 <strong>Coming Soon:</strong> Advanced profile privacy controls
-            and the ability to follow other users to see their shared data in
-            your feed.
-          </Typography>
-        </Paper>
-      </TabPanel>
-
-      <Divider sx={{ my: 3 }} />
-
-      {/* Quick Actions */}
-      <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-        <Button
-          variant="outlined"
-          onClick={() => window.open("/privacy-settings", "_blank")}
-          startIcon={<FaCog />}
-        >
-          Full Privacy Settings
-        </Button>
-        <Button
-          variant="outlined"
-          onClick={() => setTabValue(1)}
-          startIcon={<FaEye />}
-        >
-          Manage Individual Logs
-        </Button>
-      </Box>
     </Paper>
   );
 }

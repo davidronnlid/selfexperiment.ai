@@ -173,46 +173,77 @@ function logNotification(notificationData) {
 self.addEventListener("push", (event) => {
   console.log("[SW] Push message received:", event);
 
-  if (!event.data) {
-    console.log("[SW] Push message has no data");
-    return;
+  // Handle push events even without data for iOS compatibility
+  let notificationData = {
+    title: "SelfDev App",
+    body: "You have a new notification",
+    icon: "/icon-192x192.png",
+    badge: "/icon-96x96.png",
+    tag: "push-notification",
+    data: { url: "/" },
+  };
+
+  if (event.data) {
+    try {
+      const pushData = event.data.json();
+      notificationData = {
+        title: pushData.title || notificationData.title,
+        body: pushData.body || notificationData.body,
+        icon: pushData.icon || notificationData.icon,
+        badge: pushData.badge || notificationData.badge,
+        tag: pushData.tag || notificationData.tag,
+        data: pushData.data || notificationData.data,
+      };
+    } catch (error) {
+      console.error("[SW] Error parsing push data:", error);
+      // Use default notification data
+    }
   }
 
-  try {
-    const data = event.data.json();
-    const { title, body, icon, badge, tag, url } = data;
+  const notificationOptions = {
+    body: notificationData.body,
+    icon: notificationData.icon,
+    badge: notificationData.badge,
+    tag: notificationData.tag,
+    data: notificationData.data,
+    vibrate: [200, 100, 200],
+    requireInteraction: false,
+    silent: false,
+    renotify: true,
+    actions: [
+      {
+        action: "open",
+        title: "Open App",
+        icon: "/icon-96x96.png",
+      },
+      {
+        action: "dismiss",
+        title: "Dismiss",
+        icon: "/icon-96x96.png",
+      },
+    ],
+  };
 
-    const notificationOptions = {
-      body,
-      icon: icon || "/icon-192x192.png",
-      badge: badge || "/icon-96x96.png",
-      tag: tag || "push-notification",
-      data: { url: url || "/" },
-      vibrate: [200, 100, 200],
-      actions: [
-        {
-          action: "open",
-          title: "Open App",
-          icon: "/icon-96x96.png",
-        },
-      ],
-    };
+  console.log("[SW] Showing notification with options:", notificationOptions);
 
-    event.waitUntil(
-      self.registration.showNotification(title, notificationOptions)
-    );
-  } catch (error) {
-    console.error("[SW] Error handling push message:", error);
-
-    // Fallback notification
-    event.waitUntil(
-      self.registration.showNotification("New Update", {
-        body: "You have a new update from SelfDev App",
-        icon: "/icon-192x192.png",
-        badge: "/icon-96x96.png",
+  event.waitUntil(
+    self.registration
+      .showNotification(notificationData.title, notificationOptions)
+      .then(() => {
+        console.log("[SW] Push notification displayed successfully");
       })
-    );
-  }
+      .catch((error) => {
+        console.error("[SW] Error displaying push notification:", error);
+
+        // Try fallback notification
+        return self.registration.showNotification("SelfDev App", {
+          body: "New notification available",
+          icon: "/icon-192x192.png",
+          badge: "/icon-96x96.png",
+          tag: "fallback-notification",
+        });
+      })
+  );
 });
 
 console.log("[SW] Notification service worker loaded successfully");
