@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -7,34 +7,21 @@ import {
   Button,
   Typography,
   Box,
-  Checkbox,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Chip,
   List,
   ListItem,
   ListItemText,
-  ListItemSecondaryAction,
+  Checkbox,
+  FormControlLabel,
+  Alert,
+  CircularProgress,
+  Chip,
   TextField,
-  Divider,
-  Paper,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
-  LinearProgress,
+  InputAdornment,
 } from "@mui/material";
-import {
-  ExpandMore,
-  CheckBox,
-  CheckBoxOutlineBlank,
-  Search,
-  AccessTime,
-  CalendarToday,
-} from "@mui/icons-material";
+import { supabase } from "@/utils/supaBase";
+import { format, parseISO } from "date-fns";
+import { Search as SearchIcon } from "@mui/icons-material";
 import { PlannedRoutineLog } from "@/utils/batchRoutineLogging";
-import { format } from "date-fns";
 
 interface BatchRoutineLoggingModalProps {
   open: boolean;
@@ -73,7 +60,7 @@ export default function BatchRoutineLoggingModal({
   }, [plannedLogs, groupingMode]);
 
   // Filter and search logs
-  const filteredLogs = useMemo(() => {
+  const filteredLogs = useState(() => {
     let filtered = logs;
 
     // Apply filter mode
@@ -96,7 +83,7 @@ export default function BatchRoutineLoggingModal({
     }
 
     return filtered;
-  }, [logs, filterMode, searchTerm]);
+  })[0];
 
   // Group logs by routine
   const groupPlannedLogsByRoutine = (logs: PlannedRoutineLog[]) => {
@@ -185,7 +172,7 @@ export default function BatchRoutineLoggingModal({
     <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
       <DialogTitle>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <AccessTime />
+          <SearchIcon />
           <Typography variant="h6">Batch Routine Tracking</Typography>
         </Box>
         <Typography variant="body2" color="text.secondary">
@@ -197,9 +184,7 @@ export default function BatchRoutineLoggingModal({
       <DialogContent>
         {/* Summary Section */}
         {totalCount > 0 && (
-          <Paper
-            sx={{ p: 2, mb: 3, backgroundColor: "rgba(33, 150, 243, 0.1)" }}
-          >
+          <Box sx={{ p: 2, mb: 3, backgroundColor: "rgba(33, 150, 243, 0.1)" }}>
             <Typography
               variant="h6"
               sx={{ mb: 1, display: "flex", alignItems: "center", gap: 1 }}
@@ -244,7 +229,7 @@ export default function BatchRoutineLoggingModal({
                 to add these entries to your log history.
               </Typography>
             )}
-          </Paper>
+          </Box>
         )}
 
         {/* Controls */}
@@ -259,40 +244,44 @@ export default function BatchRoutineLoggingModal({
               sx={{ minWidth: 250 }}
               InputProps={{
                 startAdornment: (
-                  <Search sx={{ mr: 1, color: "text.secondary" }} />
+                  <SearchIcon sx={{ mr: 1, color: "text.secondary" }} />
                 ),
               }}
             />
 
             {/* Grouping */}
-            <FormControl size="small" sx={{ minWidth: 120 }}>
-              <InputLabel>Group by</InputLabel>
-              <Select
-                value={groupingMode}
-                onChange={(e) =>
-                  setGroupingMode(e.target.value as GroupingMode)
-                }
-                label="Group by"
-              >
-                <MenuItem value="routine">Routine</MenuItem>
-                <MenuItem value="date">Date</MenuItem>
-                <MenuItem value="variable">Variable</MenuItem>
-              </Select>
-            </FormControl>
+            <FormControlLabel
+              label="Group by"
+              control={
+                <Select
+                  value={groupingMode}
+                  onChange={(e) =>
+                    setGroupingMode(e.target.value as GroupingMode)
+                  }
+                  label="Group by"
+                >
+                  <MenuItem value="routine">Routine</MenuItem>
+                  <MenuItem value="date">Date</MenuItem>
+                  <MenuItem value="variable">Variable</MenuItem>
+                </Select>
+              }
+            />
 
             {/* Filter */}
-            <FormControl size="small" sx={{ minWidth: 120 }}>
-              <InputLabel>Filter</InputLabel>
-              <Select
-                value={filterMode}
-                onChange={(e) => setFilterMode(e.target.value as FilterMode)}
-                label="Filter"
-              >
-                <MenuItem value="all">All</MenuItem>
-                <MenuItem value="enabled">Enabled</MenuItem>
-                <MenuItem value="disabled">Disabled</MenuItem>
-              </Select>
-            </FormControl>
+            <FormControlLabel
+              label="Filter"
+              control={
+                <Select
+                  value={filterMode}
+                  onChange={(e) => setFilterMode(e.target.value as FilterMode)}
+                  label="Filter"
+                >
+                  <MenuItem value="all">All</MenuItem>
+                  <MenuItem value="enabled">Enabled</MenuItem>
+                  <MenuItem value="disabled">Disabled</MenuItem>
+                </Select>
+              }
+            />
           </Box>
 
           {/* Bulk actions */}

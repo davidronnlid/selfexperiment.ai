@@ -118,6 +118,9 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
   const [selectedVariable, setSelectedVariable] = useState<string>("");
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [variableSlugs, setVariableSlugs] = useState<Record<string, string>>(
+    {}
+  );
 
   // Utility functions
   const formatDate = (dateString: string) => {
@@ -476,6 +479,30 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
       setSelectedVariable(uniqueVariables[0]);
     }
   }, [uniqueVariables, selectedVariable]);
+
+  // Fetch variable slugs mapping
+  useEffect(() => {
+    const fetchVariableSlugs = async () => {
+      try {
+        const { data: variables, error } = await supabase
+          .from("variables")
+          .select("id, slug")
+          .eq("is_active", true);
+
+        if (!error && variables) {
+          const slugMap: Record<string, string> = {};
+          variables.forEach((variable) => {
+            slugMap[variable.id] = variable.slug;
+          });
+          setVariableSlugs(slugMap);
+        }
+      } catch (error) {
+        console.error("Error fetching variable slugs:", error);
+      }
+    };
+
+    fetchVariableSlugs();
+  }, []);
 
   if (!connected) {
     return (
@@ -903,7 +930,9 @@ export default function OuraIntegration({ userId }: OuraIntegrationProps) {
                           }}
                         />
                         <Link
-                          href={`/variable/${item.variable_id}`}
+                          href={`/variable/${encodeURIComponent(
+                            variableSlugs[item.variable_id] || item.variable_id
+                          )}`}
                           style={{
                             color: "inherit",
                             textDecoration: "none",

@@ -79,12 +79,12 @@ interface CorrelationAnalysisProps {
 interface CorrelationResult {
   variable1: string;
   variable2: string;
-  correlation: number;
-  strength: "strong" | "moderate" | "weak" | "none";
-  direction: "positive" | "negative";
+  correlation: number | null;
+  strength: "none" | "small" | "medium" | "large" | "undefined";
+  direction: "positive" | "negative" | "undefined";
   dataPoints: number;
-  pValue?: number;
-  rSquared?: number;
+  pValue?: number | null;
+  rSquared?: number | null;
 }
 
 export default function CorrelationAnalysis({
@@ -547,9 +547,36 @@ export default function CorrelationAnalysis({
     });
   };
 
-  const calculateCorrelation = (x: number[], y: number[]): number => {
+  const calculateCorrelation = (x: number[], y: number[]): number | null => {
+    // Input validation
+    if (!Array.isArray(x) || !Array.isArray(y)) {
+      console.warn("calculateCorrelation: Input must be arrays");
+      return null;
+    }
+
+    if (x.length !== y.length) {
+      console.warn("calculateCorrelation: Arrays must have equal length");
+      return null;
+    }
+
     const n = x.length;
-    if (n === 0) return 0;
+    if (n < 2) {
+      console.warn(
+        "calculateCorrelation: Need at least 2 data points for correlation"
+      );
+      return null;
+    }
+
+    // Check for NaN or undefined values
+    const hasInvalidX = x.some((val) => !Number.isFinite(val));
+    const hasInvalidY = y.some((val) => !Number.isFinite(val));
+
+    if (hasInvalidX || hasInvalidY) {
+      console.warn(
+        "calculateCorrelation: Arrays contain NaN or non-finite values"
+      );
+      return null;
+    }
 
     const sumX = x.reduce((sum, val) => sum + val, 0);
     const sumY = y.reduce((sum, val) => sum + val, 0);
@@ -557,31 +584,73 @@ export default function CorrelationAnalysis({
     const sumXX = x.reduce((sum, val) => sum + val * val, 0);
     const sumYY = y.reduce((sum, val) => sum + val * val, 0);
 
+    const meanX = sumX / n;
+    const meanY = sumY / n;
+
+    // Calculate variance
+    const varianceX = (sumXX - (sumX * sumX) / n) / n;
+    const varianceY = (sumYY - (sumY * sumY) / n) / n;
+
+    // Check for zero variance (constant values)
+    if (varianceX === 0 && varianceY === 0) {
+      console.warn(
+        "calculateCorrelation: Both variables have zero variance (constant values)"
+      );
+      return null; // Correlation is undefined when both variables are constant
+    }
+
+    if (varianceX === 0 || varianceY === 0) {
+      console.warn(
+        "calculateCorrelation: One variable has zero variance (constant values)"
+      );
+      return null; // Correlation is undefined when one variable is constant
+    }
+
     const numerator = n * sumXY - sumX * sumY;
     const denominator = Math.sqrt(
       (n * sumXX - sumX * sumX) * (n * sumYY - sumY * sumY)
     );
 
-    return denominator === 0 ? 0 : numerator / denominator;
+    // Final check for denominator (should not be zero after variance checks, but safety first)
+    if (denominator === 0) {
+      console.warn(
+        "calculateCorrelation: Denominator is zero (undefined correlation)"
+      );
+      return null;
+    }
+
+    const correlation = numerator / denominator;
+
+    // Ensure correlation is within valid range [-1, 1] due to floating point precision
+    if (correlation < -1 || correlation > 1) {
+      console.warn(
+        `calculateCorrelation: Correlation ${correlation} is outside valid range [-1, 1]`
+      );
+      return Math.max(-1, Math.min(1, correlation)); // Clamp to valid range
+    }
+
+    return correlation;
   };
 
   const getCorrelationStrength = (
-    correlation: number
-  ): "strong" | "moderate" | "weak" | "none" => {
+    correlation: number | null
+  ): "none" | "small" | "medium" | "large" | "undefined" => {
+    if (correlation === null) return "undefined";
     const abs = Math.abs(correlation);
-    if (abs >= 0.7) return "strong";
-    if (abs >= 0.3) return "moderate";
-    if (abs >= 0.1) return "weak";
-    return "none";
+    if (abs >= 0.4) return "large"; // Corresponds to Very large/Huge in table
+    if (abs >= 0.2) return "medium"; // Corresponds to Medium/Large in table
+    if (abs >= 0.1) return "small"; // Corresponds to Small in table
+    return "none"; // Corresponds to Very small in table
   };
 
-  const getCorrelationColor = (correlation: number): string => {
+  const getCorrelationColor = (correlation: number | null): string => {
+    if (correlation === null) return "#dc2626"; // Red for undefined/invalid
     const abs = Math.abs(correlation);
-    if (abs >= 0.8) return "#10b981"; // Strong: Green
-    if (abs >= 0.6) return "#22c55e"; // Strong: Light Green
-    if (abs >= 0.4) return "#eab308"; // Moderate: Yellow
-    if (abs >= 0.2) return "#f97316"; // Weak: Orange
-    return "#6b7280"; // Very Weak: Gray
+    if (abs >= 0.6) return "#10b981"; // Dark Green for higher 'large' correlations (e.g., Huge)
+    if (abs >= 0.4) return "#22c55e"; // Light Green for lower 'large' correlations (e.g., Very large)
+    if (abs >= 0.2) return "#eab308"; // Yellow for 'medium' correlations (e.g., Medium/Large)
+    if (abs >= 0.1) return "#f97316"; // Orange for 'small' correlations (e.g., Small)
+    return "#6b7280"; // Gray for 'none' correlations (e.g., Very small)
   };
 
   const getMatchedDataPoints = (var1: string, var2: string) => {
@@ -645,38 +714,373 @@ export default function CorrelationAnalysis({
   // Calculate R-squared value
   const calculateRSquared = (x: number[], y: number[]) => {
     const correlation = calculateCorrelation(x, y);
-    return Math.pow(correlation, 2);
+    return correlation === null ? null : Math.pow(correlation, 2);
   };
 
-  // Estimate p-value using t-test approximation
-  const estimatePValue = (correlation: number, n: number) => {
-    if (n < 3) return 1;
+  // Calculate exact p-value using t-distribution
+  const calculatePValue = (
+    correlation: number | null,
+    n: number
+  ): number | null => {
+    // Input validation
+    if (correlation === null) {
+      console.warn("calculatePValue: Correlation is null");
+      return null;
+    }
 
-    const t =
-      correlation * Math.sqrt((n - 2) / (1 - correlation * correlation));
-    const df = n - 2;
+    if (!Number.isFinite(correlation)) {
+      console.warn("calculatePValue: Correlation is not finite");
+      return null;
+    }
 
-    // Simple approximation - for more accuracy, use proper t-distribution
-    if (Math.abs(t) > 3.5) return 0.001;
-    if (Math.abs(t) > 2.8) return 0.01;
-    if (Math.abs(t) > 2.0) return 0.05;
-    if (Math.abs(t) > 1.7) return 0.1;
-    return 0.5;
+    if (n < 3) {
+      console.warn(
+        "calculatePValue: Need at least 3 data points for p-value calculation"
+      );
+      return null;
+    }
+
+    // Handle edge cases
+    const absCorr = Math.abs(correlation);
+    if (absCorr >= 0.9999) {
+      // For near-perfect correlations, p-value is essentially 0
+      return 0.0001;
+    }
+
+    try {
+      // Calculate t-statistic: t = r * sqrt((n-2)/(1-r²))
+      const numerator = n - 2;
+      const denominator = 1 - correlation * correlation;
+
+      if (denominator <= 0) {
+        console.warn("calculatePValue: Invalid denominator for t-statistic");
+        return null;
+      }
+
+      const t = correlation * Math.sqrt(numerator / denominator);
+
+      if (!Number.isFinite(t)) {
+        console.warn("calculatePValue: T-statistic is not finite");
+        return null;
+      }
+
+      const df = n - 2; // degrees of freedom
+
+      // Calculate exact p-value using t-distribution
+      const pValue = calculateTDistributionPValue(Math.abs(t), df);
+
+      if (pValue === null || !Number.isFinite(pValue)) {
+        console.warn("calculatePValue: P-value calculation failed");
+        return null;
+      }
+
+      return Math.round(pValue * 100000) / 100000; // Round to 5 decimal places
+    } catch (error) {
+      console.error("calculatePValue: Unexpected error:", error);
+      return null;
+    }
   };
 
-  // Calculate confidence interval for correlation
-  const calculateConfidenceInterval = (correlation: number, n: number) => {
-    if (n < 3) return { lower: -1, upper: 1 };
+  // Calculate p-value for t-distribution using numerical approximation
+  const calculateTDistributionPValue = (
+    t: number,
+    df: number
+  ): number | null => {
+    if (t < 0 || df <= 0) return null;
 
-    const z = 0.5 * Math.log((1 + correlation) / (1 - correlation));
-    const se = 1 / Math.sqrt(n - 3);
-    const zLower = z - 1.96 * se;
-    const zUpper = z + 1.96 * se;
+    // For very large t-values, p-value is essentially 0
+    if (t > 10) return 0.00001;
 
-    const lower = (Math.exp(2 * zLower) - 1) / (Math.exp(2 * zLower) + 1);
-    const upper = (Math.exp(2 * zUpper) - 1) / (Math.exp(2 * zUpper) + 1);
+    // For very small t-values, p-value is essentially 1
+    if (t < 0.001) return 0.99999;
 
-    return { lower, upper };
+    // Use numerical integration to approximate the t-distribution
+    // This is a more accurate approximation than the bucket system
+    const pValue = integrateTDistribution(t, df);
+
+    return pValue;
+  };
+
+  // Numerical integration for t-distribution (two-tailed test)
+  const integrateTDistribution = (t: number, df: number): number => {
+    // For two-tailed test, we need 2 * (1 - CDF(t))
+    // Using a numerical approximation based on Abramowitz and Stegun
+
+    if (df === 1) {
+      // Cauchy distribution case
+      return 2 * (1 - 0.5 - Math.atan(t) / Math.PI);
+    }
+
+    // For df > 1, use approximation
+    const x = df / (df + t * t);
+
+    // Beta function approximation
+    const beta = 0.5 * Math.log(x) + 0.5 * Math.log(1 - x);
+    const logBeta =
+      Math.log(Math.sqrt(Math.PI)) +
+      logGamma(0.5) +
+      logGamma(df / 2) -
+      logGamma((df + 1) / 2);
+
+    const incompleteBeta = incompleteBetaFunction(0.5, df / 2, x);
+
+    if (incompleteBeta === null) {
+      // Fallback to simpler approximation
+      return approximateTDistributionPValue(t, df);
+    }
+
+    // Two-tailed p-value
+    return 2 * (1 - incompleteBeta);
+  };
+
+  // Incomplete beta function approximation
+  const incompleteBetaFunction = (
+    a: number,
+    b: number,
+    x: number
+  ): number | null => {
+    if (x <= 0 || x >= 1 || a <= 0 || b <= 0) return null;
+
+    // Use continued fraction approximation for small x
+    if (x < 0.5) {
+      return continuedFractionBeta(a, b, x);
+    } else {
+      // Use symmetry: I_x(a,b) = 1 - I_{1-x}(b,a)
+      const result = continuedFractionBeta(b, a, 1 - x);
+      return result === null ? null : 1 - result;
+    }
+  };
+
+  // Continued fraction for beta function
+  const continuedFractionBeta = (
+    a: number,
+    b: number,
+    x: number
+  ): number | null => {
+    const maxIterations = 100;
+    const tolerance = 1e-10;
+
+    let h = 1;
+    let c = 1;
+    let d = 1 - ((a + b) * x) / (a + 1);
+
+    if (Math.abs(d) < tolerance) d = tolerance;
+    d = 1 / d;
+    let result = d;
+
+    for (let i = 1; i <= maxIterations; i++) {
+      const m = i / 2;
+      let numerator, denominator;
+
+      if (i % 2 === 0) {
+        // Even iteration
+        numerator = (m * (b - m) * x) / ((a + 2 * m - 1) * (a + 2 * m));
+      } else {
+        // Odd iteration
+        numerator =
+          (-(a + m) * (a + b + m) * x) / ((a + 2 * m) * (a + 2 * m + 1));
+      }
+
+      d = 1 + numerator * d;
+      if (Math.abs(d) < tolerance) d = tolerance;
+      d = 1 / d;
+
+      c = 1 + numerator / c;
+      if (Math.abs(c) < tolerance) c = tolerance;
+
+      h *= d * c;
+
+      if (Math.abs(d * c - 1) < tolerance) break;
+    }
+
+    const beta = Math.exp(logGamma(a) + logGamma(b) - logGamma(a + b));
+    return (Math.pow(x, a) * Math.pow(1 - x, b) * h) / (a * beta);
+  };
+
+  // Fallback approximation for t-distribution p-value
+  const approximateTDistributionPValue = (t: number, df: number): number => {
+    // Simple but reasonably accurate approximation
+    // Based on normal approximation for large df, with correction for small df
+
+    if (df >= 30) {
+      // Normal approximation for large degrees of freedom
+      const z = t;
+      return 2 * (1 - normalCDF(z));
+    } else {
+      // Correction for small degrees of freedom
+      const correction = 1 + (t * t) / (2 * df);
+      const z = t / Math.sqrt(correction);
+      return 2 * (1 - normalCDF(z));
+    }
+  };
+
+  // Natural logarithm of gamma function approximation
+  const logGamma = (z: number): number => {
+    // Lanczos approximation for log gamma
+    const g = 5;
+    const p = [
+      1.000000000190015, 76.18009172947146, -86.50532032941677,
+      24.01409824083091, -1.231739572450155, 0.1208650973866179e-2,
+      -0.5395239384953e-5,
+    ];
+
+    let x = z;
+    let y = x;
+    let tmp = x + 5.5;
+    tmp -= (x + 0.5) * Math.log(tmp);
+    let ser = 1.000000000190015;
+
+    for (let i = 1; i <= 6; i++) {
+      y += 1;
+      ser += p[i] / y;
+    }
+
+    return -tmp + Math.log((2.5066282746310005 * ser) / x);
+  };
+
+  // Normal cumulative distribution function approximation
+  const normalCDF = (z: number): number => {
+    // Abramowitz and Stegun approximation
+    const a1 = 0.254829592;
+    const a2 = -0.284496736;
+    const a3 = 1.421413741;
+    const a4 = -1.453152027;
+    const a5 = 1.061405429;
+    const p = 0.3275911;
+
+    const sign = z >= 0 ? 1 : -1;
+    const absZ = Math.abs(z);
+
+    const t = 1 / (1 + p * absZ);
+    const y =
+      1 -
+      ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) *
+        t *
+        Math.exp(-absZ * absZ);
+
+    return 0.5 * (1 + sign * y);
+  };
+
+  // Legacy function for backward compatibility (now uses the new calculation)
+  const estimatePValue = (correlation: number | null, n: number) => {
+    const pValue = calculatePValue(correlation, n);
+    return pValue !== null ? pValue : 1;
+  };
+
+  // Calculate confidence interval for correlation using Fisher's Z transformation
+  const calculateConfidenceInterval = (
+    correlation: number | null,
+    n: number
+  ) => {
+    // Input validation
+    if (correlation === null) {
+      console.warn("calculateConfidenceInterval: Correlation is null");
+      return { lower: null, upper: null };
+    }
+
+    if (!Number.isFinite(correlation)) {
+      console.warn("calculateConfidenceInterval: Correlation is not finite");
+      return { lower: null, upper: null };
+    }
+
+    if (n < 4) {
+      console.warn(
+        "calculateConfidenceInterval: Need at least 4 data points for reliable confidence interval"
+      );
+      return { lower: null, upper: null };
+    }
+
+    // Handle edge cases where correlation = ±1
+    const absCorr = Math.abs(correlation);
+    if (absCorr >= 0.9999) {
+      console.warn(
+        "calculateConfidenceInterval: Correlation too close to ±1 for reliable confidence interval"
+      );
+      // For correlations very close to ±1, return conservative bounds
+      if (correlation > 0) {
+        return { lower: 0.95, upper: 1.0 };
+      } else {
+        return { lower: -1.0, upper: -0.95 };
+      }
+    }
+
+    try {
+      // Fisher's Z transformation: z = 0.5 * ln((1+r)/(1-r))
+      // Check denominators before taking logarithm
+      const numerator = 1 + correlation;
+      const denominator = 1 - correlation;
+
+      if (denominator <= 0 || numerator <= 0) {
+        console.warn(
+          "calculateConfidenceInterval: Invalid values for Fisher transformation"
+        );
+        return { lower: null, upper: null };
+      }
+
+      const z = 0.5 * Math.log(numerator / denominator);
+
+      if (!Number.isFinite(z)) {
+        console.warn(
+          "calculateConfidenceInterval: Fisher Z transformation resulted in non-finite value"
+        );
+        return { lower: null, upper: null };
+      }
+
+      // Standard error: SE = 1/sqrt(n-3)
+      const se = 1 / Math.sqrt(n - 3);
+
+      if (!Number.isFinite(se) || se <= 0) {
+        console.warn("calculateConfidenceInterval: Invalid standard error");
+        return { lower: null, upper: null };
+      }
+
+      // 95% confidence interval: z ± 1.96 * SE
+      const zLower = z - 1.96 * se;
+      const zUpper = z + 1.96 * se;
+
+      // Transform back to correlation scale: r = (e^(2z) - 1) / (e^(2z) + 1)
+      const exp2zLower = Math.exp(2 * zLower);
+      const exp2zUpper = Math.exp(2 * zUpper);
+
+      // Check for overflow/underflow in exponential
+      if (!Number.isFinite(exp2zLower) || !Number.isFinite(exp2zUpper)) {
+        console.warn(
+          "calculateConfidenceInterval: Exponential transformation overflow"
+        );
+        return { lower: null, upper: null };
+      }
+
+      const lower = (exp2zLower - 1) / (exp2zLower + 1);
+      const upper = (exp2zUpper - 1) / (exp2zUpper + 1);
+
+      // Validate final results
+      if (!Number.isFinite(lower) || !Number.isFinite(upper)) {
+        console.warn(
+          "calculateConfidenceInterval: Final confidence bounds are not finite"
+        );
+        return { lower: null, upper: null };
+      }
+
+      // Ensure bounds are within valid correlation range [-1, 1]
+      const clampedLower = Math.max(-1, Math.min(1, lower));
+      const clampedUpper = Math.max(-1, Math.min(1, upper));
+
+      // Ensure lower <= upper (should always be true, but safety check)
+      if (clampedLower > clampedUpper) {
+        console.warn(
+          "calculateConfidenceInterval: Lower bound greater than upper bound"
+        );
+        return { lower: null, upper: null };
+      }
+
+      return {
+        lower: Math.round(clampedLower * 10000) / 10000, // Round to 4 decimal places
+        upper: Math.round(clampedUpper * 10000) / 10000,
+      };
+    } catch (error) {
+      console.error("calculateConfidenceInterval: Unexpected error:", error);
+      return { lower: null, upper: null };
+    }
   };
 
   const handleRowToggle = (variable1: string, variable2: string) => {
@@ -695,6 +1099,10 @@ export default function CorrelationAnalysis({
     const x = matchedData.map((d) => d.var1Value);
     const y = matchedData.map((d) => d.var2Value);
     const correlation = calculateCorrelation(x, y);
+
+    // Return null if correlation calculation failed
+    if (correlation === null) return null;
+
     const regressionLine = calculateRegressionLine(x, y);
 
     const chartData = {
@@ -833,12 +1241,22 @@ export default function CorrelationAnalysis({
           const x = matchedData.map((d) => d.var1Value);
           const y = matchedData.map((d) => d.var2Value);
           const correlation = calculateCorrelation(x, y);
-          const pValue = estimatePValue(correlation, matchedData.length);
+
+          // Skip if correlation calculation failed
+          if (correlation === null) {
+            console.warn(
+              `Skipping correlation between ${var1} and ${var2}: calculation failed`
+            );
+            continue;
+          }
+
+          const pValue = calculatePValue(correlation, matchedData.length);
 
           // Apply filters
           const minStrength = parseFloat(minCorrelationStrength);
           if (Math.abs(correlation) < minStrength) continue;
-          if (showOnlySignificant && pValue >= 0.05) continue;
+          if (showOnlySignificant && pValue !== null && pValue >= 0.05)
+            continue;
 
           correlations.push({
             variable1: var1,
@@ -854,9 +1272,11 @@ export default function CorrelationAnalysis({
       }
     }
 
-    return correlations.sort(
-      (a, b) => Math.abs(b.correlation) - Math.abs(a.correlation)
-    );
+    return correlations.sort((a, b) => {
+      const absA = a.correlation !== null ? Math.abs(a.correlation) : 0;
+      const absB = b.correlation !== null ? Math.abs(b.correlation) : 0;
+      return absB - absA;
+    });
   }, [logs, minCorrelationStrength, showOnlySignificant]);
 
   if (loading) {
@@ -1030,11 +1450,11 @@ export default function CorrelationAnalysis({
                     </Box>
                     <Box>
                       <Typography variant="body2" color="text.secondary">
-                        Strong Correlations:
+                        Large Correlations:
                       </Typography>
                       <Typography variant="h6" color="success.main">
                         {
-                          allCorrelations.filter((c) => c.strength === "strong")
+                          allCorrelations.filter((c) => c.strength === "large")
                             .length
                         }
                       </Typography>
@@ -1046,7 +1466,10 @@ export default function CorrelationAnalysis({
                       <Typography variant="h6" color="info.main">
                         {
                           allCorrelations.filter(
-                            (c) => c.pValue && c.pValue < 0.05
+                            (c) =>
+                              c.pValue !== null &&
+                              c.pValue !== undefined &&
+                              c.pValue < 0.05
                           ).length
                         }
                       </Typography>
@@ -1196,11 +1619,10 @@ export default function CorrelationAnalysis({
                                 }}
                               />
                               {(() => {
-                                const pValue = estimatePValue(
-                                  corr.correlation,
-                                  corr.dataPoints
-                                );
-                                return pValue < 0.05 ? (
+                                const pValue = corr.pValue;
+                                return pValue !== null &&
+                                  pValue !== undefined &&
+                                  pValue < 0.05 ? (
                                   <Chip
                                     label="★"
                                     size="small"
@@ -1239,7 +1661,10 @@ export default function CorrelationAnalysis({
                                         sx={{ fontWeight: 600, mb: 0.5 }}
                                       >
                                         Understanding Correlation (r ={" "}
-                                        {corr.correlation.toFixed(3)}):
+                                        {corr.correlation !== null
+                                          ? corr.correlation.toFixed(3)
+                                          : "undefined"}
+                                        ):
                                       </Typography>
                                       <Typography
                                         variant="body2"
@@ -1280,10 +1705,7 @@ export default function CorrelationAnalysis({
                                         (d) => d.var2Value
                                       );
                                       const rSquared = calculateRSquared(x, y);
-                                      const pValue = estimatePValue(
-                                        corr.correlation,
-                                        chartData.matchedData.length
-                                      );
+                                      const pValue = corr.pValue;
                                       const confidenceInterval =
                                         calculateConfidenceInterval(
                                           corr.correlation,
@@ -1328,9 +1750,13 @@ export default function CorrelationAnalysis({
                                                   Variance):
                                                 </Typography>
                                                 <Chip
-                                                  label={`${(
-                                                    rSquared * 100
-                                                  ).toFixed(1)}%`}
+                                                  label={`${
+                                                    rSquared !== null
+                                                      ? (
+                                                          rSquared * 100
+                                                        ).toFixed(1)
+                                                      : "N/A"
+                                                  }%`}
                                                   size="small"
                                                   color="info"
                                                 />
@@ -1348,12 +1774,16 @@ export default function CorrelationAnalysis({
                                                 </Typography>
                                                 <Chip
                                                   label={
+                                                    pValue !== null &&
+                                                    pValue !== undefined &&
                                                     pValue < 0.05
                                                       ? "Significant"
                                                       : "Not Significant"
                                                   }
                                                   size="small"
                                                   color={
+                                                    pValue !== null &&
+                                                    pValue !== undefined &&
                                                     pValue < 0.05
                                                       ? "success"
                                                       : "warning"
@@ -1378,13 +1808,19 @@ export default function CorrelationAnalysis({
                                                   }}
                                                 >
                                                   [
-                                                  {confidenceInterval.lower.toFixed(
-                                                    3
-                                                  )}
+                                                  {confidenceInterval.lower !==
+                                                  null
+                                                    ? confidenceInterval.lower.toFixed(
+                                                        3
+                                                      )
+                                                    : "N/A"}
                                                   ,{" "}
-                                                  {confidenceInterval.upper.toFixed(
-                                                    3
-                                                  )}
+                                                  {confidenceInterval.upper !==
+                                                  null
+                                                    ? confidenceInterval.upper.toFixed(
+                                                        3
+                                                      )
+                                                    : "N/A"}
                                                   ]
                                                 </Typography>
                                               </Box>
@@ -1473,7 +1909,11 @@ export default function CorrelationAnalysis({
                                           }}
                                         >
                                           <Chip
-                                            label={`Correlation: ${corr.correlation}`}
+                                            label={`Correlation: ${
+                                              corr.correlation !== null
+                                                ? corr.correlation
+                                                : "undefined"
+                                            }`}
                                             size="small"
                                             sx={{
                                               bgcolor: getCorrelationColor(
@@ -1486,9 +1926,13 @@ export default function CorrelationAnalysis({
                                             label={`${getCorrelationStrength(
                                               corr.correlation
                                             )} ${
+                                              corr.correlation !== null &&
                                               corr.correlation > 0
                                                 ? "Positive"
-                                                : "Negative"
+                                                : corr.correlation !== null &&
+                                                  corr.correlation < 0
+                                                ? "Negative"
+                                                : "Undefined"
                                             }`}
                                             size="small"
                                             variant="outlined"
@@ -1511,10 +1955,7 @@ export default function CorrelationAnalysis({
                                               x,
                                               y
                                             );
-                                            const pValue = estimatePValue(
-                                              corr.correlation,
-                                              chartData.matchedData.length
-                                            );
+                                            const pValue = corr.pValue;
                                             const confidenceInterval =
                                               calculateConfidenceInterval(
                                                 corr.correlation,
@@ -1524,33 +1965,59 @@ export default function CorrelationAnalysis({
                                             return (
                                               <>
                                                 <Chip
-                                                  label={`R² = ${rSquared.toFixed(
-                                                    3
-                                                  )}`}
+                                                  label={`R² = ${
+                                                    rSquared !== null
+                                                      ? rSquared.toFixed(3)
+                                                      : "N/A"
+                                                  }`}
                                                   size="small"
                                                   variant="outlined"
                                                   color="info"
                                                 />
                                                 <Chip
-                                                  label={`p < ${
-                                                    pValue < 0.001
-                                                      ? "0.001"
+                                                  label={`p = ${
+                                                    pValue === null ||
+                                                    pValue === undefined
+                                                      ? "N/A"
+                                                      : pValue < 0.00001
+                                                      ? "< 0.00001"
+                                                      : pValue < 0.001
+                                                      ? pValue.toFixed(5)
+                                                      : pValue < 0.01
+                                                      ? pValue.toFixed(4)
                                                       : pValue.toFixed(3)
                                                   }`}
                                                   size="small"
                                                   variant="outlined"
                                                   color={
-                                                    pValue < 0.05
+                                                    pValue === null ||
+                                                    pValue === undefined
+                                                      ? "default"
+                                                      : pValue < 0.001
+                                                      ? "error"
+                                                      : pValue < 0.01
+                                                      ? "warning"
+                                                      : pValue < 0.05
                                                       ? "success"
-                                                      : "warning"
+                                                      : "default"
                                                   }
                                                 />
                                                 <Chip
-                                                  label={`95% CI: [${confidenceInterval.lower.toFixed(
-                                                    3
-                                                  )}, ${confidenceInterval.upper.toFixed(
-                                                    3
-                                                  )}]`}
+                                                  label={`95% CI: [${
+                                                    confidenceInterval.lower !==
+                                                    null
+                                                      ? confidenceInterval.lower.toFixed(
+                                                          3
+                                                        )
+                                                      : "N/A"
+                                                  }, ${
+                                                    confidenceInterval.upper !==
+                                                    null
+                                                      ? confidenceInterval.upper.toFixed(
+                                                          3
+                                                        )
+                                                      : "N/A"
+                                                  }]`}
                                                   size="small"
                                                   variant="outlined"
                                                   color="secondary"

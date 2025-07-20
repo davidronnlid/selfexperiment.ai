@@ -1,16 +1,24 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Typography,
   Card,
   CardContent,
+  Chip,
+  FormControlLabel,
+  Checkbox,
+  TextField,
+  InputAdornment,
+  Alert,
+  CircularProgress,
+  Grid,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
   SelectChangeEvent,
-  Grid,
 } from "@mui/material";
 import { supabase } from "@/utils/supaBase";
+import { Search as SearchIcon } from "@mui/icons-material";
 
 interface DataPoint {
   id: number;
@@ -51,14 +59,14 @@ export default function ChartSelection({
   };
 
   // Memoized calculations
-  const uniqueVariables = useMemo(() => {
+  const uniqueVariables = useCallback(() => {
     // Get unique variable slugs from the data
     const variables = new Set(logs.map((log) => log.variable_id));
     return Array.from(variables).sort();
   }, [logs]);
 
-  const numericVariables = useMemo(() => {
-    return uniqueVariables.filter((variable) =>
+  const numericVariables = useCallback(() => {
+    return uniqueVariables().filter((variable) =>
       logs.some((log) => log.variable_id === variable && isNumeric(log.value))
     );
   }, [uniqueVariables, logs]);
@@ -202,12 +210,12 @@ export default function ChartSelection({
     setSelectedVariables(newSelectedVariables);
   };
 
-  const handleTimeRangeChange = (event: SelectChangeEvent) => {
-    setTimeRange(event.target.value);
+  const handleTimeRangeChange = (event: SelectChangeEvent<string>) => {
+    setTimeRange(event.target.value as string);
   };
 
-  const handleChartTypeChange = (event: SelectChangeEvent) => {
-    setChartType(event.target.value);
+  const handleChartTypeChange = (event: SelectChangeEvent<string>) => {
+    setChartType(event.target.value as string);
   };
 
   if (loading) {
@@ -262,7 +270,7 @@ export default function ChartSelection({
                 <MenuItem value="">
                   <em>Select a variable</em>
                 </MenuItem>
-                {numericVariables.map((variableId) => (
+                {numericVariables().map((variableId) => (
                   <MenuItem key={variableId} value={variableId}>
                     {variables[variableId] || variableId}
                   </MenuItem>
@@ -282,7 +290,7 @@ export default function ChartSelection({
                 <MenuItem value="">
                   <em>Select a variable</em>
                 </MenuItem>
-                {numericVariables.map((variableId) => (
+                {numericVariables().map((variableId) => (
                   <MenuItem key={variableId} value={variableId}>
                     {variables[variableId] || variableId}
                   </MenuItem>

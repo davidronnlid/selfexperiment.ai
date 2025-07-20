@@ -1,32 +1,30 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Box,
-  Button,
-  Card,
-  CardContent,
   Typography,
   Alert,
   CircularProgress,
-  Divider,
-  Chip,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
+  Paper,
+  Card,
+  CardContent,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
   SelectChangeEvent,
-  Tooltip,
-  Grid,
-  Tabs,
-  Tab,
-  Paper,
+  Chip,
   IconButton,
   Collapse,
+  Grid,
+  TableContainer,
+  Table,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableBody,
+  Tabs,
+  Tab,
+  Tooltip,
 } from "@mui/material";
 import { Line } from "react-chartjs-2";
 import {
@@ -40,23 +38,20 @@ import {
   Legend,
   Filler,
 } from "chart.js";
-import { supabase } from "@/utils/supaBase";
-import { format, parseISO } from "date-fns";
 import {
-  Sync as SyncIcon,
+  BedOutlined as BedIcon,
+  MonitorWeight as ScaleIcon,
   TrendingUp as TrendingUpIcon,
-  TrendingDown as TrendingDownIcon,
-  TrendingFlat as TrendingFlatIcon,
-  FitnessCenter as FitnessIcon,
-  Timeline as TimelineIcon,
-  LocalFireDepartment as LocalFireDepartmentIcon,
   BarChart as BarChartIcon,
+  Timeline as TimelineIcon,
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
-  Scale as ScaleIcon,
-  Bed as BedIcon,
-  Favorite as HeartIcon,
+  Edit as EditIcon,
 } from "@mui/icons-material";
+import { format, parseISO } from "date-fns";
+import { supabase } from "@/utils/supaBase";
+import { formatLargeNumber } from "@/utils/numberFormatting";
+import { useRouter } from "next/router";
 import {
   getOuraVariableLabel,
   getOuraVariableInfo,
@@ -64,7 +59,6 @@ import {
   getOuraVariableInterpretation,
   OURA_VARIABLES,
 } from "@/utils/ouraVariableUtils";
-import { formatLargeNumber } from "@/utils/numberFormatting";
 
 // Register Chart.js components
 ChartJS.register(
@@ -80,8 +74,9 @@ ChartJS.register(
 
 interface HealthData {
   id: string;
-  source: "oura" | "withings";
-  variable: string;
+  source: "oura" | "withings" | "manual" | "routine" | "auto";
+  variable: string; // variable slug for display/navigation
+  variable_id?: string; // UUID for database operations
   date: string;
   value: number;
   user_id: string;
@@ -154,7 +149,7 @@ const VARIABLE_COLORS: { [key: string]: string } = {
 
 const VARIABLE_ICONS: { [key: string]: React.ReactNode } = {
   // Oura icons
-  readiness_score: <HeartIcon />,
+  readiness_score: <BedIcon />,
   sleep_score: <BedIcon />,
   total_sleep_duration: <BedIcon />,
   rem_sleep_duration: <BedIcon />,
@@ -163,17 +158,17 @@ const VARIABLE_ICONS: { [key: string]: React.ReactNode } = {
   sleep_latency: <TimelineIcon />,
   temperature_deviation: <TrendingUpIcon />,
   temperature_trend_deviation: <TrendingUpIcon />,
-  hr_lowest_true: <HeartIcon />,
-  hr_average_true: <HeartIcon />,
+  hr_lowest_true: <BedIcon />,
+  hr_average_true: <BedIcon />,
 
   // Withings icons
   weight: <ScaleIcon />,
-  fat_free_mass_kg: <FitnessIcon />,
+  fat_free_mass_kg: <ScaleIcon />,
   fat_ratio: <TrendingUpIcon />,
   fat_mass_weight_kg: <TrendingUpIcon />,
-  muscle_mass_kg: <FitnessIcon />,
+  muscle_mass_kg: <ScaleIcon />,
   hydration_kg: <TrendingUpIcon />,
-  bone_mass_kg: <FitnessIcon />,
+  bone_mass_kg: <ScaleIcon />,
 };
 
 export default function UnifiedHealthDashboard({
@@ -190,6 +185,7 @@ export default function UnifiedHealthDashboard({
     new Set()
   );
   const [activeTab, setActiveTab] = useState(0);
+  const router = useRouter();
 
   // Utility functions
   const formatDate = (dateString: string) => {
@@ -372,12 +368,35 @@ export default function UnifiedHealthDashboard({
         console.error("Error fetching Withings data:", withingsError);
       }
 
+      // Fetch manual data points with variable information
+      const { data: manualData, error: manualError } = await supabase
+        .from("data_points")
+        .select(
+          `
+          id,
+          user_id,
+          date,
+          variable_id,
+          value,
+          source,
+          created_at,
+          variables!inner(slug, label)
+        `
+        )
+        .eq("user_id", userId)
+        .order("date", { ascending: false });
+
+      if (manualError) {
+        console.error("Error fetching manual data:", manualError);
+      }
+
       // Combine and transform data
       const combinedData: HealthData[] = [
         ...(ouraData || []).map((item) => ({
           id: item.id,
           source: "oura" as const,
           variable: item.variable_id,
+          variable_id: item.variable_id,
           date: item.date,
           value: item.value,
           user_id: item.user_id,
@@ -387,18 +406,39 @@ export default function UnifiedHealthDashboard({
           id: item.id,
           source: "withings" as const,
           variable: item.variable,
+          variable_id: item.variable,
           date: item.date,
           value: item.value,
           user_id: item.user_id,
           created_at: item.created_at,
         })),
-      ];
+        ...(manualData || []).map((item) => {
+          // Determine the source type based on the source field
+          let source: "manual" | "routine" | "auto" = "manual";
+          if (item.source && Array.isArray(item.source)) {
+            const sourceValue = item.source[0];
+            if (sourceValue === "routine" || sourceValue === "auto") {
+              source = sourceValue as "routine" | "auto";
+            }
+          } else if (item.source === "routine" || item.source === "auto") {
+            source = item.source as "routine" | "auto";
+          }
 
-      console.log("[UnifiedHealthDashboard] Fetched data:", {
-        oura: ouraData?.length || 0,
-        withings: withingsData?.length || 0,
-        total: combinedData.length,
-      });
+          return {
+            id: item.id,
+            source: source,
+            variable: item.variables?.slug || item.variable_id,
+            variable_id: item.variable_id,
+            date: item.date,
+            value:
+              typeof item.value === "number"
+                ? item.value
+                : parseFloat(item.value) || 0,
+            user_id: item.user_id,
+            created_at: item.created_at,
+          };
+        }),
+      ];
 
       setData(combinedData);
     } catch (error) {
@@ -446,7 +486,15 @@ export default function UnifiedHealthDashboard({
       datasets: [
         {
           label: getVariableLabel(selectedVariable),
-          data: variableData.map((d) => d.value),
+          data: variableData.map((d, index) => ({
+            x: index,
+            y: d.value,
+            date: d.date,
+            id: d.id,
+            source: d.source,
+            variable_id: d.variable_id,
+            variable: d.variable,
+          })),
           borderColor: getVariableColor(selectedVariable),
           backgroundColor: `${getVariableColor(selectedVariable)}20`,
           fill: true,
@@ -456,17 +504,84 @@ export default function UnifiedHealthDashboard({
     };
   }, [selectedVariable, getVariableData]);
 
+  // Handle edit click for Modular Health data points
+  const handleEditDataPoint = useCallback(
+    (dataPoint: any) => {
+      if (
+        dataPoint.source === "manual" ||
+        dataPoint.source === "routine" ||
+        dataPoint.source === "auto"
+      ) {
+        // Navigate to variable page with data point ID for editing
+        const variableSlug = dataPoint.variable;
+        const dataPointId = dataPoint.id;
+        router.push(`/variable/${variableSlug}?edit=${dataPointId}`);
+      }
+    },
+    [router]
+  );
+
   // Chart options
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
       legend: { display: false },
+      tooltip: {
+        mode: "index" as const,
+        intersect: false,
+        callbacks: {
+          title: function (context: any) {
+            const dataIndex = context[0]?.dataIndex;
+            if (dataIndex !== undefined) {
+              const dataset = context[0]?.dataset;
+              if (dataset && dataset.data && dataset.data[dataIndex]) {
+                const dataPoint = dataset.data[dataIndex];
+                if (dataPoint.date) {
+                  return format(
+                    parseISO(dataPoint.date),
+                    "MMM dd, yyyy 'at' HH:mm"
+                  );
+                }
+              }
+            }
+            return context[0]?.label || "";
+          },
+          label: function (context: any) {
+            return `${context.dataset.label}: ${context.parsed.y}`;
+          },
+          afterLabel: function (context: any) {
+            const dataIndex = context.dataIndex;
+            const dataset = context.dataset;
+            if (dataset && dataset.data && dataset.data[dataIndex]) {
+              const dataPoint = dataset.data[dataIndex];
+              if (
+                dataPoint.source === "manual" ||
+                dataPoint.source === "routine" ||
+                dataPoint.source === "auto"
+              ) {
+                return "🖊️ Click to edit (Modular Health data)";
+              }
+            }
+            return "";
+          },
+        },
+      },
     },
     scales: {
       y: {
         beginAtZero: false,
       },
+    },
+    onClick: (event: any, elements: any[]) => {
+      if (elements.length > 0) {
+        const elementIndex = elements[0].index;
+        const dataset = chartData?.datasets[0];
+        if (dataset && dataset.data && dataset.data[elementIndex]) {
+          const dataPoint = dataset.data[elementIndex];
+          handleEditDataPoint(dataPoint);
+        }
+      }
     },
   };
 
@@ -730,7 +845,15 @@ export default function UnifiedHealthDashboard({
                                 datasets: [
                                   {
                                     label: getVariableLabel(variable),
-                                    data: variableData.map((d) => d.value),
+                                    data: variableData.map((d, index) => ({
+                                      x: index,
+                                      y: d.value,
+                                      date: d.date,
+                                      id: d.id,
+                                      source: d.source,
+                                      variable_id: d.variable_id,
+                                      variable: d.variable,
+                                    })),
                                     borderColor: getVariableColor(variable),
                                     backgroundColor: `${getVariableColor(
                                       variable
@@ -740,7 +863,17 @@ export default function UnifiedHealthDashboard({
                                   },
                                 ],
                               }}
-                              options={chartOptions}
+                              options={{
+                                ...chartOptions,
+                                onClick: (event: any, elements: any[]) => {
+                                  if (elements.length > 0) {
+                                    const elementIndex = elements[0].index;
+                                    const dataPoint =
+                                      variableData[elementIndex];
+                                    handleEditDataPoint(dataPoint);
+                                  }
+                                },
+                              }}
                             />
                           </Box>
                         </Box>

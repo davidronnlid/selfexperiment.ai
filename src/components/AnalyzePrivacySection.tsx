@@ -1,25 +1,26 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import {
-  Paper,
-  Typography,
   Box,
-  Tabs,
-  Tab,
-  Button,
+  Typography,
+  Card,
+  CardContent,
+  Switch,
+  FormControlLabel,
   Alert,
+  CircularProgress,
   Chip,
-  Divider,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
 } from "@mui/material";
-import { FaEye, FaCog, FaLock, FaGlobe, FaUsers } from "react-icons/fa";
 import { supabase } from "@/utils/supaBase";
-import { LOG_LABELS } from "@/utils/logLabels";
-import { VariableLinkSimple } from "./VariableLink";
-import { useUser } from "@/pages/_app";
-import LogPrivacyManager from "./LogPrivacyManager";
-import { UserVariablePreference } from "../hooks/useVariableSharingSettings";
+import { useRouter } from "next/router";
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -173,10 +174,8 @@ export default function AnalyzePrivacySection() {
   }, [user?.id]);
 
   useEffect(() => {
-    if (user) {
-      loadVariablePreferences();
-    }
-  }, [user, loadVariablePreferences]);
+    loadVariablePreferences();
+  }, [loadVariablePreferences]);
 
   const handleVariableSharingChange = async (
     variableName: string,
@@ -313,10 +312,10 @@ export default function AnalyzePrivacySection() {
         <Typography variant="h6" gutterBottom>
           📊 Variable Type Sharing
         </Typography>
-        <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-          Choose which variable types you want to share with other users. When
-          enabled, other users can see your logged values for this variable
-          type.
+        <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+          Control which health variables are shared with the community. You can
+          &quot;opt-in&quot; to share specific variables while keeping others
+          private.
         </Typography>
 
         {Object.entries(groupedVariables).map(([category, variables]) => (

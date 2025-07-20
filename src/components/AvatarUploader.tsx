@@ -18,6 +18,7 @@ export default function AvatarUploader({ currentAvatarUrl, onUpload }: Props) {
   const [uploading, setUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Get Google profile picture from OAuth data if available
   const googleProfilePic =
@@ -65,10 +66,10 @@ export default function AvatarUploader({ currentAvatarUrl, onUpload }: Props) {
       console.error("Upload error:", error);
       if (error instanceof Error) {
         if (error instanceof Error) {
-        alert(error.message);
-      } else {
-        alert("An unknown error occurred");
-      }
+          alert(error.message);
+        } else {
+          alert("An unknown error occurred");
+        }
       } else {
         alert("An unknown error occurred");
       }

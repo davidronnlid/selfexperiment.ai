@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Box,
   Typography,
@@ -311,30 +311,106 @@ export default function RoadmapManager() {
   };
 
   // Sort posts based on selected criteria
-  const sortPosts = (postsToSort: RoadmapPost[]) => {
-    return [...postsToSort].sort((a, b) => {
-      switch (sortBy) {
-        case "recent":
-          return (
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          );
-        case "popular":
-          const aPopularity =
-            (likeStates[a.id]?.count || 0) + (commentCounts[a.id] || 0);
-          const bPopularity =
-            (likeStates[b.id]?.count || 0) + (commentCounts[b.id] || 0);
-          return bPopularity - aPopularity;
-        case "likes":
-          return (
-            (likeStates[b.id]?.count || 0) - (likeStates[a.id]?.count || 0)
-          );
-        case "comments":
-          return (commentCounts[b.id] || 0) - (commentCounts[a.id] || 0);
-        default:
-          return 0;
-      }
-    });
-  };
+  const sortPosts = useCallback(
+    (postsToSort: RoadmapPost[]) => {
+      return [...postsToSort].sort((a, b) => {
+        switch (sortBy) {
+          case "recent":
+            return (
+              new Date(b.created_at).getTime() -
+              new Date(a.created_at).getTime()
+            );
+          case "popular":
+            const aPopularity =
+              (likeStates[a.id]?.count || 0) + (commentCounts[a.id] || 0);
+            const bPopularity =
+              (likeStates[b.id]?.count || 0) + (commentCounts[b.id] || 0);
+            return bPopularity - aPopularity;
+          case "likes":
+            return (
+              (likeStates[b.id]?.count || 0) - (likeStates[a.id]?.count || 0)
+            );
+          case "comments":
+            return (commentCounts[b.id] || 0) - (commentCounts[a.id] || 0);
+          default:
+            return 0;
+        }
+      });
+    },
+    [sortBy, likeStates, commentCounts]
+  );
+
+  // Memoized form handlers
+  const handleNewPostTitleChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setNewPost((prev) => ({ ...prev, title: e.target.value }));
+    },
+    []
+  );
+
+  const handleNewPostDescriptionChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      setNewPost((prev) => ({ ...prev, description: e.target.value }));
+    },
+    []
+  );
+
+  const handleEditPostTitleChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setEditPost((prev) => ({ ...prev, title: e.target.value }));
+    },
+    []
+  );
+
+  const handleEditPostDescriptionChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      setEditPost((prev) => ({ ...prev, description: e.target.value }));
+    },
+    []
+  );
+
+  const handleSelectedTagChange = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    (_: any, newValue: string) => {
+      setSelectedTag(newValue);
+    },
+    []
+  );
+
+  // @ts-ignore
+  const handleSelectedStatusChange = useCallback((e: any) => {
+    setSelectedStatus(e.target.value);
+  }, []);
+
+  // @ts-ignore
+  const handleSelectedPriorityChange = useCallback((e: any) => {
+    setSelectedPriority(e.target.value);
+  }, []);
+
+  // @ts-ignore
+  const handleSortByChange = useCallback((e: any) => {
+    setSortBy(e.target.value as any);
+  }, []);
+
+  // @ts-ignore
+  const handleNewPostTagChange = useCallback((e: any) => {
+    setNewPost((prev) => ({ ...prev, tag: e.target.value as any }));
+  }, []);
+
+  // @ts-ignore
+  const handleEditPostTagChange = useCallback((e: any) => {
+    setEditPost((prev) => ({ ...prev, tag: e.target.value as any }));
+  }, []);
+
+  // @ts-ignore
+  const handleEditPostStatusChange = useCallback((e: any) => {
+    setEditPost((prev) => ({ ...prev, status: e.target.value as any }));
+  }, []);
+
+  // @ts-ignore
+  const handleEditPostPriorityChange = useCallback((e: any) => {
+    setEditPost((prev) => ({ ...prev, priority: e.target.value as any }));
+  }, []);
 
   // Filter and sort posts
   useEffect(() => {
@@ -365,6 +441,7 @@ export default function RoadmapManager() {
     sortBy,
     likeStates,
     commentCounts,
+    sortPosts,
   ]);
 
   // Load posts on component mount
@@ -429,7 +506,7 @@ export default function RoadmapManager() {
       {/* Tag Filter Tabs */}
       <Tabs
         value={selectedTag}
-        onChange={(_, newValue) => setSelectedTag(newValue)}
+        onChange={handleSelectedTagChange}
         sx={{ mb: 3 }}
         variant="scrollable"
         scrollButtons="auto"
@@ -469,7 +546,7 @@ export default function RoadmapManager() {
             <Select
               value={selectedStatus}
               label="Status"
-              onChange={(e) => setSelectedStatus(e.target.value)}
+              onChange={handleSelectedStatusChange}
               startAdornment={
                 <FilterIcon sx={{ mr: 1, color: "action.active" }} />
               }
@@ -488,7 +565,7 @@ export default function RoadmapManager() {
             <Select
               value={selectedPriority}
               label="Priority"
-              onChange={(e) => setSelectedPriority(e.target.value)}
+              onChange={handleSelectedPriorityChange}
               startAdornment={
                 <FilterIcon sx={{ mr: 1, color: "action.active" }} />
               }
@@ -507,7 +584,7 @@ export default function RoadmapManager() {
             <Select
               value={sortBy}
               label="Sort by"
-              onChange={(e) => setSortBy(e.target.value as any)}
+              onChange={handleSortByChange}
               startAdornment={
                 <SortIcon sx={{ mr: 1, color: "action.active" }} />
               }
@@ -531,6 +608,7 @@ export default function RoadmapManager() {
           };
 
           return (
+            // @ts-ignore
             <Grid item xs={12} md={6} lg={4} key={post.id}>
               <Card
                 sx={{
@@ -700,9 +778,10 @@ export default function RoadmapManager() {
             label="Title"
             fullWidth
             value={newPost.title}
-            onChange={(e) =>
-              setNewPost((prev) => ({ ...prev, title: e.target.value }))
-            }
+            onChange={handleNewPostTitleChange}
+            inputProps={{ maxLength: 200 }}
+            helperText={`${newPost.title.length}/200 characters`}
+            error={newPost.title.length > 200}
             sx={{ mb: 2, mt: 1 }}
           />
           <TextField
@@ -711,9 +790,10 @@ export default function RoadmapManager() {
             multiline
             rows={3}
             value={newPost.description}
-            onChange={(e) =>
-              setNewPost((prev) => ({ ...prev, description: e.target.value }))
-            }
+            onChange={handleNewPostDescriptionChange}
+            inputProps={{ maxLength: 1000 }}
+            helperText={`${(newPost.description || "").length}/1000 characters`}
+            error={(newPost.description || "").length > 1000}
             sx={{ mb: 2 }}
           />
           <FormControl fullWidth>
@@ -721,12 +801,7 @@ export default function RoadmapManager() {
             <Select
               value={newPost.tag}
               label="Category"
-              onChange={(e) =>
-                setNewPost((prev) => ({
-                  ...prev,
-                  tag: e.target.value as any,
-                }))
-              }
+              onChange={handleNewPostTagChange}
             >
               {ROADMAP_TAGS.map((tag) => (
                 <MenuItem key={tag} value={tag}>
@@ -741,7 +816,11 @@ export default function RoadmapManager() {
           <Button
             onClick={createPost}
             variant="contained"
-            disabled={!newPost.title.trim()}
+            disabled={
+              !newPost.title.trim() ||
+              newPost.title.length > 200 ||
+              (newPost.description || "").length > 1000
+            }
           >
             Create Post
           </Button>
@@ -772,9 +851,10 @@ export default function RoadmapManager() {
             label="Title"
             fullWidth
             value={editPost.title}
-            onChange={(e) =>
-              setEditPost((prev) => ({ ...prev, title: e.target.value }))
-            }
+            onChange={handleEditPostTitleChange}
+            inputProps={{ maxLength: 200 }}
+            helperText={`${(editPost.title || "").length}/200 characters`}
+            error={(editPost.title || "").length > 200}
             sx={{ mb: 2, mt: 1 }}
           />
           <TextField
@@ -783,9 +863,12 @@ export default function RoadmapManager() {
             multiline
             rows={3}
             value={editPost.description}
-            onChange={(e) =>
-              setEditPost((prev) => ({ ...prev, description: e.target.value }))
-            }
+            onChange={handleEditPostDescriptionChange}
+            inputProps={{ maxLength: 1000 }}
+            helperText={`${
+              (editPost.description || "").length
+            }/1000 characters`}
+            error={(editPost.description || "").length > 1000}
             sx={{ mb: 2 }}
           />
           <FormControl fullWidth sx={{ mb: 2 }}>
@@ -793,12 +876,7 @@ export default function RoadmapManager() {
             <Select
               value={editPost.tag}
               label="Category"
-              onChange={(e) =>
-                setEditPost((prev) => ({
-                  ...prev,
-                  tag: e.target.value as any,
-                }))
-              }
+              onChange={handleEditPostTagChange}
             >
               {ROADMAP_TAGS.map((tag) => (
                 <MenuItem key={tag} value={tag}>
@@ -816,12 +894,7 @@ export default function RoadmapManager() {
                 <Select
                   value={editPost.status}
                   label="Status"
-                  onChange={(e) =>
-                    setEditPost((prev) => ({
-                      ...prev,
-                      status: e.target.value as any,
-                    }))
-                  }
+                  onChange={handleEditPostStatusChange}
                 >
                   <MenuItem value="proposed">Proposed</MenuItem>
                   <MenuItem value="in_progress">In Progress</MenuItem>
@@ -834,12 +907,7 @@ export default function RoadmapManager() {
                 <Select
                   value={editPost.priority}
                   label="Priority"
-                  onChange={(e) =>
-                    setEditPost((prev) => ({
-                      ...prev,
-                      priority: e.target.value as any,
-                    }))
-                  }
+                  onChange={handleEditPostPriorityChange}
                 >
                   <MenuItem value="low">Low</MenuItem>
                   <MenuItem value="medium">Medium</MenuItem>
@@ -861,7 +929,11 @@ export default function RoadmapManager() {
           <Button
             onClick={updatePost}
             variant="contained"
-            disabled={!editPost.title?.trim()}
+            disabled={
+              !editPost.title?.trim() ||
+              (editPost.title || "").length > 200 ||
+              (editPost.description || "").length > 1000
+            }
           >
             Update Post
           </Button>

@@ -1,39 +1,20 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Box,
-  Button,
-  Card,
-  CardContent,
   Typography,
   Alert,
   CircularProgress,
-  Divider,
+  Card,
+  CardContent,
   Chip,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  SelectChangeEvent,
-  Tooltip,
-  Grid,
-  Tabs,
-  Tab,
-  Paper,
   IconButton,
   Collapse,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
+  Grid,
   TextField,
   InputAdornment,
+  Button,
 } from "@mui/material";
-import { Line, Scatter, Bar } from "react-chartjs-2";
+import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -49,33 +30,20 @@ import {
 import { supabase } from "@/utils/supaBase";
 import { format, parseISO } from "date-fns";
 import {
-  Sync as SyncIcon,
+  Search as SearchIcon,
   TrendingUp as TrendingUpIcon,
-  TrendingDown as TrendingDownIcon,
-  TrendingFlat as TrendingFlatIcon,
-  FitnessCenter as FitnessIcon,
-  Timeline as TimelineIcon,
-  LocalFireDepartment as LocalFireDepartmentIcon,
-  BarChart as BarChartIcon,
+  Sync as SyncIcon,
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
-  Scale as ScaleIcon,
-  Bed as BedIcon,
+  Timeline as TimelineIcon,
   Favorite as HeartIcon,
-  Link as LinkIcon,
-  Refresh as RefreshIcon,
-  Settings as SettingsIcon,
-  Search as SearchIcon,
+  BedOutlined as BedIcon,
+  MonitorWeight as ScaleIcon,
+  FitnessCenter as FitnessIcon,
+  LocalFireDepartment as LocalFireDepartmentIcon,
 } from "@mui/icons-material";
-import {
-  getOuraVariableLabel,
-  getOuraVariableInfo,
-  formatOuraVariableValue,
-  getOuraVariableInterpretation,
-  OURA_VARIABLES,
-} from "@/utils/ouraVariableUtils";
-import { formatLargeNumber } from "@/utils/numberFormatting";
 import ChartSelection from "./ChartSelection";
+import { useRouter } from "next/router";
 
 // Register Chart.js components
 ChartJS.register(
@@ -114,14 +82,6 @@ interface VariableStats {
   changePercentage: number;
   streak: number;
   totalLogs: number;
-}
-
-interface CorrelationData {
-  variable1: string;
-  variable2: string;
-  correlation: number;
-  pValue: number;
-  dataPoints: number;
 }
 
 // Variable labels and colors
@@ -250,6 +210,9 @@ export default function ComprehensiveHealthDashboard({
     {}
   );
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [variableSlugs, setVariableSlugs] = useState<Record<string, string>>(
+    {}
+  );
 
   // Add state for chart configuration
   const [chartConfig, setChartConfig] = useState({
@@ -258,75 +221,77 @@ export default function ComprehensiveHealthDashboard({
     chartType: "line",
   });
 
+  // Define chart options at component level to avoid recreation
+  const chartOptions = useMemo(
+    () => ({
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          mode: "index" as const,
+          intersect: false,
+        },
+      },
+      scales: {
+        y: {
+          beginAtZero: false,
+        },
+      },
+    }),
+    []
+  );
+
+  // Utility function to get variable color
+  const getVariableColor = useCallback((variable: string) => {
+    const colors = [
+      "#3b82f6", // Blue
+      "#ef4444", // Red
+      "#10b981", // Green
+      "#f59e0b", // Amber
+      "#8b5cf6", // Purple
+      "#ec4899", // Pink
+      "#06b6d4", // Cyan
+      "#84cc16", // Lime
+      "#f97316", // Orange
+      "#6b7280", // Gray
+    ];
+
+    let hash = 0;
+    for (let i = 0; i < variable.length; i++) {
+      hash = variable.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return colors[Math.abs(hash) % colors.length];
+  }, []);
+
+  // Get variable label with fallback
+  const getVariableLabel = useCallback(
+    (variable: string) => {
+      // Check if we have a slug mapping
+      const slug = variableSlugs[variable];
+      if (slug) return slug;
+
+      // Fallback formatting
+      return variable
+        .split("_")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
+    },
+    [variableSlugs]
+  );
+
+  // Get variable icon
+  const getVariableIcon = useCallback((variable: string) => {
+    return VARIABLE_ICONS[variable] || <TrendingUpIcon />;
+  }, []);
+
   // Utility functions
-  const formatDate = (dateString: string) => {
+  const formatDateWithYear = (dateString: string) => {
     try {
-      return format(parseISO(dateString), "MMM dd");
+      return format(parseISO(dateString), "MMM d, yyyy");
     } catch {
       return dateString;
     }
-  };
-
-  const formatDateWithYear = (dateString: string) => {
-    try {
-      const date = parseISO(dateString);
-      const month = format(date, "MMM dd");
-      const year = format(date, "yyyy");
-
-      // Check if this is the first occurrence of this year in the dataset
-      return { month, year, fullDate: date };
-    } catch {
-      return { month: dateString, year: "", fullDate: new Date() };
-    }
-  };
-
-  const getVariableColor = (variable: string) => {
-    return VARIABLE_COLORS[variable] || "#3b82f6";
-  };
-
-  const getVariableLabel = (variable: string) => {
-    // First try to get from dynamic labels (database)
-    if (variableLabels[variable]) {
-      return variableLabels[variable];
-    }
-    // Fall back to hardcoded labels for legacy variables
-    return VARIABLE_LABELS[variable] || variable;
-  };
-
-  const getVariableIcon = (variable: string) => {
-    return VARIABLE_ICONS[variable] || <TrendingUpIcon />;
-  };
-
-  // Chart options
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: true,
-        position: "top" as const,
-      },
-      tooltip: {
-        mode: "index" as const,
-        intersect: false,
-      },
-    },
-    scales: {
-      x: {
-        display: true,
-        title: {
-          display: true,
-          text: "Date",
-        },
-      },
-      y: {
-        display: true,
-        title: {
-          display: true,
-          text: "Value",
-        },
-      },
-    },
   };
 
   // Memoize unique variables
@@ -624,74 +589,6 @@ export default function ComprehensiveHealthDashboard({
     }
   }, [userId]);
 
-  // Incremental sync Oura data (last 90 days)
-  const syncOuraIncremental = async () => {
-    try {
-      setSyncingOura(true);
-      const response = await fetch("/api/oura/sync-incremental", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId: userId,
-        }),
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        console.log(
-          `[ComprehensiveHealthDashboard] Incrementally synced ${
-            result.data?.totalUpserted || 0
-          } Oura data points`
-        );
-        await fetchData();
-      } else {
-        const errorData = await response.json();
-        console.error("Oura incremental sync error:", errorData);
-      }
-    } catch (error) {
-      console.error("Error syncing Oura data incrementally:", error);
-    } finally {
-      setSyncingOura(false);
-    }
-  };
-
-  // Incremental sync Withings data (last 30 days)
-  const syncWithingsIncremental = async () => {
-    try {
-      setSyncingWithings(true);
-
-      const response = await fetch("/api/withings/sync-incremental", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-        }),
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          console.log(
-            `[ComprehensiveHealthDashboard] Incrementally synced ${
-              result.data?.totalUpserted || 0
-            } Withings data points`
-          );
-          await fetchData();
-        } else {
-          console.error("Withings incremental sync failed:", result.error);
-        }
-      } else {
-        console.error("Failed to sync Withings data incrementally");
-      }
-    } catch (error) {
-      console.error("Error syncing Withings data incrementally:", error);
-    } finally {
-      setSyncingWithings(false);
-    }
-  };
-
   // Legacy full sync functions (keep for backward compatibility)
   const syncOura = async () => {
     try {
@@ -903,11 +800,14 @@ export default function ComprehensiveHealthDashboard({
           );
           // Create a mapping of variable IDs to labels
           const labelsMap: Record<string, string> = {};
+          const slugsMap: Record<string, string> = {};
           variablesData?.forEach((variable) => {
             labelsMap[variable.id] = variable.label;
             labelsMap[variable.slug] = variable.label; // Also map by slug for backward compatibility
+            slugsMap[variable.id] = variable.slug; // Map variable ID to slug for navigation
           });
           setVariableLabels(labelsMap);
+          setVariableSlugs(slugsMap);
         }
 
         // Fetch Oura data with variable joins - Using pagination to get all records
@@ -1020,7 +920,14 @@ export default function ComprehensiveHealthDashboard({
             console.log(
               "[ComprehensiveHealthDashboard] 🔄 Starting Oura fallback pagination (no joins)..."
             );
-            let fallbackOuraData: any[] = [];
+            let fallbackOuraData: Array<{
+              id: string;
+              user_id: string;
+              date: string;
+              variable_id: string;
+              value: number | string | null;
+              created_at: string;
+            }> = [];
             let from = 0;
             const limit = 1000;
             let hasMore = true;
@@ -1148,14 +1055,23 @@ export default function ComprehensiveHealthDashboard({
 
           if (!withingsFallbackError && withingsFallback) {
             // Use fallback data without variable labels
-            const fallbackWithingsData = withingsFallback.map((item: any) => ({
-              ...item,
-              variables: {
-                id: item.variable_id,
-                slug: item.variable_id,
-                label: `Variable ${item.variable_id}`,
-              },
-            }));
+            const fallbackWithingsData = withingsFallback.map(
+              (item: {
+                id: string;
+                user_id: string;
+                date: string;
+                variable_id: string;
+                value: number | string | null;
+                created_at: string;
+              }) => ({
+                ...item,
+                variables: {
+                  id: item.variable_id,
+                  slug: item.variable_id,
+                  label: `Variable ${item.variable_id}`,
+                },
+              })
+            );
             console.log(
               "[ComprehensiveHealthDashboard] Using Withings fallback data:",
               fallbackWithingsData.length
@@ -1203,14 +1119,24 @@ export default function ComprehensiveHealthDashboard({
 
           if (!modularFallbackError && modularFallback) {
             // Use fallback data without variable labels
-            const fallbackModularData = modularFallback.map((item: any) => ({
-              ...item,
-              variables: {
-                id: item.variable_id,
-                slug: item.variable_id,
-                label: `Variable ${item.variable_id}`,
-              },
-            }));
+            const fallbackModularData = modularFallback.map(
+              (item: {
+                id: string;
+                user_id: string;
+                date: string;
+                variable_id: string;
+                value: number | string | null;
+                source: string;
+                created_at: string;
+              }) => ({
+                ...item,
+                variables: {
+                  id: item.variable_id,
+                  slug: item.variable_id,
+                  label: `Variable ${item.variable_id}`,
+                },
+              })
+            );
             console.log(
               "[ComprehensiveHealthDashboard] Using Modular Health fallback data:",
               fallbackModularData.length
@@ -1285,6 +1211,15 @@ export default function ComprehensiveHealthDashboard({
   // Check if user is authenticated - MUST be at the top level, not conditional
   const [authChecked, setAuthChecked] = React.useState(false);
   const [isAuthenticated, setIsAuthenticated] = React.useState(false);
+  const router = useRouter();
+
+  // Handle clicking on variable labels to navigate to variable pages
+  const handleVariableLabelClick = (variableId: string) => {
+    const slug = variableSlugs[variableId];
+    if (slug) {
+      router.push(`/variable/${slug}`);
+    }
+  };
 
   React.useEffect(() => {
     const checkAuth = async () => {
@@ -1395,7 +1330,17 @@ export default function ComprehensiveHealthDashboard({
                       <Box sx={{ display: "flex", alignItems: "center" }}>
                         {getVariableIcon(variable)}
                         <Box sx={{ ml: 1 }}>
-                          <Typography variant="subtitle1">
+                          <Typography
+                            variant="subtitle1"
+                            onClick={() => handleVariableLabelClick(variable)}
+                            sx={{
+                              cursor: "pointer",
+                              "&:hover": {
+                                textDecoration: "underline",
+                                color: "primary.main",
+                              },
+                            }}
+                          >
                             {getVariableLabel(variable)}
                           </Typography>
                           <Typography variant="body2" color="textSecondary">
@@ -1454,17 +1399,27 @@ export default function ComprehensiveHealthDashboard({
                                 // Show year if it's the first occurrence of this year or if it's January
                                 const showYear =
                                   !prevDateInfo ||
-                                  dateInfo.year !== prevDateInfo.year ||
-                                  dateInfo.month.startsWith("Jan");
+                                  !prevDateInfo.includes(
+                                    new Date().getFullYear().toString()
+                                  ) ||
+                                  dateInfo.startsWith("Jan");
 
                                 return showYear
-                                  ? `${dateInfo.month} ${dateInfo.year}`
-                                  : dateInfo.month;
+                                  ? dateInfo
+                                  : dateInfo.replace(/, \d{4}/, "");
                               }),
                               datasets: [
                                 {
                                   label: getVariableLabel(variable),
-                                  data: variableData.map((d) => d.value || 0), // Handle null values
+                                  data: variableData.map((d, index) => ({
+                                    x: index,
+                                    y: d.value || 0,
+                                    date: d.date,
+                                    id: d.id,
+                                    source: d.source,
+                                    variable_id: d.variable_id,
+                                    variable: d.variable,
+                                  })),
                                   borderColor: getVariableColor(variable),
                                   backgroundColor: `${getVariableColor(
                                     variable
@@ -1474,7 +1429,130 @@ export default function ComprehensiveHealthDashboard({
                                 },
                               ],
                             }}
-                            options={chartOptions}
+                            options={{
+                              responsive: true,
+                              maintainAspectRatio: false,
+                              plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                  mode: "index" as const,
+                                  intersect: false,
+                                  callbacks: {
+                                    title: function (
+                                      context: Array<{
+                                        dataIndex: number;
+                                        dataset: {
+                                          data: Array<{
+                                            date: string;
+                                          }>;
+                                        };
+                                        label: string;
+                                      }>
+                                    ) {
+                                      const dataIndex = context[0]?.dataIndex;
+                                      if (dataIndex !== undefined) {
+                                        const dataset = context[0]?.dataset;
+                                        if (
+                                          dataset &&
+                                          dataset.data &&
+                                          dataset.data[dataIndex]
+                                        ) {
+                                          const dataPoint =
+                                            dataset.data[dataIndex];
+                                          if (dataPoint.date) {
+                                            return format(
+                                              parseISO(dataPoint.date),
+                                              "MMM dd, yyyy 'at' HH:mm"
+                                            );
+                                          }
+                                        }
+                                      }
+                                      return context[0]?.label || "";
+                                    },
+                                    label: function (context: {
+                                      dataset: { label: string };
+                                      parsed: { y: number };
+                                    }) {
+                                      return `${context.dataset.label}: ${context.parsed.y}`;
+                                    },
+                                    afterLabel: function (context: {
+                                      dataIndex: number;
+                                      dataset: {
+                                        data: Array<{
+                                          source: string;
+                                        }>;
+                                      };
+                                    }) {
+                                      const dataIndex = context.dataIndex;
+                                      const dataset = context.dataset;
+                                      if (
+                                        dataset &&
+                                        dataset.data &&
+                                        dataset.data[dataIndex]
+                                      ) {
+                                        const dataPoint =
+                                          dataset.data[dataIndex];
+                                        if (
+                                          dataPoint.source === "manual" ||
+                                          dataPoint.source === "routine" ||
+                                          dataPoint.source === "auto"
+                                        ) {
+                                          return "🖊️ Click to edit (Modular Health data)";
+                                        }
+                                      }
+                                      return "";
+                                    },
+                                  },
+                                },
+                              },
+                              scales: {
+                                y: {
+                                  beginAtZero: false,
+                                },
+                              },
+                              onClick: (
+                                event: MouseEvent,
+                                elements: Array<{
+                                  index: number;
+                                  chart: {
+                                    data: {
+                                      datasets: Array<{
+                                        data: Array<{
+                                          source: string;
+                                          variable: string;
+                                          id: string;
+                                        }>;
+                                      }>;
+                                    };
+                                  };
+                                }>
+                              ) => {
+                                if (elements.length > 0) {
+                                  const elementIndex = elements[0].index;
+                                  const dataset =
+                                    elements[0].chart.data.datasets[0];
+                                  if (
+                                    dataset &&
+                                    dataset.data &&
+                                    dataset.data[elementIndex]
+                                  ) {
+                                    const dataPoint =
+                                      dataset.data[elementIndex];
+                                    if (
+                                      dataPoint.source === "manual" ||
+                                      dataPoint.source === "routine" ||
+                                      dataPoint.source === "auto"
+                                    ) {
+                                      const variableSlug = dataPoint.variable;
+                                      const dataPointId = dataPoint.id;
+                                      router.push(
+                                        `/variable/${variableSlug}?edit=${dataPointId}`
+                                      );
+                                    }
+                                  }
+                                }
+                              },
+                            }}
                           />
                         </Box>
                       </Box>

@@ -180,61 +180,67 @@ export default function DataSourcesAnalysis({
                 variant="outlined"
               />
 
-              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                <Chip
-                  label={`Oura: ${formatLargeNumber(
-                    dataCounts.oura
-                  )} data points`}
-                  size="small"
-                  color="secondary"
-                  variant="outlined"
-                />
-                <IconButton
-                  size="small"
-                  onClick={syncOura}
-                  disabled={syncingOura}
-                  sx={{
-                    width: 20,
-                    height: 20,
-                    color: "secondary.main",
-                    "&:hover": { backgroundColor: "secondary.light" },
-                  }}
-                >
-                  {syncingOura ? (
-                    <CircularProgress size={12} />
-                  ) : (
-                    <SyncIcon sx={{ fontSize: 12 }} />
-                  )}
-                </IconButton>
-              </Box>
+              <Chip
+                label={
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                    <span>{`Oura: ${formatLargeNumber(
+                      dataCounts.oura
+                    )} data points`}</span>
+                    <IconButton
+                      size="small"
+                      onClick={syncOura}
+                      disabled={syncingOura}
+                      sx={{
+                        width: 22,
+                        height: 22,
+                        color: "secondary.main",
+                        "&:hover": { backgroundColor: "secondary.light" },
+                        ml: 0.25,
+                      }}
+                    >
+                      {syncingOura ? (
+                        <CircularProgress size={12} />
+                      ) : (
+                        <SyncIcon sx={{ fontSize: 12 }} />
+                      )}
+                    </IconButton>
+                  </Box>
+                }
+                size="small"
+                color="secondary"
+                variant="outlined"
+              />
 
-              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                <Chip
-                  label={`Withings: ${formatLargeNumber(
-                    dataCounts.withings
-                  )} data points`}
-                  size="small"
-                  color="warning"
-                  variant="outlined"
-                />
-                <IconButton
-                  size="small"
-                  onClick={syncWithings}
-                  disabled={syncingWithings}
-                  sx={{
-                    width: 20,
-                    height: 20,
-                    color: "warning.main",
-                    "&:hover": { backgroundColor: "warning.light" },
-                  }}
-                >
-                  {syncingWithings ? (
-                    <CircularProgress size={12} />
-                  ) : (
-                    <SyncIcon sx={{ fontSize: 12 }} />
-                  )}
-                </IconButton>
-              </Box>
+              <Chip
+                label={
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                    <span>{`Withings: ${formatLargeNumber(
+                      dataCounts.withings
+                    )} data points`}</span>
+                    <IconButton
+                      size="small"
+                      onClick={syncWithings}
+                      disabled={syncingWithings}
+                      sx={{
+                        width: 22,
+                        height: 22,
+                        color: "warning.main",
+                        "&:hover": { backgroundColor: "warning.light" },
+                        ml: 0.25,
+                      }}
+                    >
+                      {syncingWithings ? (
+                        <CircularProgress size={12} />
+                      ) : (
+                        <SyncIcon sx={{ fontSize: 12 }} />
+                      )}
+                    </IconButton>
+                  </Box>
+                }
+                size="small"
+                color="warning"
+                variant="outlined"
+              />
 
               <Chip
                 label={`Total: ${formatLargeNumber(
@@ -252,9 +258,9 @@ export default function DataSourcesAnalysis({
               />
 
               <Chip
-                label={`${formatLargeNumber(
+                label={`Variables tracked: ${formatLargeNumber(
                   dataCounts.variablesTracked
-                )} variables tracked`}
+                )}`}
                 size="small"
                 color="default"
                 variant="outlined"

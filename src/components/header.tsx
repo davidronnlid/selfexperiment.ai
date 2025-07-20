@@ -153,15 +153,15 @@ export default function Header() {
     setMobileOpen(false);
   };
 
-  // Mobile menu items
+  // Mobile menu items - Track items first, then main navigation
+  const mobileTrackItems = [
+    { text: "Track Manually", path: "/track/manual" },
+    { text: "Auto-Track", path: "/track/auto" },
+  ];
+
   const mobileMenuItems = [
     { text: "Analyze", path: "/analyze" },
     { text: "Community", path: "/community" },
-  ];
-
-  const mobileLogItems = [
-    { text: "Track Manually", path: "/track/manual" },
-    { text: "Auto-Track", path: "/track/auto" },
   ];
 
   return (
@@ -416,8 +416,14 @@ export default function Header() {
           </Typography>
 
           <List className="space-y-2">
-            {/* Main Navigation */}
-            {mobileMenuItems.map((item) => (
+            {/* Track Section - First */}
+            <Typography
+              variant="subtitle2"
+              className="text-gold font-semibold mb-2"
+            >
+              Track
+            </Typography>
+            {mobileTrackItems.map((item) => (
               <ListItem
                 key={item.text}
                 component="div"
@@ -436,18 +442,8 @@ export default function Header() {
 
             <Divider className="my-4 border-border" />
 
-            {/* Removed Experiments Section from mobile drawer */}
-
-            <Divider className="my-4 border-border" />
-
-            {/* Log Section */}
-            <Typography
-              variant="subtitle2"
-              className="text-gold font-semibold mb-2"
-            >
-              Track
-            </Typography>
-            {mobileLogItems.map((item) => (
+            {/* Main Navigation */}
+            {mobileMenuItems.map((item) => (
               <ListItem
                 key={item.text}
                 component="div"
