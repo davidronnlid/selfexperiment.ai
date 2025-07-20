@@ -46,10 +46,8 @@ export default function Auth() {
     console.log("Current origin:", window.location.origin);
     console.log("NODE_ENV:", process.env.NODE_ENV);
 
-    const redirectUrl =
-      process.env.NODE_ENV === "development"
-        ? "http://localhost:3000/track/manual"
-        : `${window.location.origin}/track/manual`;
+    // Always use the current origin to redirect back to the same domain the user logged in from
+    const redirectUrl = `${window.location.origin}/track/manual`;
 
     console.log("Redirect URL:", redirectUrl);
 
@@ -93,10 +91,7 @@ export default function Auth() {
           email,
           password,
           options: {
-            emailRedirectTo:
-              process.env.NODE_ENV === "development"
-                ? "http://localhost:3000/track/manual"
-                : `${window.location.origin}/track/manual`,
+            emailRedirectTo: `${window.location.origin}/track/manual`,
           },
         });
         if (error) {
