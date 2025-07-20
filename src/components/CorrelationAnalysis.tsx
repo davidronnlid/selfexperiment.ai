@@ -1322,56 +1322,6 @@ export default function CorrelationAnalysis({
     });
   }, [logs, minCorrelationStrength, showOnlySignificant]);
 
-  if (loading) {
-    return (
-      <Box
-        display="flex"
-        justifyContent="center"
-        alignItems="center"
-        minHeight={200}
-      >
-        <CircularProgress />
-      </Box>
-    );
-  }
-
-  if (error) {
-    return (
-      <Alert severity="error" sx={{ mt: 2 }}>
-        {error}. Unable to load data from all sources for correlation analysis.
-      </Alert>
-    );
-  }
-
-  const numericVariables = getNumericVariables();
-
-  if (numericVariables.length < 2) {
-    return (
-      <Alert severity="info" sx={{ mt: 2 }}>
-        You need at least 2 numeric variables to perform correlation analysis.
-        Start tracking more different types of data across all sources (manual,
-        Oura, Withings, etc.) to see correlations!
-      </Alert>
-    );
-  }
-
-  const handleTimeRangeChange = (event: any) => {
-    setTimeRange(event.target.value);
-    const daysAgo = parseInt(event.target.value, 10);
-    const ninetyDaysAgo = subDays(new Date(), daysAgo);
-    setStartDate(format(ninetyDaysAgo, "yyyy-MM-dd"));
-    setEndDate(format(new Date(), "yyyy-MM-dd"));
-    fetchManualLogs(); // Re-fetch data based on new date range
-  };
-
-  const handleVar1Change = (event: any) => {
-    setSelectedVar1(event.target.value);
-  };
-
-  const handleVar2Change = (event: any) => {
-    setSelectedVar2(event.target.value);
-  };
-
   // Validate p-value calculations against known statistical values
   const validatePValueCalculations = () => {
     console.log("=== P-Value Calculation Validation ===");
@@ -1458,11 +1408,61 @@ export default function CorrelationAnalysis({
   };
 
   // Run validation in development mode
-  React.useEffect(() => {
+  useEffect(() => {
     if (process.env.NODE_ENV === "development") {
       validatePValueCalculations();
     }
   }, []);
+
+  if (loading) {
+    return (
+      <Box
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+        minHeight={200}
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Alert severity="error" sx={{ mt: 2 }}>
+        {error}. Unable to load data from all sources for correlation analysis.
+      </Alert>
+    );
+  }
+
+  const numericVariables = getNumericVariables();
+
+  if (numericVariables.length < 2) {
+    return (
+      <Alert severity="info" sx={{ mt: 2 }}>
+        You need at least 2 numeric variables to perform correlation analysis.
+        Start tracking more different types of data across all sources (manual,
+        Oura, Withings, etc.) to see correlations!
+      </Alert>
+    );
+  }
+
+  const handleTimeRangeChange = (event: any) => {
+    setTimeRange(event.target.value);
+    const daysAgo = parseInt(event.target.value, 10);
+    const ninetyDaysAgo = subDays(new Date(), daysAgo);
+    setStartDate(format(ninetyDaysAgo, "yyyy-MM-dd"));
+    setEndDate(format(new Date(), "yyyy-MM-dd"));
+    fetchManualLogs(); // Re-fetch data based on new date range
+  };
+
+  const handleVar1Change = (event: any) => {
+    setSelectedVar1(event.target.value);
+  };
+
+  const handleVar2Change = (event: any) => {
+    setSelectedVar2(event.target.value);
+  };
 
   return (
     <Box>

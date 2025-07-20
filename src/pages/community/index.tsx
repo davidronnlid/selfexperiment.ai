@@ -17,6 +17,8 @@ import {
   Card,
   CardContent,
   CardHeader,
+  Chip,
+  CardActions,
 } from "@mui/material";
 import Link from "next/link";
 import { useUser } from "@/pages/_app";
@@ -72,6 +74,7 @@ export default function CommunityPage() {
     const fetchFeed = async () => {
       if (!user) return;
       setFeedLoading(true);
+
       // Get followed user ids
       const { data: follows } = await supabase
         .from("user_follows")
@@ -79,31 +82,60 @@ export default function CommunityPage() {
         .eq("follower_id", user.id);
       const followedIds = follows?.map((f: any) => f.followed_id) || [];
       console.log("followedIds", followedIds); // DEBUG LOG
+
       if (followedIds.length === 0) {
         console.log("No followed users, feed will be empty"); // DEBUG LOG
         setFeed([]);
         setFeedLoading(false);
         return;
       }
-      // Get recent shared logs from followed users
-      const { data: logs, error: logsError } = await supabase
-        .from("data_points")
-        .select(
-          "id, date, value, notes, label, user_id, profiles: user_id (username)"
-        )
-        .in("user_id", followedIds)
-        .order("date", { ascending: false })
-        .limit(15); // Reduced from 30 to 15 for faster loading
-      console.log("logs query result", { logs, logsError }); // DEBUG LOG
-      if (logsError) {
-        console.error("Logs query error:", logsError);
+
+      // Get recent shared data points from followed users using the new function
+      try {
+        const allSharedLogs: any[] = [];
+
+        // Fetch shared data for each followed user
+        for (const userId of followedIds) {
+          const { data: userSharedLogs, error } = await supabase.rpc(
+            "get_all_shared_data_points",
+            {
+              target_user_id: userId,
+              viewer_user_id: user.id,
+              limit_count: 10, // Get 10 recent logs per user
+            }
+          );
+
+          if (!error && userSharedLogs) {
+            // Add username to each log
+            const { data: profile } = await supabase
+              .from("profiles")
+              .select("username")
+              .eq("id", userId)
+              .single();
+
+            const logsWithUsername = userSharedLogs.map((log: any) => ({
+              ...log,
+              username: profile?.username || "Unknown User",
+            }));
+
+            allSharedLogs.push(...logsWithUsername);
+          }
+        }
+
+        // Sort all logs by creation date (newest first) and limit to 15
+        allSharedLogs.sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        const limitedLogs = allSharedLogs.slice(0, 15);
+
+        console.log("Fetched shared logs:", limitedLogs);
+        setFeed(limitedLogs);
+      } catch (error) {
+        console.error("Error fetching shared feed:", error);
+        setFeed([]);
       }
-      if (logs && logs.length > 0) {
-        console.log("Fetched logs:", logs);
-      } else {
-        console.log("No logs returned from query");
-      }
-      setFeed(logs || []);
+
       setFeedLoading(false);
     };
     fetchFeed();
@@ -197,7 +229,7 @@ export default function CommunityPage() {
               <List>
                 {feed.map((log, idx) => {
                   const logId = log.id || idx;
-                  const emoji = variableEmojis[log.label] || "📝";
+                  const emoji = variableEmojis[log.variable_label] || "📝";
                   const likeState = likeStates[logId] || {
                     liked: false,
                     count: 0,
@@ -275,17 +307,11 @@ export default function CommunityPage() {
                     >
                       <CardHeader
                         avatar={
-                          <Avatar
-                            src={log.profiles?.avatar_url || undefined}
-                            onError={(e) => {
-                              // Hide the image if it fails to load
-                              e.currentTarget.style.display = "none";
-                            }}
-                          >
-                            {log.profiles?.username?.[0]?.toUpperCase() || "?"}
+                          <Avatar>
+                            {log.username?.[0]?.toUpperCase() || "?"}
                           </Avatar>
                         }
-                        title={<b>@{log.profiles?.username || log.user_id}</b>}
+                        title={<b>@{log.username || "Unknown User"}</b>}
                         subheader={formatFriendlyDate(log.date)}
                       />
                       <CardContent>
@@ -299,7 +325,7 @@ export default function CommunityPage() {
                             fontWeight="bold"
                             sx={{ mr: 1 }}
                           >
-                            {log.label}:
+                            {log.variable_label}:
                           </Typography>
                           <Typography
                             variant="h6"
@@ -309,34 +335,50 @@ export default function CommunityPage() {
                           >
                             {log.value}
                           </Typography>
-                          <Box ml="auto" display="flex" alignItems="center">
-                            <Tooltip
-                              title={likeState.liked ? "Unlike" : "Like"}
-                            >
-                              <IconButton
-                                color={likeState.liked ? "error" : "default"}
-                                onClick={handleLike}
-                              >
-                                {likeState.liked ? (
-                                  <FavoriteIcon />
-                                ) : (
-                                  <FavoriteBorderIcon />
-                                )}
-                              </IconButton>
-                            </Tooltip>
-                            <Typography variant="body2" sx={{ ml: 0.5 }}>
-                              {likeState.count}
-                            </Typography>
-                          </Box>
                         </Box>
                         {log.notes && (
-                          <Box mt={1} p={1} bgcolor="#f5f5f5" borderRadius={2}>
-                            <Typography variant="body2" color="textSecondary">
-                              💬 {log.notes}
-                            </Typography>
-                          </Box>
+                          <Typography variant="body2" color="text.secondary">
+                            {log.notes}
+                          </Typography>
                         )}
+                        <Box
+                          sx={{
+                            mt: 1,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 1,
+                          }}
+                        >
+                          <Chip
+                            label={log.source || "manual"}
+                            size="small"
+                            variant="outlined"
+                            color={
+                              log.source === "oura"
+                                ? "primary"
+                                : log.source === "withings"
+                                ? "secondary"
+                                : "default"
+                            }
+                          />
+                        </Box>
                       </CardContent>
+                      <CardActions>
+                        <IconButton
+                          color={likeState.liked ? "error" : "default"}
+                          onClick={handleLike}
+                          size="small"
+                        >
+                          {likeState.liked ? (
+                            <FavoriteIcon />
+                          ) : (
+                            <FavoriteBorderIcon />
+                          )}
+                        </IconButton>
+                        <Typography variant="body2" color="text.secondary">
+                          {likeState.count}
+                        </Typography>
+                      </CardActions>
                     </Card>
                   );
                 })}

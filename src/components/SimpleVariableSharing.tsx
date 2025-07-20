@@ -11,11 +11,13 @@ import {
   Divider,
 } from "@mui/material";
 import { FaGlobe, FaLock } from "react-icons/fa";
+import Link from "next/link";
 import { supabase } from "@/utils/supaBase";
 
 interface VariableWithSharing {
   id: string;
   label: string;
+  slug?: string;
   description?: string;
   icon?: string;
   is_shared: boolean;
@@ -96,9 +98,10 @@ export default function SimpleVariableSharing({
           `
           id,
           label,
+          slug,
           description,
           icon,
-          user_variable_preferences!inner (
+          user_variable_preferences (
             is_shared
           )
         `
@@ -113,6 +116,7 @@ export default function SimpleVariableSharing({
         (variable: any) => ({
           id: variable.id,
           label: variable.label,
+          slug: variable.slug,
           description: variable.description,
           icon: variable.icon,
           is_shared:
@@ -120,6 +124,9 @@ export default function SimpleVariableSharing({
         })
       );
 
+      console.log(
+        `[SimpleVariableSharing] Transformed ${transformedVariables.length} variables with actual data`
+      );
       setVariables(transformedVariables);
     } catch (error) {
       console.error("Error loading variables:", error);
@@ -213,7 +220,7 @@ export default function SimpleVariableSharing({
 
       <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
         Control which of your tracked variables are visible to other users in
-        the community.
+        the Modular Health community.
       </Typography>
 
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -233,9 +240,27 @@ export default function SimpleVariableSharing({
                   {variable.icon || "📊"}
                 </span>
                 <Box>
-                  <Typography variant="body1" fontWeight="medium">
-                    {variable.label}
-                  </Typography>
+                  <Link
+                    href={`/variable/${encodeURIComponent(
+                      variable.slug ||
+                        variable.label.toLowerCase().replace(/\s+/g, "-")
+                    )}`}
+                    style={{ textDecoration: "none" }}
+                  >
+                    <Typography
+                      variant="body1"
+                      fontWeight="medium"
+                      sx={{
+                        color: "primary.main",
+                        cursor: "pointer",
+                        "&:hover": {
+                          textDecoration: "underline",
+                        },
+                      }}
+                    >
+                      {variable.label}
+                    </Typography>
+                  </Link>
                   {variable.description && (
                     <Typography variant="caption" color="textSecondary">
                       {variable.description}
@@ -278,8 +303,8 @@ export default function SimpleVariableSharing({
         color="textSecondary"
         sx={{ mt: 2, display: "block" }}
       >
-        💡 Shared variables are visible to other users but your specific data
-        values remain private unless you choose to share them separately.
+        💡 Shared variables are visible to other users of the Modular Health
+        application.
       </Typography>
     </Box>
   );

@@ -110,7 +110,16 @@ function SharedVariablesViewer({ username }: { username: string }) {
       // 2. Fetch shared variables
       const { data: vars, error: varError } = await supabase
         .from("user_variable_preferences")
-        .select("variable_name, category")
+        .select(
+          `
+          variable_id,
+          is_shared,
+          variables!inner (
+            label,
+            category
+          )
+        `
+        )
         .eq("user_id", userProfile.id)
         .eq("is_shared", true);
       if (varError) {
@@ -137,8 +146,8 @@ function SharedVariablesViewer({ username }: { username: string }) {
         <Box className="flex flex-wrap gap-2">
           {sharedVars.map((v) => (
             <Chip
-              key={v.variable_name}
-              label={v.variable_name}
+              key={v.variable_id}
+              label={v.variables.label}
               className="bg-gold text-black font-medium"
               size="small"
             />
@@ -173,7 +182,7 @@ export default function AccountPage() {
   const [isGoogleUser, setIsGoogleUser] = useState(false);
   const [originalEmail, setOriginalEmail] = useState("");
 
-  // Privacy settings state
+  // Legacy privacy settings state (unused, kept for compatibility)
   const [variableSettings, setVariableSettings] = useState<any[]>([]);
   const [privacyLoading, setPrivacyLoading] = useState(true);
   const [privacySaving, setPrivacySaving] = useState(false);
@@ -222,25 +231,9 @@ export default function AccountPage() {
     if (user) fetchProfile();
   }, [user, router]);
 
-  // Load privacy settings
+  // Legacy privacy settings loader (unused)
   const loadPrivacySettings = async () => {
-    try {
-      setPrivacyLoading(true);
-
-      const { data: varSettings, error: varError } = await supabase
-        .from("user_variable_preferences")
-        .select("*")
-        .eq("user_id", user?.id);
-
-      if (varError) throw varError;
-
-      setVariableSettings(varSettings || []);
-    } catch (error) {
-      console.error("Error loading privacy settings:", error);
-      setError("Failed to load shared variables");
-    } finally {
-      setPrivacyLoading(false);
-    }
+    setPrivacyLoading(false);
   };
 
   // Username uniqueness check
@@ -355,63 +348,10 @@ export default function AccountPage() {
     }
   };
 
-  const handleVariableSharingChange = async (
-    variableName: string,
-    isShared: boolean
-  ) => {
-    if (!user) return;
-    setPrivacySaving(true);
-    try {
-      // First get the variable ID from the variable name
-      const { data: variable, error: varError } = await supabase
-        .from("variables")
-        .select("id")
-        .eq("label", variableName)
-        .single();
-
-      if (varError) {
-        console.error("Error finding variable:", varError);
-        throw new Error("Variable not found");
-      }
-
-      const { error } = await supabase
-        .from("user_variable_preferences")
-        .upsert({
-          user_id: user.id,
-          variable_id: variable.id,
-          is_shared: isShared,
-        });
-      if (error) throw error;
-      setPrivacyMessage({
-        type: "success",
-        text: `${variableName} ${
-          isShared ? "shared" : "unshared"
-        } successfully.`,
-      });
-      setTimeout(() => setPrivacyMessage(null), 3000);
-      loadPrivacySettings();
-    } catch (error) {
-      console.error("Error updating variable sharing:", error);
-      setPrivacyMessage({
-        type: "error",
-        text: "Failed to update variable sharing.",
-      });
-      setTimeout(() => setPrivacyMessage(null), 3000);
-    } finally {
-      setPrivacySaving(false);
-    }
-  };
-
-  const getVariableSharingStatus = (variableName: string) => {
-    const setting = variableSettings.find(
-      (s) => s.variable_name === variableName
-    );
-    return setting?.is_shared || false;
-  };
-
-  const getSharedVariablesCount = () => {
-    return variableSettings.filter((s) => s.is_shared).length;
-  };
+  // Legacy functions (unused, kept for compatibility)
+  const handleVariableSharingChange = async () => {};
+  const getVariableSharingStatus = () => false;
+  const getSharedVariablesCount = () => 0;
 
   useEffect(() => {
     if (user) {
@@ -687,9 +627,6 @@ export default function AccountPage() {
             }
           />
           <CardContent className="p-4 lg:p-6">
-            <Typography variant="body2" className="text-text-secondary mb-4">
-              Control which variables are shared with other users.
-            </Typography>
             <SimpleVariableSharing userId={user.id} />
           </CardContent>
         </Card>

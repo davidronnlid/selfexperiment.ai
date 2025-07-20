@@ -51,13 +51,27 @@ export default function CommunityProfilePage() {
         .single();
       setProfile(profileData);
       if (profileData) {
-        // Fetch only shared variables for this user
-        const { data: sharedVars, error: sharedError } = await supabase
-          .from("variable_sharing_settings")
-          .select("variable_name")
-          .eq("user_id", profileData.id)
-          .eq("is_shared", true);
-        setVariables(sharedVars || []);
+        // Fetch shared variables and their data using the new function
+        const { data: sharedVars, error: sharedError } = await supabase.rpc(
+          "get_user_shared_variables",
+          { target_user_id: profileData.id }
+        );
+
+        if (sharedError) {
+          console.error("Error fetching shared variables:", sharedError);
+        } else {
+          // Transform the data to match the expected format
+          const transformedVars = (sharedVars || []).map((v: any) => ({
+            variable_id: v.variable_id,
+            variable_name: v.variable_label,
+            variable_label: v.variable_label,
+            variable_slug: v.variable_slug,
+            data_point_count: v.data_point_count,
+            latest_value: v.latest_value,
+            latest_date: v.latest_date,
+          }));
+          setVariables(transformedVars);
+        }
         // Fetch follower count
         const { count } = await supabase
           .from("user_follows")
@@ -86,19 +100,33 @@ export default function CommunityProfilePage() {
       setLogsLoading((prev) => ({ ...prev, [variable]: true }));
       // Debug: log the variable name
       console.log("Fetching logs for variable:", variable);
-      // Fetch logs for this variable for this user
-      const { data: logs, error } = await supabase
-        .from("data_points")
-        .select("data_point_id, user_id, date, value, notes")
-        .eq("user_id", profile.id)
-        .ilike("label", variable)
-        .order("date", { ascending: false })
-        .limit(20); // Reduced from 50 to 20 for faster loading
-      console.log("Fetched logs:", logs, error);
-      // Fetch likes for these logs
-      const logIds = (logs || [])
-        .map((log: any) => log.data_point_id)
-        .filter(Boolean);
+
+      // Find the variable_id for this variable name
+      const currentVariable = variables.find(
+        (v) => v.variable_name === variable
+      );
+
+      if (!currentVariable) {
+        console.error("Variable not found:", variable);
+        setLogsLoading((prev) => ({ ...prev, [variable]: false }));
+        return;
+      }
+
+      // Fetch shared data points for this variable using the new function
+      const { data: logs, error } = await supabase.rpc(
+        "get_shared_data_points",
+        {
+          target_user_id: profile.id,
+          target_variable_id: currentVariable.variable_id,
+          viewer_user_id: user?.id || null,
+          limit_count: 20,
+        }
+      );
+
+      console.log("Fetched shared logs:", logs, error);
+
+      // Fetch likes for these logs (using the log id instead of data_point_id)
+      const logIds = (logs || []).map((log: any) => log.id).filter(Boolean);
       let allLikes: any[] = [];
       if (logIds.length > 0) {
         const { data: likesData } = await supabase
@@ -107,17 +135,18 @@ export default function CommunityProfilePage() {
           .in("data_point_id", logIds);
         allLikes = likesData || [];
       }
+
       // Build likeStates for this variable
       const likeStates: { [logId: string]: { liked: boolean; count: number } } =
         {};
       for (const log of logs || []) {
         const likesForLog = allLikes.filter(
-          (lc) => lc.data_point_id === log.data_point_id
+          (lc) => lc.data_point_id === log.id
         );
         const liked = !!likesForLog.find(
           (like) => user && like.user_id === user.id
         );
-        likeStates[log.data_point_id] = {
+        likeStates[log.id] = {
           liked,
           count: likesForLog.length,
         };
@@ -153,7 +182,7 @@ export default function CommunityProfilePage() {
       }
       // Refetch likes for this variable
       const logs = logsByVariable[variable] || [];
-      const logIds = logs.map((log: any) => log.data_point_id).filter(Boolean);
+      const logIds = logs.map((log: any) => log.id).filter(Boolean);
       let allLikes: any[] = [];
       if (logIds.length > 0) {
         const { data: likesData } = await supabase
@@ -166,12 +195,12 @@ export default function CommunityProfilePage() {
         {};
       for (const log of logs) {
         const likesForLog = allLikes.filter(
-          (lc) => lc.data_point_id === log.data_point_id
+          (lc) => lc.data_point_id === log.id
         );
         const liked = !!likesForLog.find(
           (like) => user && like.user_id === user.id
         );
-        likeStates[log.data_point_id] = {
+        likeStates[log.id] = {
           liked,
           count: likesForLog.length,
         };
@@ -185,32 +214,38 @@ export default function CommunityProfilePage() {
   const handleFollow = async () => {
     if (!user || !profile) return;
     setFollowLoading(true);
-    await supabase.from("user_follows").insert({
-      follower_id: user.id,
-      followed_id: profile.id,
-    });
-    setIsFollowing(true);
-    setFollowLoading(false);
-  };
-
-  const handleUnfollow = async () => {
-    if (!user || !profile) return;
-    setFollowLoading(true);
-    await supabase
-      .from("user_follows")
-      .delete()
-      .eq("follower_id", user.id)
-      .eq("followed_id", profile.id);
-    setIsFollowing(false);
-    setFollowLoading(false);
+    try {
+      if (!isFollowing) {
+        const { error } = await supabase
+          .from("user_follows")
+          .insert({ follower_id: user.id, followed_id: profile.id });
+        if (!error) {
+          setIsFollowing(true);
+          setFollowerCount((prev) => prev + 1);
+        }
+      } else {
+        const { error } = await supabase
+          .from("user_follows")
+          .delete()
+          .eq("follower_id", user.id)
+          .eq("followed_id", profile.id);
+        if (!error) {
+          setIsFollowing(false);
+          setFollowerCount((prev) => prev - 1);
+        }
+      }
+    } catch (error) {
+      console.error("Follow/unfollow error:", error);
+    } finally {
+      setFollowLoading(false);
+    }
   };
 
   if (loading) {
     return (
-      <Container maxWidth="sm" sx={{ py: 6 }}>
-        <Box sx={{ display: "flex", justifyContent: "center", mt: 8 }}>
-          <CircularProgress />
-        </Box>
+      <Container maxWidth="sm" sx={{ py: 6, textAlign: "center" }}>
+        <CircularProgress />
+        <Typography sx={{ mt: 2 }}>Loading profile...</Typography>
       </Container>
     );
   }
@@ -218,138 +253,151 @@ export default function CommunityProfilePage() {
   if (!profile) {
     return (
       <Container maxWidth="sm" sx={{ py: 6 }}>
-        <Typography variant="h5" align="center" sx={{ mt: 8 }}>
-          User not found.
-        </Typography>
+        <Typography variant="h5">User not found</Typography>
+        <Button
+          startIcon={<ArrowBackIcon />}
+          onClick={() => router.push("/community")}
+          sx={{ mt: 2 }}
+        >
+          Back to Community
+        </Button>
       </Container>
     );
   }
 
   return (
     <Container maxWidth="sm" sx={{ py: 6 }}>
-      <Box sx={{ mb: 2 }}>
-        <IconButton onClick={() => window.history.back()} aria-label="Back">
-          <ArrowBackIcon />
-        </IconButton>
-      </Box>
-      <Paper sx={{ p: 4, mb: 4 }}>
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
+      <Box sx={{ mb: 3 }}>
+        <Button
+          startIcon={<ArrowBackIcon />}
+          onClick={() => router.push("/community")}
+          sx={{ mb: 2 }}
         >
-          <Typography variant="h4" align="center" gutterBottom>
-            @{profile.username}
+          Back to Community
+        </Button>
+        <Typography variant="h4">{profile.username}</Typography>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 2, mt: 1 }}>
+          <Typography variant="body2" color="textSecondary">
+            {followerCount} followers
           </Typography>
-          <Box display="flex" alignItems="center" gap={1}>
-            <Typography variant="body2" color="textSecondary">
-              {followerCount} follower{followerCount === 1 ? "" : "s"}
-            </Typography>
-            {user &&
-              user.id !== profile.id &&
-              (isFollowing ? (
-                <Button
-                  variant="outlined"
-                  color="secondary"
-                  size="small"
-                  onClick={handleUnfollow}
-                  disabled={followLoading}
-                >
-                  Unfollow
-                </Button>
-              ) : (
-                <Button
-                  variant="contained"
-                  color="primary"
-                  size="small"
-                  onClick={handleFollow}
-                  disabled={followLoading}
-                >
-                  Follow
-                </Button>
-              ))}
-          </Box>
+          {user && user.id !== profile.id && (
+            <Button
+              variant={isFollowing ? "outlined" : "contained"}
+              size="small"
+              onClick={handleFollow}
+              disabled={followLoading}
+            >
+              {isFollowing ? "Unfollow" : "Follow"}
+            </Button>
+          )}
         </Box>
-        <Typography align="center" sx={{ mb: 2 }}>
-          Shared Variables
+      </Box>
+
+      <Paper>
+        <Typography variant="h6" sx={{ p: 2, pb: 1 }}>
+          Shared Variables ({variables.length})
         </Typography>
+
         <List>
           {variables.length === 0 ? (
             <ListItem>
-              <ListItemText primary="No shared variables." />
+              <ListItemText
+                primary="No shared variables"
+                secondary="This user hasn't shared any variables yet."
+              />
             </ListItem>
           ) : (
             variables.map((v, i) => (
               <Box key={i}>
                 <ListItem
-                  secondaryAction={
-                    <IconButton onClick={() => handleToggle(v.variable_name)}>
-                      {expanded[v.variable_name] ? (
-                        <ExpandLessIcon />
-                      ) : (
-                        <ExpandMoreIcon />
-                      )}
-                    </IconButton>
-                  }
-                  sx={{ cursor: "pointer" }}
+                  button
                   onClick={() => handleToggle(v.variable_name)}
+                  sx={{
+                    borderBottom: i < variables.length - 1 ? 1 : 0,
+                    borderColor: "divider",
+                  }}
                 >
-                  <ListItemText primary={v.variable_name} />
+                  <ListItemText
+                    primary={
+                      <Box
+                        sx={{ display: "flex", alignItems: "center", gap: 1 }}
+                      >
+                        <Typography variant="subtitle1">
+                          {v.variable_name}
+                        </Typography>
+                        <Typography variant="caption" color="textSecondary">
+                          ({v.data_point_count} data points)
+                        </Typography>
+                      </Box>
+                    }
+                    secondary={
+                      v.latest_value && v.latest_date
+                        ? `Latest: ${v.latest_value} on ${new Date(
+                            v.latest_date
+                          ).toLocaleDateString()}`
+                        : "No recent data"
+                    }
+                  />
+                  <IconButton size="small">
+                    {expanded[v.variable_name] ? (
+                      <ExpandLessIcon />
+                    ) : (
+                      <ExpandMoreIcon />
+                    )}
+                  </IconButton>
                 </ListItem>
-                <Collapse
-                  in={expanded[v.variable_name] || false}
-                  timeout="auto"
-                  unmountOnExit
-                >
-                  <Box sx={{ pl: 4, pb: 2 }}>
+                <Collapse in={expanded[v.variable_name]}>
+                  <Box sx={{ bgcolor: "grey.50", p: 2 }}>
                     {logsLoading[v.variable_name] ? (
-                      <CircularProgress size={24} />
-                    ) : logsByVariable[v.variable_name]?.length === 0 ? (
-                      <Typography variant="body2" color="text.secondary">
-                        No logs shared for this variable.
-                      </Typography>
+                      <CircularProgress size={20} />
                     ) : (
                       <List dense>
                         {logsByVariable[v.variable_name]?.map((log, idx) => (
-                          <ListItem key={log.data_point_id || idx}>
+                          <ListItem
+                            key={idx}
+                            sx={{
+                              bgcolor: "white",
+                              mb: 1,
+                              borderRadius: 1,
+                              border: "1px solid",
+                              borderColor: "grey.200",
+                            }}
+                          >
                             <ListItemText
                               primary={
                                 <>
-                                  Value: {log.value}
-                                  <Box
+                                  <Typography
                                     component="span"
+                                    variant="body1"
+                                    fontWeight="bold"
+                                  >
+                                    Value: {log.value}
+                                  </Typography>
+                                  <Box
                                     sx={{
-                                      ml: 2,
-                                      display: "inline-flex",
+                                      display: "flex",
                                       alignItems: "center",
+                                      mt: 0.5,
                                     }}
                                   >
                                     <IconButton
-                                      color={
-                                        likeStatesByVariable[v.variable_name]?.[
-                                          log.data_point_id
-                                        ]?.liked
-                                          ? "error"
-                                          : "default"
-                                      }
+                                      size="small"
                                       onClick={() =>
                                         handleLike(
                                           v.variable_name,
-                                          log.data_point_id,
+                                          log.id,
                                           likeStatesByVariable[
                                             v.variable_name
-                                          ]?.[log.data_point_id] || {
+                                          ]?.[log.id] || {
                                             liked: false,
                                             count: 0,
                                           }
                                         )
                                       }
-                                      size="small"
+                                      disabled={!user}
                                     >
                                       {likeStatesByVariable[v.variable_name]?.[
-                                        log.data_point_id
+                                        log.id
                                       ]?.liked ? (
                                         <FavoriteIcon />
                                       ) : (
@@ -361,7 +409,7 @@ export default function CommunityProfilePage() {
                                       sx={{ ml: 0.5 }}
                                     >
                                       {likeStatesByVariable[v.variable_name]?.[
-                                        log.data_point_id
+                                        log.id
                                       ]?.count || 0}
                                     </Typography>
                                   </Box>
@@ -371,7 +419,7 @@ export default function CommunityProfilePage() {
                                 log.date
                               ).toLocaleDateString()}${
                                 log.notes ? ` | Notes: ${log.notes}` : ""
-                              }`}
+                              } | Source: ${log.source || "manual"}`}
                             />
                           </ListItem>
                         ))}

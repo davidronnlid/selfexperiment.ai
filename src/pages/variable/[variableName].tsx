@@ -898,9 +898,7 @@ export default function VariableDataPointsPage() {
                       key={dataPoint.id}
                       id={`data-point-${dataPoint.id}`}
                     >
-                      <TableCell>
-                        {new Date(dataPoint.date).toLocaleDateString()}
-                      </TableCell>
+                      <TableCell>{formatDate(dataPoint.date)}</TableCell>
                       <TableCell>
                         {editingLogId === dataPoint.id ? (
                           <TextField

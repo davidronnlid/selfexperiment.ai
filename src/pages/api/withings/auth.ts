@@ -55,33 +55,33 @@ export default async function handler(
   } else {
     // Only try Supabase auth if we have cookies
     if (req.headers.cookie) {
-      const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-          cookies: {
-            getAll() {
-              return getCookiesFromReq(req);
-            },
-            setAll(cookiesToSet) {
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return getCookiesFromReq(req);
+        },
+        setAll(cookiesToSet) {
               cookiesToSet.forEach(({ name, value, options }) => {
                 const cookieValue = options 
                   ? `${name}=${value}; Path=${options.path || '/'}; ${options.httpOnly ? 'HttpOnly; ' : ''}${options.secure ? 'Secure; ' : ''}${options.sameSite ? `SameSite=${options.sameSite}; ` : ''}`
                   : `${name}=${value}; Path=/; HttpOnly`;
                 res.setHeader("Set-Cookie", cookieValue);
-              });
-            },
-          },
-        }
-      );
+          });
+        },
+      },
+    }
+  );
 
-      try {
+  try {
         console.log("[Withings Auth] Trying Supabase auth with cookies...");
-        const {
-          data: { user: userData },
-          error: userError,
-        } = await supabase.auth.getUser();
-        
+      const {
+        data: { user: userData },
+        error: userError,
+      } = await supabase.auth.getUser();
+      
         console.log("[Withings Auth] Supabase user data:", userData ? "FOUND" : "NOT FOUND");
         
         if (userData && !userError) {
@@ -95,18 +95,18 @@ export default async function handler(
       }
     } else {
       console.log("[Withings Auth] No cookies found, skipping Supabase auth");
-    }
+      }
   }
 
   // If we still don't have a user, return an error
   if (!user) {
     console.log("[Withings Auth] No user found from any method");
-    return res.status(401).json({ 
+      return res.status(401).json({ 
       error: "Authentication failed", 
       message: "Please log in to connect your Withings account. Make sure to access this page from the application."
-    });
-  }
-
+      });
+      }
+      
   try {
     const clientId = process.env.WITHINGS_ClientID;
     if (!clientId) {

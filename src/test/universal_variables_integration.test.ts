@@ -13,14 +13,14 @@ const mockVariable: Variable = {
   slug: "test_mood",
   label: "Test Mood",
   description: "A test mood variable",
-  data_type: "continuous",
-  source_type: "manual",
-  category: "Mental & Emotional",
-  validation_rules: {
-    min: 1,
-    max: 10,
-    required: true,
-  },
+    data_type: "continuous",
+    source_type: "manual",
+    category: "Mental & Emotional",
+    validation_rules: {
+      min: 1,
+      max: 10,
+      required: true,
+    },
   is_active: true,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
@@ -30,12 +30,12 @@ describe("Universal Variables Integration Tests", () => {
   describe("Variable Validation", () => {
     it("should validate variable values correctly", () => {
       const validResult = validateVariableValue(5, mockVariable);
-      expect(validResult.isValid).toBe(true);
+    expect(validResult.isValid).toBe(true);
 
       const invalidResult = validateVariableValue(15, mockVariable);
-      expect(invalidResult.isValid).toBe(false);
-      expect(invalidResult.error).toContain("must be no more than 10");
-    });
+    expect(invalidResult.isValid).toBe(false);
+    expect(invalidResult.error).toContain("must be no more than 10");
+  });
 
     it("should handle edge cases in validation", () => {
       const minResult = validateVariableValue(1, mockVariable);
@@ -46,14 +46,14 @@ describe("Universal Variables Integration Tests", () => {
 
       const belowMinResult = validateVariableValue(0, mockVariable);
       expect(belowMinResult.isValid).toBe(false);
-    });
+  });
   });
 
   describe("Unit Conversion", () => {
     it("should convert units when available", async () => {
-      const result = await convertUnit(5, "kg", "kg");
-      expect(result).toBe(5);
-    });
+    const result = await convertUnit(5, "kg", "kg");
+    expect(result).toBe(5);
+  });
 
     it("should handle same unit conversion", async () => {
       const result = await convertUnit(10, "score", "score");
@@ -69,7 +69,7 @@ describe("Universal Variables Integration Tests", () => {
       expect(mockVariable.data_type).toBe("continuous");
       expect(mockVariable.source_type).toBe("manual");
       expect(mockVariable.is_active).toBe(true);
-    });
+  });
 
     it("should have validation rules", () => {
       expect(mockVariable.validation_rules).toBeDefined();
