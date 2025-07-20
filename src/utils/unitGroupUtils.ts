@@ -156,7 +156,7 @@ export function getSuggestedConvertibleUnits(variable: Variable): string[] {
     general: ["units", "percentage"]
   };
   
-  const groupKey = Object.keys(UNIT_GROUPS).find(key => UNIT_GROUPS[key] === group);
+  
   return groupKey ? (commonUnits[groupKey] || group.units) : [variable.canonical_unit];
 }
 

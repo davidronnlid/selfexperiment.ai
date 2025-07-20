@@ -26,7 +26,7 @@ export default function InstallPrompt() {
     // Check if already installed (standalone mode)
     const standalone =
       window.matchMedia("(display-mode: standalone)").matches ||
-      (window.navigator as any).standalone ||
+      (window.navigator as unknown).standalone ||
       document.referrer.includes("android-app://");
     setIsStandalone(standalone);
 

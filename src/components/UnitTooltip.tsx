@@ -1,10 +1,8 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Tooltip, Box, Typography, Chip, Divider } from "@mui/material";
 import { FaExchangeAlt, FaInfoCircle } from "react-icons/fa";
-import {
-  getUnitDisplayInfo,
-  getConversionPreview,
-} from "../utils/unitGroupUtils";
+import { getUnitDisplayInfo, convertUnit } from "../utils/unitsTableUtils";
+import { Unit } from "../types/variables";
 
 interface UnitTooltipProps {
   unit: string;
@@ -21,7 +19,61 @@ export default function UnitTooltip({
   showConversions = true,
   maxConversions = 3,
 }: UnitTooltipProps) {
-  const unitInfo = getUnitDisplayInfo(unit);
+  const [unitInfo, setUnitInfo] = useState<{
+    unit: Unit;
+    icon: string;
+    category: string;
+    isConvertible: boolean;
+    convertibleUnits: Unit[];
+  } | null>(null);
+  const [conversions, setConversions] = useState<
+    Array<{ unit: Unit; convertedValue: number }>
+  >([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadUnitInfo = async () => {
+      try {
+        const info = await getUnitDisplayInfo(unit);
+        setUnitInfo(info);
+
+        if (
+          info &&
+          value !== undefined &&
+          showConversions &&
+          info.convertibleUnits.length > 0
+        ) {
+          const conversionPromises = info.convertibleUnits
+            .slice(0, maxConversions)
+            .map(async (targetUnit) => {
+              const convertedValue = await convertUnit(
+                value,
+                unit,
+                targetUnit.id
+              );
+              return { unit: targetUnit, convertedValue };
+            });
+
+          const conversionResults = await Promise.all(conversionPromises);
+          setConversions(conversionResults);
+        }
+      } catch (error) {
+        console.error("Error loading unit info:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadUnitInfo();
+  }, [unit, value, showConversions, maxConversions]);
+
+  if (loading) {
+    return children;
+  }
+
+  if (!unitInfo) {
+    return children;
+  }
 
   const tooltipContent = (
     <Box sx={{ p: 1, maxWidth: 300 }}>
@@ -29,7 +81,7 @@ export default function UnitTooltip({
       <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
         <Typography sx={{ fontSize: "1.2rem" }}>{unitInfo.icon}</Typography>
         <Typography variant="h6" component="div" sx={{ fontWeight: "bold" }}>
-          {unit}
+          {unitInfo.unit.symbol}
         </Typography>
         <Chip
           label={unitInfo.category}
@@ -39,88 +91,72 @@ export default function UnitTooltip({
         />
       </Box>
 
-      {/* Unit Group Info */}
-      {unitInfo.group && (
-        <>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            <strong>Group:</strong> {unitInfo.group.name}
-          </Typography>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ mb: 1, display: "block" }}
-          >
-            {unitInfo.group.description}
-          </Typography>
-        </>
+      {/* Unit Info */}
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        <strong>Label:</strong> {unitInfo.unit.label}
+      </Typography>
+
+      {unitInfo.unit.unit_group && (
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          <strong>Group:</strong> {unitInfo.unit.unit_group}
+        </Typography>
       )}
 
       {/* Conversion Examples */}
-      {showConversions &&
-        unitInfo.isConvertible &&
-        unitInfo.convertibleUnits.length > 0 && (
-          <>
-            <Divider sx={{ my: 1 }} />
-            <Box
-              sx={{ display: "flex", alignItems: "center", gap: 0.5, mb: 1 }}
-            >
-              <FaExchangeAlt size={12} />
-              <Typography variant="body2" fontWeight="bold">
-                Conversions:
-              </Typography>
-            </Box>
+      {showConversions && unitInfo.isConvertible && conversions.length > 0 && (
+        <>
+          <Divider sx={{ my: 1 }} />
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mb: 1 }}>
+            <FaExchangeAlt size={12} />
+            <Typography variant="body2" fontWeight="bold">
+              Conversions:
+            </Typography>
+          </Box>
 
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
-              {unitInfo.convertibleUnits
-                .slice(0, maxConversions)
-                .map((targetUnit) => {
-                  const exampleValue = value || 1;
-                  const conversionText = getConversionPreview(
-                    exampleValue,
-                    unit,
-                    targetUnit
-                  );
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            {conversions.map(({ unit: targetUnit, convertedValue }) => {
+              const roundedValue = Math.round(convertedValue * 100) / 100;
 
-                  return (
-                    <Box
-                      key={targetUnit}
-                      sx={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        bgcolor: "grey.50",
-                        px: 1,
-                        py: 0.5,
-                        borderRadius: 0.5,
-                      }}
-                    >
-                      <Typography variant="caption" sx={{ fontWeight: 500 }}>
-                        → {targetUnit}
-                      </Typography>
-                      <Typography
-                        variant="caption"
-                        color="primary.main"
-                        sx={{ fontWeight: "bold" }}
-                      >
-                        {conversionText}
-                      </Typography>
-                    </Box>
-                  );
-                })}
-
-              {unitInfo.convertibleUnits.length > maxConversions && (
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ textAlign: "center", fontStyle: "italic" }}
+              return (
+                <Box
+                  key={targetUnit.id}
+                  sx={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    bgcolor: "grey.50",
+                    px: 1,
+                    py: 0.5,
+                    borderRadius: 0.5,
+                  }}
                 >
-                  +{unitInfo.convertibleUnits.length - maxConversions} more
-                  conversions available
-                </Typography>
-              )}
-            </Box>
-          </>
-        )}
+                  <Typography variant="caption" sx={{ fontWeight: 500 }}>
+                    → {targetUnit.symbol}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    color="primary.main"
+                    sx={{ fontWeight: "bold" }}
+                  >
+                    {roundedValue} {targetUnit.symbol}
+                  </Typography>
+                </Box>
+              );
+            })}
+
+            {unitInfo.convertibleUnits.length > maxConversions && (
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ textAlign: "center", fontStyle: "italic" }}
+              >
+                +{unitInfo.convertibleUnits.length - maxConversions} more
+                conversions available
+              </Typography>
+            )}
+          </Box>
+        </>
+      )}
 
       {/* No Conversions Available */}
       {!unitInfo.isConvertible && (

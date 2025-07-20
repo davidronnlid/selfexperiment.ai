@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import {
   Container,
   Typography,
@@ -223,7 +224,7 @@ export default function WithingsDebug() {
           <Typography variant="body2" color="textSecondary">
             If all tests pass, you should be able to:
             <br />
-            1. Go to <a href="/withings-test">Withings Test Page</a>
+            1. Go to <Link href="/withings-test">Withings Test Page</Link>
             <br />
             2. Click "Connect Withings"
             <br />

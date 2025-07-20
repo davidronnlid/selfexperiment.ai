@@ -53,7 +53,7 @@ export default function AvatarUploader({ currentAvatarUrl, onUpload }: Props) {
       const fileName = `${user.id}.${fileExt}`;
       const filePath = `${fileName}`;
 
-      let { error } = await supabase.storage
+      const { error } = await supabase.storage
         .from("avatars")
         .upload(filePath, file, { upsert: true });
 
@@ -61,9 +61,17 @@ export default function AvatarUploader({ currentAvatarUrl, onUpload }: Props) {
 
       onUpload(filePath);
       getPublicUrl(filePath);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Upload error:", error);
-      alert(error.message);
+      if (error instanceof Error) {
+        if (error instanceof Error) {
+        alert(error.message);
+      } else {
+        alert("An unknown error occurred");
+      }
+      } else {
+        alert("An unknown error occurred");
+      }
     } finally {
       setUploading(false);
     }

@@ -13,7 +13,7 @@ import {
 } from "react";
 import { supabase } from "@/utils/supaBase";
 import type { User } from "@supabase/supabase-js";
-import { useRouter } from "next/router";
+
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { CssBaseline, Container, Box, Snackbar, Alert } from "@mui/material";
@@ -318,46 +318,12 @@ const theme = createTheme({
   },
 });
 
-function AppWrapper({ Component, pageProps }: AppProps) {
-  const { user, loading: userLoading } = useUser();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!user || userLoading) return;
-    const checkProfile = async () => {
-      if (
-        router.pathname === "/complete-profile" ||
-        router.pathname.startsWith("/auth")
-      )
-        return;
-
-      console.log("Checking profile completion for user:", user.id);
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("username, name")
-        .eq("id", user.id)
-        .single();
-
-      console.log("Profile check result:", { data, error });
-
-      if (!data || !data.username || !data.name) {
-        console.log("Profile incomplete, redirecting to complete-profile");
-        router.replace("/complete-profile");
-      } else {
-        console.log("Profile complete:", data);
-      }
-    };
-    checkProfile();
-  }, [user, userLoading, router]);
-
-  return <Component {...pageProps} />;
-}
-
 export default function App({ Component, pageProps }: AppProps) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [username, setUsername] = useState<string | null>(null);
+
   const [initialized, setInitialized] = useState(false);
   const [autoLogNotification, setAutoLogNotification] = useState<{
     open: boolean;
@@ -368,7 +334,6 @@ export default function App({ Component, pageProps }: AppProps) {
     message: "",
     severity: "success",
   });
-  const router = useRouter();
 
   // Add viewport meta tag to fix Next.js warning
   useEffect(() => {
@@ -639,7 +604,7 @@ export default function App({ Component, pageProps }: AppProps) {
                   zIndex: 1,
                 }}
               >
-                <AppWrapper Component={Component} pageProps={pageProps} />
+                <Component {...pageProps} />
               </Container>
             </Box>
           </Box>

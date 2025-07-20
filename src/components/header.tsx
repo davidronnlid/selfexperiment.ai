@@ -126,11 +126,7 @@ export default function Header() {
     setAnchorEl(null);
     setMobileOpen(false);
   };
-  const handleWithingsTest = () => {
-    router.push("/withings-test");
-    setAnchorEl(null);
-    setMobileOpen(false);
-  };
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setAnchorEl(null);
@@ -347,11 +343,6 @@ export default function Header() {
                       Account
                     </Typography>
                   </MenuItem>
-                  <MenuItem onClick={handleWithingsTest} className="py-3">
-                    <Typography variant="body2" className="font-medium">
-                      🏥 Withings Test
-                    </Typography>
-                  </MenuItem>
                   <MenuItem onClick={handleLogout} className="py-3">
                     <Typography
                       variant="body2"
@@ -492,19 +483,6 @@ export default function Header() {
                 >
                   <ListItemText
                     primary="Account"
-                    primaryTypographyProps={{
-                      className: "text-white font-medium",
-                    }}
-                  />
-                </ListItem>
-                <ListItem
-                  component="div"
-                  onClick={handleWithingsTest}
-                  className="rounded-lg hover:bg-surface-light transition-all duration-200 cursor-pointer"
-                  sx={{ minHeight: 48 }}
-                >
-                  <ListItemText
-                    primary="🏥 Withings Test"
                     primaryTypographyProps={{
                       className: "text-white font-medium",
                     }}

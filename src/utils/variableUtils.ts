@@ -55,7 +55,7 @@ export function validateVariableValue(
 
 function validateContinuousValue(
   value: number,
-  rules: any,
+  rules: unknown,
   variable: Variable
 ): ValidationResult {
   if (isNaN(value)) {
@@ -88,7 +88,7 @@ function validateContinuousValue(
 
 function validateCategoricalValue(
   value: string,
-  rules: any,
+  rules: unknown,
   variable: Variable
 ): ValidationResult {
   if (rules.options && !rules.options.includes(value)) {
@@ -103,7 +103,7 @@ function validateCategoricalValue(
 
 function validateBooleanValue(
   value: string,
-  rules: any,
+  rules: unknown,
   variable: Variable
 ): ValidationResult {
   const validBooleans = ["true", "false", "yes", "no", "1", "0", "y", "n"];
@@ -121,7 +121,7 @@ function validateBooleanValue(
 
 function validateTimeValue(
   value: string,
-  rules: any,
+  rules: unknown,
   variable: Variable
 ): ValidationResult {
   // Basic time format validation (HH:MM or HH:MM:SS)
@@ -139,7 +139,7 @@ function validateTimeValue(
 
 function validateTextValue(
   value: string,
-  rules: any,
+  rules: unknown,
   variable: Variable
 ): ValidationResult {
   if (rules.minLength && value.length < rules.minLength) {
@@ -245,7 +245,7 @@ export async function getVariable(id: string): Promise<Variable | null> {
  */
 export async function getVariables(userId?: string): Promise<Variable[]> {
   try {
-    let query = supabase
+    const query = supabase
       .from("variables")
       .select("*")
       .eq("is_active", true)
@@ -271,7 +271,7 @@ export async function getVariablesWithPreferences(
   }
 ): Promise<{ variables: Variable[] }> {
   try {
-    let query = supabase
+    const query = supabase
       .from("variables")
       .select(
         `
@@ -390,7 +390,7 @@ export async function getVariableLogs(
   }
 ): Promise<VariableLog[]> {
   try {
-    let query = supabase
+    const query = supabase
       .from("logs")
       .select("*")
       .eq("user_id", userId)
@@ -435,7 +435,7 @@ export async function updateVariableLog(
     value?: string;
     display_unit?: string;
     notes?: string;
-    context?: Record<string, any>;
+    context?: Record<string, unknown>;
     is_private?: boolean;
   }
 ): Promise<VariableLog | null> {
@@ -517,15 +517,12 @@ export async function searchVariables(
   userId?: string
 ): Promise<Variable[]> {
   try {
-    const { data, error } = await supabase
-      .from("variables")
-      .select("*")
-      .or(`label.ilike.%${query}%,description.ilike.%${query}%`)
-      .eq("is_active", true)
-      .order("label");
-
-    if (error) throw error;
-    return data || [];
+    // Use the new synonym-aware search function
+    const { searchVariablesWithSynonyms } = await import('./variableSearchUtils');
+    
+    
+    // Return just the variables from the search results
+    return results.map(result => result.variable);
   } catch (error) {
     console.error("Failed to search variables:", error);
     return [];
@@ -735,7 +732,7 @@ export function formatVariableValue(
 export async function updateUserVariablePreference(
   variableId: string,
   userId: string,
-  preference: any
+  preference: unknown
 ): Promise<boolean> {
   try {
     const { error } = await supabase.from("variable_preferences").upsert({
@@ -758,7 +755,7 @@ export async function updateUserVariablePreference(
 export async function getVariableCorrelations(
   variableId: string,
   userId: string
-): Promise<any[]> {
+): Promise<unknown[]> {
   try {
     const { data, error } = await supabase.rpc("get_variable_correlations", {
       p_variable_id: variableId,
@@ -780,7 +777,7 @@ export async function getVariableTrends(
   variableId: string,
   userId: string,
   days: number = 30
-): Promise<any> {
+): Promise<unknown> {
   try {
     const { data, error } = await supabase.rpc("get_variable_trends", {
       p_variable_id: variableId,
@@ -802,7 +799,7 @@ export async function getVariableTrends(
 export async function getVariableInsights(
   variableId: string,
   userId: string
-): Promise<any> {
+): Promise<unknown> {
   try {
     const { data, error } = await supabase.rpc("get_variable_insights", {
       p_variable_id: variableId,

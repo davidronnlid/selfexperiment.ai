@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Box,
   Card,
@@ -9,7 +9,6 @@ import {
   IconButton,
 } from "@mui/material";
 import { supabase } from "@/utils/supaBase";
-import { formatLargeNumber } from "@/utils/numberFormatting";
 import SyncIcon from "@mui/icons-material/Sync";
 
 interface DataSourcesAnalysisProps {
@@ -140,6 +139,15 @@ export default function DataSourcesAnalysis({
     fetchDataCounts();
   }, [userId]);
 
+  const formatLargeNumber = (num: number) => {
+    if (num >= 1000000) {
+      return (num / 1000000).toFixed(1) + "M";
+    } else if (num >= 1000) {
+      return (num / 1000).toFixed(1) + "K";
+    }
+    return num.toString();
+  };
+
   return (
     <Card variant="outlined" sx={{ mb: 3 }}>
       <CardContent sx={{ py: 2 }}>
@@ -163,20 +171,20 @@ export default function DataSourcesAnalysis({
             <CircularProgress size={20} />
           ) : (
             <>
-              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                <Chip
-                  label={`Modular Health: ${formatLargeNumber(
-                    dataCounts.modularHealth
-                  )}`}
-                  size="small"
-                  color="primary"
-                  variant="outlined"
-                />
-              </Box>
+              <Chip
+                label={`Modular Health: ${formatLargeNumber(
+                  dataCounts.modularHealth
+                )} data points`}
+                size="small"
+                color="primary"
+                variant="outlined"
+              />
 
               <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
                 <Chip
-                  label={`Oura: ${formatLargeNumber(dataCounts.oura)}`}
+                  label={`Oura: ${formatLargeNumber(
+                    dataCounts.oura
+                  )} data points`}
                   size="small"
                   color="secondary"
                   variant="outlined"
@@ -186,23 +194,25 @@ export default function DataSourcesAnalysis({
                   onClick={syncOura}
                   disabled={syncingOura}
                   sx={{
-                    width: 24,
-                    height: 24,
+                    width: 20,
+                    height: 20,
                     color: "secondary.main",
                     "&:hover": { backgroundColor: "secondary.light" },
                   }}
                 >
                   {syncingOura ? (
-                    <CircularProgress size={14} />
+                    <CircularProgress size={12} />
                   ) : (
-                    <SyncIcon sx={{ fontSize: 14 }} />
+                    <SyncIcon sx={{ fontSize: 12 }} />
                   )}
                 </IconButton>
               </Box>
 
               <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
                 <Chip
-                  label={`Withings: ${formatLargeNumber(dataCounts.withings)}`}
+                  label={`Withings: ${formatLargeNumber(
+                    dataCounts.withings
+                  )} data points`}
                   size="small"
                   color="warning"
                   variant="outlined"
@@ -212,28 +222,19 @@ export default function DataSourcesAnalysis({
                   onClick={syncWithings}
                   disabled={syncingWithings}
                   sx={{
-                    width: 24,
-                    height: 24,
+                    width: 20,
+                    height: 20,
                     color: "warning.main",
                     "&:hover": { backgroundColor: "warning.light" },
                   }}
                 >
                   {syncingWithings ? (
-                    <CircularProgress size={14} />
+                    <CircularProgress size={12} />
                   ) : (
-                    <SyncIcon sx={{ fontSize: 14 }} />
+                    <SyncIcon sx={{ fontSize: 12 }} />
                   )}
                 </IconButton>
               </Box>
-
-              <Chip
-                label={`Variables: ${formatLargeNumber(
-                  dataCounts.variablesTracked
-                )}`}
-                size="small"
-                color="info"
-                variant="outlined"
-              />
 
               <Chip
                 label={`Total: ${formatLargeNumber(
@@ -241,9 +242,25 @@ export default function DataSourcesAnalysis({
                 )} data points`}
                 size="small"
                 color="default"
+                variant="outlined"
                 sx={{
                   backgroundColor: "rgba(255, 215, 0, 0.1)",
                   borderColor: "rgba(255, 215, 0, 0.5)",
+                  color: "text.primary",
+                  fontWeight: "medium",
+                }}
+              />
+
+              <Chip
+                label={`${formatLargeNumber(
+                  dataCounts.variablesTracked
+                )} variables tracked`}
+                size="small"
+                color="default"
+                variant="outlined"
+                sx={{
+                  backgroundColor: "rgba(59, 130, 246, 0.1)",
+                  borderColor: "rgba(59, 130, 246, 0.5)",
                   color: "text.primary",
                   fontWeight: "medium",
                 }}

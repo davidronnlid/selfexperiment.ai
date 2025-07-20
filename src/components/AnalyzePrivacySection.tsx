@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Paper,
   Typography,
@@ -12,17 +12,8 @@ import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
-  IconButton,
-  Tooltip,
 } from "@mui/material";
-import {
-  FaEye,
-  FaEyeSlash,
-  FaCog,
-  FaUsers,
-  FaLock,
-  FaGlobe,
-} from "react-icons/fa";
+import { FaEye, FaCog, FaLock, FaGlobe, FaUsers } from "react-icons/fa";
 import { supabase } from "@/utils/supaBase";
 import { LOG_LABELS } from "@/utils/logLabels";
 import { VariableLinkSimple } from "./VariableLink";
@@ -50,13 +41,6 @@ function TabPanel(props: TabPanelProps) {
       {value === index && <Box sx={{ py: 3 }}>{children}</Box>}
     </div>
   );
-}
-
-interface VariableSharingSettings {
-  variable_name: string;
-  is_shared: boolean;
-  variable_type: "predefined" | "custom" | "oura";
-  category?: string;
 }
 
 export default function AnalyzePrivacySection() {
@@ -168,13 +152,7 @@ export default function AnalyzePrivacySection() {
     ],
   };
 
-  useEffect(() => {
-    if (user) {
-      loadVariablePreferences();
-    }
-  }, [user]);
-
-  const loadVariablePreferences = async () => {
+  const loadVariablePreferences = useCallback(async () => {
     try {
       setLoading(true);
       const { data: prefs, error: prefsError } = await supabase
@@ -192,7 +170,13 @@ export default function AnalyzePrivacySection() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (user) {
+      loadVariablePreferences();
+    }
+  }, [user, loadVariablePreferences]);
 
   const handleVariableSharingChange = async (
     variableName: string,
@@ -252,10 +236,6 @@ export default function AnalyzePrivacySection() {
       (s) => s.variable_name === variableName
     );
     return pref?.is_shared ?? false;
-  };
-
-  const getSharedVariablesCount = () => {
-    return variablePreferences.filter((s) => s.is_shared).length;
   };
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -443,15 +423,15 @@ export default function AnalyzePrivacySection() {
         <Alert severity="info" sx={{ mt: 3 }}>
           <Typography variant="body2">
             <strong>Note:</strong> Even when a variable type is shared, you can
-            still hide individual logged values using the "Individual Logs" tab
-            below.
+            still hide individual logged values using the &quot;Individual
+            Logs&quot; tab below.
           </Typography>
         </Alert>
       </TabPanel>
 
       {/* Individual Logs Tab */}
       <TabPanel value={tabValue} index={1}>
-        <LogPrivacyManager maxLogs={100} showFilters={true} />
+        <LogPrivacyManager user={user} />
       </TabPanel>
 
       {/* Profile Settings Tab */}

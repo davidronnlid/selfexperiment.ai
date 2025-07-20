@@ -17,7 +17,7 @@ export interface PlannedRoutineLog {
 }
 
 export function generatePlannedRoutineLogs(
-  routines: any[],
+  routines: unknown[],
   startDate: string,
   endDate: string
 ): PlannedRoutineLog[] {
@@ -52,7 +52,7 @@ export function generatePlannedRoutineLogs(
         console.log("Routine runs on this weekday");
         
         // Process each variable in the routine
-        (routine.variables || []).forEach((variable: any) => {
+        (routine.variables || []).forEach((variable: unknown) => {
           console.log("Processing variable:", variable.variable_name);
           console.log("Variable weekdays:", variable.weekdays);
           
@@ -61,7 +61,7 @@ export function generatePlannedRoutineLogs(
             console.log("Variable runs on this weekday");
             
             // Process each time for this variable
-            (variable.times || []).forEach((time: any) => {
+            (variable.times || []).forEach((time: unknown) => {
               console.log("Processing time:", time);
               
               const plannedLog = {

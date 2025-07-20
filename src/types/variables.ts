@@ -5,6 +5,18 @@
 // CORE INTERFACES
 // ============================================================================
 
+export interface Unit {
+  id: string;
+  label: string;
+  symbol: string;
+  unit_group: string;
+  conversion_to?: string;
+  conversion_factor?: number;
+  is_base: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Variable {
   id: string;
   slug: string;
@@ -16,11 +28,11 @@ export interface Variable {
   data_type: "continuous" | "categorical" | "boolean" | "time" | "text";
   validation_rules?: VariableValidationRules;
 
-  // Unit System
-  canonical_unit?: string;
-  unit_group?: string;
-  convertible_units?: string[];
-  default_display_unit?: string;
+  // Unit System (now references units table)
+  canonical_unit?: string; // References units.id
+  unit_group?: string; // Matches units.unit_group
+  convertible_units?: string[]; // Array of units.id values
+  default_display_unit?: string; // References units.id
 
   // Data Source & Collection
   source_type:

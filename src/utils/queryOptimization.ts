@@ -10,11 +10,11 @@ const CACHE_CONFIG = {
 
 // In-memory cache with TTL
 class MemoryCache {
-  private cache = new Map<string, { data: any; expires: number }>();
+  private cache = new Map<string, { data: unknown; expires: number }>();
   private timers = new Map<string, NodeJS.Timeout>();
 
-  set(key: string, data: any, ttl: number = CACHE_CONFIG.DEFAULT_TTL) {
-    // Clear existing timer if any
+  set(key: string, data: unknown, ttl: number = CACHE_CONFIG.DEFAULT_TTL) {
+    // Clear existing timer if unknown
     if (this.timers.has(key)) {
       clearTimeout(this.timers.get(key)!);
     }
@@ -35,7 +35,7 @@ class MemoryCache {
     }
   }
 
-  get(key: string): any | null {
+  get(key: string): unknown | null {
     const entry = this.cache.get(key);
     if (!entry) return null;
 
@@ -113,7 +113,7 @@ export const QueryOptimizer = {
   /**
    * Get user variables with caching
    */
-  async getUserVariables(userId: string): Promise<any[]> {
+  async getUserVariables(userId: string): Promise<unknown[]> {
     const cacheKey = `user_variables_${userId}`;
     
     return this.cachedQuery(
@@ -143,7 +143,7 @@ export const QueryOptimizer = {
     limit: number = 20, 
     offset: number = 0,
     variableId?: string
-  ): Promise<any[]> {
+  ): Promise<unknown[]> {
     const cacheKey = `user_logs_${userId}_${limit}_${offset}_${variableId || 'all'}`;
     
     return this.cachedQuery(
@@ -173,7 +173,7 @@ export const QueryOptimizer = {
   /**
    * Get user routines with caching
    */
-  async getUserRoutines(userId: string): Promise<any[]> {
+  async getUserRoutines(userId: string): Promise<unknown[]> {
     const cacheKey = `user_routines_${userId}`;
     
     return this.cachedQuery(
@@ -195,7 +195,7 @@ export const QueryOptimizer = {
   /**
    * Get variable sharing settings
    */
-  async getVariableSharingSettings(userId: string): Promise<any[]> {
+  async getVariableSharingSettings(userId: string): Promise<unknown[]> {
     const cacheKey = `sharing_settings_${userId}`;
     
     return this.cachedQuery(
@@ -222,7 +222,7 @@ export const QueryOptimizer = {
       const pattern = keyOrPattern.replace('*', '');
       const keysToDelete: string[] = [];
       
-      for (const key of (queryCache as any).cache.keys()) {
+      for (const key of (queryCache as unknown).cache.keys()) {
         if (key.includes(pattern)) {
           keysToDelete.push(key);
         }
@@ -314,7 +314,7 @@ export const PerformanceMonitor = {
    */
   logCacheStats() {
     const stats = {
-      cacheSize: (queryCache as any).cache.size,
+      cacheSize: (queryCache as unknown).cache.size,
       timestamp: new Date().toISOString(),
     };
     

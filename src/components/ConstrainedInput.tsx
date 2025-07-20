@@ -17,7 +17,7 @@ interface ConstrainedInputProps {
   size?: "small" | "medium";
   fullWidth?: boolean;
   variant?: "outlined" | "filled" | "standard";
-  sx?: any;
+  sx?: unknown;
 }
 
 export default function ConstrainedInput({
@@ -79,7 +79,7 @@ export default function ConstrainedInput({
     [variable, onChange]
   );
 
-  const handleNumberInput = (newValue: string, constraints: any) => {
+  const handleNumberInput = (newValue: string, constraints: unknown) => {
     // Allow empty string, minus sign, and decimal point
     if (newValue === "" || newValue === "-" || newValue === ".") {
       onChange(newValue);
@@ -107,7 +107,7 @@ export default function ConstrainedInput({
     onChange(newValue);
   };
 
-  const handleScaleInput = (newValue: string, constraints: any) => {
+  const handleScaleInput = (newValue: string, constraints: unknown) => {
     // Allow empty string
     if (newValue === "") {
       onChange(newValue);
@@ -138,7 +138,7 @@ export default function ConstrainedInput({
     onChange(newValue);
   };
 
-  const handleTimeInput = (newValue: string, constraints: any) => {
+  const handleTimeInput = (newValue: string, constraints: unknown) => {
     // Allow empty string
     if (newValue === "") {
       onChange(newValue);
@@ -174,7 +174,7 @@ export default function ConstrainedInput({
     onChange(formattedValue);
   };
 
-  const handleTextInput = (newValue: string, constraints: any) => {
+  const handleTextInput = (newValue: string, constraints: unknown) => {
     // Check max length constraint
     if (constraints?.maxLength && newValue.length > constraints.maxLength) {
       return; // Don't allow text longer than max length
@@ -183,7 +183,7 @@ export default function ConstrainedInput({
     onChange(newValue);
   };
 
-  const handleYesNoInput = (newValue: string, constraints: any) => {
+  const handleYesNoInput = (newValue: string, constraints: unknown) => {
     // Allow empty string
     if (newValue === "") {
       onChange(newValue);

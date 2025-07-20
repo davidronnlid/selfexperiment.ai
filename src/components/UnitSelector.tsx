@@ -7,491 +7,180 @@ import {
   Box,
   Typography,
   Chip,
-  Tooltip,
-  IconButton,
-  Popover,
-  Card,
-  CardContent,
-  Divider,
+  CircularProgress,
   Alert,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemIcon,
 } from "@mui/material";
-import {
-  FaInfoCircle,
-  FaExchangeAlt,
-  FaWeight,
-  FaClock,
-  FaThermometerHalf,
-  FaHeartbeat,
-  FaRuler,
-  FaTachometerAlt,
-  FaPills,
-  FaUtensils,
-  FaStar,
-  FaGlobe,
-  FaToggleOn,
-  FaFont,
-  FaLayerGroup,
-} from "react-icons/fa";
-import { Variable } from "../types/variables";
+import { fetchUnits, getUnitsByGroup } from "../utils/unitsTableUtils";
+import { Unit } from "../types/variables";
 
 interface UnitSelectorProps {
-  variable: Variable;
   value: string;
-  onChange: (unit: string) => void;
-  disabled?: boolean;
-  size?: "small" | "medium";
-  showPreview?: boolean;
+  onChange: (unitId: string) => void;
   label?: string;
+  unitGroup?: string; // Filter by unit group
+  dataType?: "continuous" | "categorical" | "boolean" | "time" | "text";
+  disabled?: boolean;
+  required?: boolean;
+  error?: boolean;
+  helperText?: string;
 }
 
-// Unit category icons
-const UNIT_CATEGORY_ICONS: Record<string, any> = {
-  Weight: FaWeight,
-  Volume: FaGlobe,
-  Time: FaClock,
-  Temperature: FaThermometerHalf,
-  Health: FaHeartbeat,
-  Distance: FaRuler,
-  Speed: FaTachometerAlt,
-  "Medication/Supplement": FaPills,
-  "Food/Exercise": FaUtensils,
-  Activity: FaStar,
-  Subjective: FaStar,
-  General: FaLayerGroup,
-  Boolean: FaToggleOn,
-  Categorical: FaLayerGroup,
-  Text: FaFont,
-  Frequency: FaClock,
-};
-
-// Unit descriptions and conversion info
-const UNIT_INFO: Record<
-  string,
-  { description: string; group?: string; conversions?: string[] }
-> = {
-  // Weight/Mass
-  kg: {
-    description: "Kilograms - Standard metric unit for weight/mass",
-    group: "mass",
-    conversions: ["lb (×2.20)", "g (×1000)", "oz (×35.3)"],
-  },
-  lb: {
-    description: "Pounds - Imperial unit for weight/mass",
-    group: "mass",
-    conversions: ["kg (×0.454)", "oz (×16)", "g (×454)"],
-  },
-  g: {
-    description: "Grams - Metric unit for small weights",
-    group: "mass",
-    conversions: ["kg (÷1000)", "lb (÷454)", "mg (×1000)"],
-  },
-  mg: {
-    description: "Milligrams - For medications and supplements",
-    group: "mass",
-    conversions: ["g (÷1000)", "mcg (×1000)"],
-  },
-
-  // Volume
-  L: {
-    description: "Liters - Standard metric volume unit",
-    group: "volume",
-    conversions: ["ml (×1000)", "cups (×4.23)", "fl oz (×33.8)"],
-  },
-  ml: {
-    description: "Milliliters - Small volume measurements",
-    group: "volume",
-    conversions: ["L (÷1000)", "fl oz (÷29.6)", "tsp (÷4.9)"],
-  },
-  cups: {
-    description: "Cups - Common cooking measurement",
-    group: "volume",
-    conversions: ["ml (×237)", "L (÷4.23)", "fl oz (×8)"],
-  },
-
-  // Time
-  hours: {
-    description: "Hours - Standard time unit",
-    group: "time",
-    conversions: ["minutes (×60)", "seconds (×3600)", "days (÷24)"],
-  },
-  minutes: {
-    description: "Minutes - Short duration measurements",
-    group: "time",
-    conversions: ["hours (÷60)", "seconds (×60)"],
-  },
-  seconds: {
-    description: "Seconds - Very short durations",
-    group: "time",
-    conversions: ["minutes (÷60)", "hours (÷3600)"],
-  },
-
-  // Temperature
-  "°C": {
-    description: "Degrees Celsius - Metric temperature",
-    group: "temperature",
-    conversions: ["°F (×1.8 + 32)"],
-  },
-  "°F": {
-    description: "Degrees Fahrenheit - Imperial temperature",
-    group: "temperature",
-    conversions: ["°C (subtract 32, ÷1.8)"],
-  },
-
-  // Health
-  bpm: {
-    description: "Beats per minute - Heart rate measurement",
-    group: "health",
-  },
-  mmHg: {
-    description: "Millimeters of mercury - Blood pressure",
-    group: "health",
-  },
-
-  // General
-  percentage: {
-    description: "Percentage - Values from 0 to 100%",
-    group: "general",
-  },
-  score: {
-    description: "Score or rating - Subjective measurements",
-    group: "general",
-  },
-  rating: {
-    description: "Rating - Subjective scale measurements",
-    group: "general",
-  },
-  units: {
-    description: "Generic units - General counting",
-    group: "general",
-  },
-
-  // Boolean
-  "true/false": {
-    description: "True/False - Boolean yes/no values",
-    group: "boolean",
-    conversions: ["yes/no", "0/1"],
-  },
-  "yes/no": {
-    description: "Yes/No - Boolean affirmative/negative",
-    group: "boolean",
-    conversions: ["true/false", "0/1"],
-  },
-  "0/1": {
-    description: "0/1 - Numeric boolean (0=false, 1=true)",
-    group: "boolean",
-    conversions: ["true/false", "yes/no"],
-  },
-};
-
 export default function UnitSelector({
-  variable,
   value,
   onChange,
-  disabled = false,
-  size = "medium",
-  showPreview = true,
   label = "Unit",
+  unitGroup,
+  dataType,
+  disabled = false,
+  required = false,
+  error = false,
+  helperText,
 }: UnitSelectorProps) {
-  const [infoAnchor, setInfoAnchor] = useState<HTMLElement | null>(null);
-  const [previewAnchor, setPreviewAnchor] = useState<HTMLElement | null>(null);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  const availableUnits =
-    variable.convertible_units ||
-    (variable.canonical_unit ? [variable.canonical_unit] : []);
+  useEffect(() => {
+    const loadUnits = async () => {
+      try {
+        setLoading(true);
+        setFetchError(null);
 
-  const handleInfoClick = (event: React.MouseEvent<HTMLElement>) => {
-    setInfoAnchor(event.currentTarget);
-  };
+        let unitsData: Unit[];
+        if (unitGroup) {
+          unitsData = await getUnitsByGroup(unitGroup);
+        } else {
+          unitsData = await fetchUnits();
+        }
 
-  const handlePreviewClick = (event: React.MouseEvent<HTMLElement>) => {
-    setPreviewAnchor(event.currentTarget);
-  };
+        // Filter units based on data type
+        let filteredUnits = unitsData;
+        if (dataType === "boolean") {
+          filteredUnits = unitsData.filter(
+            (unit) => unit.unit_group === "boolean"
+          );
+        } else if (dataType === "continuous") {
+          filteredUnits = unitsData.filter(
+            (unit) =>
+              unit.unit_group !== "boolean" && unit.unit_group !== "categorical"
+          );
+        }
 
-  const getUnitInfo = (unit: string) => {
-    return UNIT_INFO[unit] || { description: `${unit} - Custom unit` };
-  };
-
-  const getUnitGroup = (unit: string) => {
-    return getUnitInfo(unit).group || variable.unit_group;
-  };
-
-  const getCategoryIcon = (unit: string) => {
-    const info = getUnitInfo(unit);
-    const group = info.group || variable.unit_group || "general";
-
-    // Map unit group to category
-    const categoryMap: Record<string, string> = {
-      mass: "Weight",
-      volume: "Volume",
-      time: "Time",
-      temperature: "Temperature",
-      health: "Health",
-      distance: "Distance",
-      speed: "Speed",
-      boolean: "Boolean",
-      general: "General",
+        setUnits(filteredUnits);
+      } catch (error) {
+        console.error("Error loading units:", error);
+        setFetchError("Failed to load units");
+      } finally {
+        setLoading(false);
+      }
     };
 
-    const category = categoryMap[group] || "General";
-    const IconComponent = UNIT_CATEGORY_ICONS[category] || FaLayerGroup;
-    return <IconComponent size={14} />;
-  };
+    loadUnits();
+  }, [unitGroup, dataType]);
 
-  const renderUnitMenuItem = (unit: string) => {
-    const info = getUnitInfo(unit);
-    const isSelected = value === unit;
+  // Group units by unit_group for better organization
+  const groupedUnits = units.reduce((groups, unit) => {
+    const group = unit.unit_group;
+    if (!groups[group]) {
+      groups[group] = [];
+    }
+    groups[group].push(unit);
+    return groups;
+  }, {} as Record<string, Unit[]>);
 
+  // Sort groups and units within groups
+  const sortedGroups = Object.keys(groupedUnits).sort();
+  sortedGroups.forEach((group) => {
+    groupedUnits[group].sort((a, b) => {
+      // Base units first, then alphabetically
+      if (a.is_base && !b.is_base) return -1;
+      if (!a.is_base && b.is_base) return 1;
+      return a.label.localeCompare(b.label);
+    });
+  });
+
+  if (loading) {
     return (
-      <MenuItem
-        key={unit}
-        value={unit}
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          gap: 1,
-          py: 1,
-          backgroundColor: isSelected ? "action.selected" : "transparent",
-        }}
-      >
-        <Box
-          sx={{ color: "primary.main", display: "flex", alignItems: "center" }}
-        >
-          {getCategoryIcon(unit)}
-        </Box>
-        <Box sx={{ flexGrow: 1 }}>
-          <Typography variant="body2" fontWeight={isSelected ? 600 : 400}>
-            {unit}
-          </Typography>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ fontSize: "0.7rem" }}
-          >
-            {info.description.split(" - ")[1] || info.description}
-          </Typography>
-        </Box>
-        {info.conversions && (
-          <Tooltip title={`Converts to: ${info.conversions.join(", ")}`} arrow>
-            <FaExchangeAlt size={12} style={{ color: "#666", opacity: 0.7 }} />
-          </Tooltip>
-        )}
-      </MenuItem>
-    );
-  };
-
-  return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-      <FormControl size={size} sx={{ minWidth: 120, flexGrow: 1 }}>
+      <FormControl fullWidth disabled>
         <InputLabel>{label}</InputLabel>
-        <Select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          label={label}
-          disabled={disabled}
-          MenuProps={{
-            PaperProps: {
-              sx: { maxHeight: 300 },
-            },
-          }}
-        >
-          {availableUnits.length === 0 ? (
-            <MenuItem disabled>
-              <Typography variant="body2" color="text.secondary">
-                No units available
-              </Typography>
-            </MenuItem>
-          ) : (
-            availableUnits.map(renderUnitMenuItem)
-          )}
+        <Select value="" displayEmpty>
+          <MenuItem value="">
+            <Box display="flex" alignItems="center" gap={1}>
+              <CircularProgress size={16} />
+              <Typography>Loading units...</Typography>
+            </Box>
+          </MenuItem>
         </Select>
       </FormControl>
+    );
+  }
 
-      {/* Unit Info Button */}
-      {value && (
-        <Tooltip title="Unit information" arrow>
-          <IconButton
-            size="small"
-            onClick={handleInfoClick}
-            disabled={disabled}
-            sx={{ color: "primary.main" }}
-          >
-            <FaInfoCircle size={16} />
-          </IconButton>
-        </Tooltip>
-      )}
+  if (fetchError) {
+    return (
+      <Alert severity="error" sx={{ mb: 2 }}>
+        {fetchError}
+      </Alert>
+    );
+  }
 
-      {/* Available Units Preview Button */}
-      {showPreview && availableUnits.length > 1 && (
-        <Tooltip title="Show all available units" arrow>
-          <IconButton
-            size="small"
-            onClick={handlePreviewClick}
-            disabled={disabled}
-            sx={{ color: "secondary.main" }}
-          >
-            <FaExchangeAlt size={16} />
-          </IconButton>
-        </Tooltip>
-      )}
-
-      {/* Unit Info Popover */}
-      <Popover
-        open={Boolean(infoAnchor)}
-        anchorEl={infoAnchor}
-        onClose={() => setInfoAnchor(null)}
-        anchorOrigin={{
-          vertical: "bottom",
-          horizontal: "center",
-        }}
-        transformOrigin={{
-          vertical: "top",
-          horizontal: "center",
-        }}
+  return (
+    <FormControl
+      fullWidth
+      disabled={disabled}
+      error={error}
+      required={required}
+    >
+      <InputLabel>{label}</InputLabel>
+      <Select
+        value={value}
+        onChange={(e) => onChange(e.target.value as string)}
+        label={label}
       >
-        <Card sx={{ maxWidth: 300, m: 1 }}>
-          <CardContent sx={{ pb: 2 }}>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
-              {getCategoryIcon(value)}
-              <Typography variant="h6" component="div">
-                {value}
-              </Typography>
-            </Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              {getUnitInfo(value).description}
-            </Typography>
-
-            {getUnitInfo(value).conversions && (
-              <>
-                <Divider sx={{ my: 1 }} />
-                <Typography
-                  variant="caption"
-                  fontWeight="bold"
-                  sx={{ mb: 0.5, display: "block" }}
-                >
-                  Quick Conversions:
+        {sortedGroups
+          .map((groupName) => [
+            // Group header (if more than one group)
+            sortedGroups.length > 1 && (
+              <MenuItem
+                key={`header-${groupName}`}
+                disabled
+                sx={{ opacity: 0.7 }}
+              >
+                <Typography variant="overline" fontWeight="bold">
+                  {groupName.charAt(0).toUpperCase() + groupName.slice(1)}
                 </Typography>
-                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                  {getUnitInfo(value).conversions!.map((conversion, idx) => (
+              </MenuItem>
+            ),
+            // Units in this group
+            ...groupedUnits[groupName].map((unit) => (
+              <MenuItem key={unit.id} value={unit.id}>
+                <Box display="flex" alignItems="center" gap={1} width="100%">
+                  <Typography>{unit.label}</Typography>
+                  <Typography color="text.secondary" variant="body2">
+                    ({unit.symbol})
+                  </Typography>
+                  {unit.is_base && (
                     <Chip
-                      key={idx}
-                      label={conversion}
+                      label="Base"
                       size="small"
                       variant="outlined"
-                      sx={{ fontSize: "0.7rem" }}
+                      sx={{ fontSize: "0.7rem", height: 18 }}
                     />
-                  ))}
-                </Box>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </Popover>
-
-      {/* Available Units Preview Popover */}
-      <Popover
-        open={Boolean(previewAnchor)}
-        anchorEl={previewAnchor}
-        onClose={() => setPreviewAnchor(null)}
-        anchorOrigin={{
-          vertical: "bottom",
-          horizontal: "center",
-        }}
-        transformOrigin={{
-          vertical: "top",
-          horizontal: "center",
-        }}
-      >
-        <Card sx={{ maxWidth: 400, m: 1 }}>
-          <CardContent sx={{ pb: 2 }}>
-            <Typography variant="h6" component="div" sx={{ mb: 1 }}>
-              Available Units for {variable.label}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              You can switch between these units at any time. Values will be
-              automatically converted.
-            </Typography>
-
-            <List dense>
-              {availableUnits.map((unit, idx) => (
-                <ListItem
-                  key={unit}
-                  sx={{
-                    py: 0.5,
-                    backgroundColor:
-                      unit === value ? "action.selected" : "transparent",
-                    borderRadius: 1,
-                    mb: 0.5,
-                  }}
-                >
-                  <ListItemIcon sx={{ minWidth: 32 }}>
-                    {getCategoryIcon(unit)}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={
-                      <Box
-                        sx={{ display: "flex", alignItems: "center", gap: 1 }}
-                      >
-                        <Typography
-                          variant="body2"
-                          fontWeight={unit === value ? 600 : 400}
-                        >
-                          {unit}
-                        </Typography>
-                        {unit === value && (
-                          <Chip
-                            label="Current"
-                            size="small"
-                            color="primary"
-                            sx={{ height: 18, fontSize: "0.6rem" }}
-                          />
-                        )}
-                      </Box>
-                    }
-                    secondary={
-                      getUnitInfo(unit).description.split(" - ")[1] ||
-                      getUnitInfo(unit).description
-                    }
-                    secondaryTypographyProps={{
-                      variant: "caption",
-                      fontSize: "0.7rem",
-                    }}
-                  />
-                  {getUnitInfo(unit).conversions && (
-                    <Tooltip
-                      title={`Converts to: ${getUnitInfo(
-                        unit
-                      ).conversions!.join(", ")}`}
-                      arrow
-                    >
-                      <FaExchangeAlt
-                        size={12}
-                        style={{ color: "#666", opacity: 0.7 }}
-                      />
-                    </Tooltip>
                   )}
-                </ListItem>
-              ))}
-            </List>
-
-            {variable.unit_group && (
-              <>
-                <Divider sx={{ my: 1 }} />
-                <Alert severity="info" sx={{ fontSize: "0.8rem" }}>
-                  <Typography variant="caption">
-                    <strong>Unit Group:</strong> {variable.unit_group} - All
-                    units in this group can be automatically converted between
-                    each other.
-                  </Typography>
-                </Alert>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </Popover>
-    </Box>
+                </Box>
+              </MenuItem>
+            )),
+          ])
+          .filter(Boolean)}
+      </Select>
+      {helperText && (
+        <Typography
+          variant="caption"
+          color={error ? "error" : "text.secondary"}
+          sx={{ mt: 0.5 }}
+        >
+          {helperText}
+        </Typography>
+      )}
+    </FormControl>
   );
 }

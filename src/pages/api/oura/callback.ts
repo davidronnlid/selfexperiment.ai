@@ -50,9 +50,9 @@ export default async function handler(
 
     // Save access_token, refresh_token, and user_id to Supabase
     const { error } = await supabaseAdmin.from("oura_tokens").upsert({
-      access_token: tokenData.access_token,
-      refresh_token: tokenData.refresh_token,
-      user_id: user_id,
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token,
+        user_id: user_id,
       expires_at: tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000).toISOString() : null,
       updated_at: new Date().toISOString()
     }, {
