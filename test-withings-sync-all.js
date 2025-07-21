@@ -1,7 +1,8 @@
 // Test script for the withings-sync-all edge function
 // This script can be run to test the new edge function
 
-const SUPABASE_URL = "https://ecstnwwcplbofbwbhbck.supabase.co";
+const SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://your-project.supabase.co";
 const SUPABASE_ANON_KEY = "your-anon-key-here"; // Replace with your actual anon key
 
 async function testWithingsSyncAll() {

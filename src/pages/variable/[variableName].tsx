@@ -144,10 +144,28 @@ export default function VariableDataPointsPage() {
         return;
       }
 
+      // Check if this is a configuration issue
+      if (
+        (error && error.message?.includes("Invalid API key")) ||
+        error?.code === "PGRST301" ||
+        error?.message?.includes("schema")
+      ) {
+        console.error("❌ Supabase configuration error:", error);
+        setErrorMessage(
+          "Database configuration error. Please check your environment variables."
+        );
+        setShowError(true);
+        return;
+      }
+
       // Fallback: not found
       setVariableInfo(null);
     } catch (error) {
       console.error("Error fetching variable info:", error);
+      setErrorMessage(
+        "Failed to load variable information. Please check your configuration."
+      );
+      setShowError(true);
     }
   }, [variableName]);
 
@@ -236,13 +254,18 @@ export default function VariableDataPointsPage() {
     if (!variableName || userLoading) return;
 
     const initializePage = async () => {
-      // First fetch variable info
-      await fetchVariableInfo();
-      setLoading(false);
+      try {
+        // First fetch variable info
+        await fetchVariableInfo();
+      } catch (error) {
+        console.error("Error initializing page:", error);
+      } finally {
+        setLoading(false);
+      }
     };
 
     initializePage();
-  }, [variableName, user, userLoading, fetchVariableInfo]);
+  }, [variableName, user, userLoading]); // Removed fetchVariableInfo to prevent infinite loop
 
   // Separate useEffect for fetching data points after variableInfo is available
   useEffect(() => {

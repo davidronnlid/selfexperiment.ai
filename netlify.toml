@@ -3,10 +3,10 @@
   publish = ".next"
 
 [build.environment]
-  # Exclude public keys from secrets scanning
-  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_VAPID_PUBLIC_KEY,NEXT_PUBLIC_SUPABASE_ANON_KEY"
-  # Temporary: Disable secrets scanning if needed for urgent deploy
-  # SECRETS_SCAN_ENABLED = "false"
+  # Exclude public keys and placeholder patterns from secrets scanning
+  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_VAPID_PUBLIC_KEY,NEXT_PUBLIC_SUPABASE_ANON_KEY,NEXT_PUBLIC_SUPABASE_URL,your-anon-key-here,YOUR_PROJECT_REF"
+  # Exclude build artifacts and database files that contain placeholders
+  SECRETS_SCAN_OMIT_PATHS = ".next/**/*,.netlify/**/*,database/setup_routine_notifications_*.sql,test-withings-sync-all.js"
   
 [functions]
   external_node_modules = ["sharp"]

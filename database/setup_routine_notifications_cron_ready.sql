@@ -18,13 +18,14 @@ SELECT cron.unschedule('routine-notifications-evening');
 
 -- Schedule the routine notifications function to run every 10 minutes during active hours
 -- This runs from 6 AM to 11 PM to avoid night-time notifications
+-- NOTE: Replace EXAMPLE_PROJECT_REF with your actual Supabase project reference
 SELECT cron.schedule(
     'routine-notifications-scheduler',
     '*/10 6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 * * *', -- Every 10 minutes from 6 AM to 11 PM
     $$
     SELECT
       net.http_post(
-        url := 'https://ecstnwwcplbofbwbhbck.supabase.co/functions/v1/routine-notifications-scheduler',
+        url := 'https://EXAMPLE_PROJECT_REF.supabase.co/functions/v1/routine-notifications-scheduler',
         headers := '{"Content-Type": "application/json", "Authorization": "Bearer ' || current_setting('app.settings.service_role_key') || '"}'::jsonb,
         body := '{}'::jsonb
       ) as request_id;
@@ -77,7 +78,7 @@ DECLARE
     result JSONB;
 BEGIN
     SELECT net.http_post(
-        url := 'https://ecstnwwcplbofbwbhbck.supabase.co/functions/v1/routine-notifications-scheduler',
+        url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/routine-notifications-scheduler',
         headers := '{"Content-Type": "application/json", "Authorization": "Bearer ' || current_setting('app.settings.service_role_key') || '"}'::jsonb,
         body := '{}'::jsonb
     ) INTO result;

@@ -20,7 +20,7 @@ END $$;
 
 -- Step 4: Test if the Edge Function is accessible
 SELECT net.http_post(
-    url := 'https://ecstnwwcplbofbwbhbck.supabase.co/functions/v1/routine-notifications-scheduler',
+            url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/routine-notifications-scheduler',
     headers := '{"Content-Type": "application/json"}'::jsonb,
     body := '{}'::jsonb
 ) as test_request;
@@ -30,7 +30,7 @@ SELECT net.http_post(
 SELECT cron.schedule(
     'routine-notifications-scheduler',
     '*/15 * * * *', -- Every 15 minutes (simpler format)
-    'SELECT net.http_post(url := ''https://ecstnwwcplbofbwbhbck.supabase.co/functions/v1/routine-notifications-scheduler'', headers := ''{}'', body := ''{}'');'
+    'SELECT net.http_post(url := ''https://YOUR_PROJECT_REF.supabase.co/functions/v1/routine-notifications-scheduler'', headers := ''{}'', body := ''{}'');'
 );
 
 -- Step 6: Check if the cron job was created
@@ -74,7 +74,7 @@ SELECT 'Setup completed! Check status with: SELECT * FROM get_routine_cron_statu
 
 -- Check Edge Function manually
 -- SELECT net.http_post(
---     url := 'https://ecstnwwcplbofbwbhbck.supabase.co/functions/v1/routine-notifications-scheduler',
+--     url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/routine-notifications-scheduler',
 --     headers := '{"Content-Type": "application/json"}'::jsonb,
 --     body := '{}'::jsonb
 -- ); 
