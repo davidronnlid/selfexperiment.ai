@@ -2007,7 +2007,7 @@ export default function ManualTrackPage() {
         </Alert>
       )}
 
-      {/* Research Question Builder */}
+      {/* Manual Tracking Form */}
       <Paper elevation={3} sx={{ p: { xs: 3, sm: 4 }, mb: { xs: 4, sm: 5 } }}>
         <Typography
           variant="h6"
@@ -2037,77 +2037,6 @@ export default function ManualTrackPage() {
 
         {/* Variable Selection */}
         <Box sx={{ mb: { xs: 3, sm: 4 } }}>
-          {/* Popular Variables */}
-          <Box sx={{ mb: { xs: 2.5, sm: 3 } }}>
-            <Typography
-              variant="subtitle2"
-              gutterBottom
-              sx={{
-                fontSize: { xs: "0.9rem", sm: "0.875rem" },
-                mb: { xs: 1.5, sm: 2 },
-              }}
-            >
-              Popular Variables
-            </Typography>
-            <Box
-              sx={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: { xs: 1, sm: 1.5 },
-              }}
-            >
-              {variables.slice(0, 5).map((variable) => (
-                <Chip
-                  key={variable.id}
-                  label={`${variable.icon || "📝"} ${variable.label}`}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setSelectedVariable(variable);
-                    // Also navigate to variable page on right-click or ctrl+click
-                    if (e.ctrlKey || e.metaKey || e.button === 2) {
-                      const slug =
-                        variable.slug ||
-                        variable.label.toLowerCase().replace(/\s+/g, "-");
-                      window.open(
-                        `/variable/${encodeURIComponent(slug)}`,
-                        "_blank"
-                      );
-                    }
-                  }}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    const slug =
-                      variable.slug ||
-                      variable.label.toLowerCase().replace(/\s+/g, "-");
-                    window.open(
-                      `/variable/${encodeURIComponent(slug)}`,
-                      "_blank"
-                    );
-                  }}
-                  color={
-                    selectedVariable?.id === variable.id ? "primary" : "default"
-                  }
-                  variant={
-                    selectedVariable?.id === variable.id ? "filled" : "outlined"
-                  }
-                  clickable
-                  size={isMobile ? "small" : "medium"}
-                  sx={{
-                    fontSize: { xs: "0.75rem", sm: "0.8125rem" },
-                    height: { xs: "auto", sm: "auto" },
-                    px: { xs: 1, sm: 1.5 },
-                    py: { xs: 0.5, sm: 0.75 },
-                    "&:hover": {
-                      transform: "translateY(-1px)",
-                      boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-                    },
-                    transition: "all 0.2s ease",
-                  }}
-                />
-              ))}
-            </Box>
-          </Box>
-
           <Autocomplete
             options={variables}
             getOptionLabel={(option) =>
@@ -2116,33 +2045,18 @@ export default function ManualTrackPage() {
             value={selectedVariable}
             onChange={handleVariableChange}
             freeSolo
-            filterOptions={(options, { inputValue }) => {
-              // Filter variables by label matching the input value
-              return options.filter((option) =>
-                option.label.toLowerCase().includes(inputValue.toLowerCase())
-              );
-            }}
             renderInput={(params) => (
               <TextField
                 {...params}
-                placeholder="Search variables or type a new one..."
-                size={isMobile ? "small" : "medium"}
-                sx={{
-                  "& .MuiOutlinedInput-root": {
-                    borderRadius: 2,
-                    "&:hover fieldset": {
-                      borderColor: "primary.main",
-                    },
-                    "&.Mui-focused fieldset": {
-                      borderWidth: "2px",
-                    },
-                  },
-                }}
+                label="Select or search variable"
+                placeholder="Type to search..."
+                variant="outlined"
+                fullWidth
                 InputProps={{
                   ...params.InputProps,
                   startAdornment: (
                     <InputAdornment position="start">
-                      <SearchIcon fontSize={isMobile ? "small" : "medium"} />
+                      <SearchIcon />
                     </InputAdornment>
                   ),
                 }}
@@ -2152,34 +2066,15 @@ export default function ManualTrackPage() {
               <Box
                 component="li"
                 {...props}
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: { xs: 1.5, sm: 2 },
-                  py: { xs: 1.5, sm: 2 },
-                  px: { xs: 2, sm: 2.5 },
-                  "&:hover": {
-                    backgroundColor: "rgba(25, 118, 210, 0.04)",
-                  },
-                }}
+                sx={{ display: "flex", alignItems: "center", gap: 1.5, py: 1 }}
               >
-                <span style={{ fontSize: "1.2rem" }}>
-                  {option.icon || "📝"}
-                </span>
+                <span>{option.icon || "📝"}</span>
                 <Box>
-                  <VariableLabel
-                    variable={option}
-                    variant="body1"
-                    disableLink={true}
-                    color="inherit"
-                    sx={{ fontSize: { xs: "0.9rem", sm: "1rem" } }}
-                  />
+                  <Typography variant="body2" fontWeight="medium">
+                    {option.label}
+                  </Typography>
                   {option.description && (
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ fontSize: { xs: "0.7rem", sm: "0.75rem" } }}
-                    >
+                    <Typography variant="caption" color="text.secondary">
                       {option.description}
                     </Typography>
                   )}
@@ -2189,221 +2084,109 @@ export default function ManualTrackPage() {
           />
         </Box>
 
-        {/* Selected Variable Display */}
+        {/* Selected Variable - Simple Display */}
         {selectedVariable && (
-          <Box sx={{ mb: { xs: 2, sm: 3 } }}>
-            <Typography
-              variant="subtitle2"
-              gutterBottom
-              sx={{ fontSize: { xs: "0.9rem", sm: "0.875rem" } }}
-            >
-              Selected Variable
-            </Typography>
-            <Box
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                gap: 2,
-                p: { xs: 2, sm: 2.5 },
-                backgroundColor: "rgba(33, 150, 243, 0.1)",
-                borderRadius: 2,
-                border: "2px solid #2196f3",
-                cursor: "pointer",
-                transition: "all 0.2s ease",
-                "&:hover": {
-                  backgroundColor: "rgba(33, 150, 243, 0.15)",
-                  transform: "translateY(-1px)",
-                  boxShadow: "0 4px 12px rgba(33, 150, 243, 0.2)",
-                },
-                "&:active": {
-                  transform: "translateY(0)",
-                },
-              }}
-            >
-              <span style={{ fontSize: "1.5rem" }}>
-                {selectedVariable.icon || "📝"}
-              </span>
-              <Box>
-                <VariableLabel
-                  variable={selectedVariable}
-                  variant="h6"
-                  color="#2196f3"
-                  fontWeight="bold"
-                  sx={{ fontSize: { xs: "1.1rem", sm: "1.25rem" } }}
-                />
-                {selectedVariable.description && (
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      fontSize: { xs: "0.8rem", sm: "0.875rem" },
-                      color: "text.secondary",
-                    }}
-                  >
-                    {selectedVariable.description}
-                  </Typography>
-                )}
+          <Box sx={{ mb: 2 }}>
+            <Alert severity="info">
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <span>{selectedVariable.icon || "📝"}</span>
+                <Typography variant="body2" fontWeight="medium">
+                  {selectedVariable.label}
+                </Typography>
               </Box>
-            </Box>
+              {selectedVariable.description && (
+                <Typography variant="caption" color="text.secondary">
+                  {selectedVariable.description}
+                </Typography>
+              )}
+            </Alert>
           </Box>
         )}
 
-        {/* Selected Variable Constraints */}
+        {/* Validation Rules */}
         {selectedVariable &&
           (() => {
-            // Use the new validation system to get constraints text
             const constraintText = getConstraintsText(
               selectedVariable as ValidationVariable
             );
-
             if (constraintText) {
               return (
-                <Box sx={{ mb: { xs: 2.5, sm: 3 } }}>
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      color: "#FFD700",
-                      fontWeight: 500,
-                      fontSize: { xs: "0.75rem", sm: "0.8rem" },
-                      display: "block",
-                      backgroundColor: "rgba(255, 215, 0, 0.1)",
-                      padding: { xs: "6px 10px", sm: "8px 12px" },
-                      borderRadius: 2,
-                      border: "1px solid rgba(255, 215, 0, 0.3)",
-                    }}
-                  >
-                    💡 {constraintText}
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  <Typography variant="body2">
+                    <strong>Validation:</strong> {constraintText}
                   </Typography>
-                </Box>
+                </Alert>
               );
             }
             return null;
           })()}
 
         {/* Value Input */}
-        <Box sx={{ mb: { xs: 2, sm: 3 } }}>
+        <Box sx={{ mb: 2 }}>
           {selectedVariable ? (
             <ValidatedVariableInput
               variable={selectedVariable as ValidationVariable}
               value={value}
               onChange={setValue}
-              size={isMobile ? "small" : "medium"}
               fullWidth
-              showConstraints={true} // We show constraints separately above
-              sx={{
-                "& .MuiOutlinedInput-root": {
-                  "& .MuiInputAdornment-root": {
-                    "& .MuiSvgIcon-root": {
-                      fontSize: isMobile ? "14px" : "16px",
-                    },
-                  },
-                },
-              }}
+              showConstraints={false}
             />
           ) : (
-            <ConstrainedInput
+            <TextField
               label="Value"
               value={value}
-              onChange={setValue}
-              size={isMobile ? "small" : "medium"}
-              placeholder="Enter the value..."
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="Select a variable first..."
               variant="outlined"
               fullWidth
-              sx={{
-                "& .MuiOutlinedInput-root": {
-                  "& .MuiInputAdornment-root": {
-                    "& .MuiSvgIcon-root": {
-                      fontSize: isMobile ? "14px" : "16px",
-                    },
-                  },
-                },
-              }}
+              disabled
             />
           )}
         </Box>
 
-        {/* Unit Selector - only show when variable is selected */}
+        {/* Unit Selector */}
         {selectedVariable && (
-          <Box sx={{ mb: { xs: 2, sm: 3 } }}>
-            <Typography
-              variant="subtitle2"
-              gutterBottom
-              sx={{
-                fontSize: { xs: "0.9rem", sm: "0.875rem" },
-                display: "flex",
-                alignItems: "center",
-                gap: 1,
-              }}
-            >
-              Unit
-              {displayUnitLoading && (
-                <Typography variant="caption" color="textSecondary">
-                  (Loading your preference...)
-                </Typography>
-              )}
-            </Typography>
+          <Box sx={{ mb: 2 }}>
             <VariableUnitSelector
               variableId={selectedVariable.id}
               userId={user?.id || ""}
               currentUnit={selectedUnit}
               onUnitChange={async (unitId, unitGroup) => {
                 setSelectedUnit(unitId);
-                // The unit selector automatically saves the preference,
-                // but we can optionally refresh our hook
                 await refetchDisplayUnit();
               }}
               disabled={displayUnitLoading}
-              label="Select unit"
-              size={isMobile ? "small" : "medium"}
+              label="Unit"
+              size="medium"
             />
             {selectedUnit && (
               <Typography
                 variant="caption"
-                color="textSecondary"
+                color="text.secondary"
                 sx={{ mt: 0.5, display: "block" }}
               >
-                Your preference is saved for future logging
+                Preference saved for future logging
               </Typography>
             )}
           </Box>
         )}
 
         {/* Notes */}
-        <Box sx={{ mb: { xs: 2, sm: 3 } }}>
-          <Typography
-            variant="subtitle2"
-            gutterBottom
-            sx={{ fontSize: { xs: "0.9rem", sm: "0.875rem" } }}
-          >
-            Notes (Optional)
-          </Typography>
+        <Box sx={{ mb: 2 }}>
           <TextField
+            label="Notes (Optional)"
             fullWidth
             multiline
-            rows={isMobile ? 2 : 3}
-            size={isMobile ? "small" : "medium"}
+            rows={2}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Add any additional context or notes..."
+            placeholder="Add context or notes..."
             variant="outlined"
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <FaStickyNote size={isMobile ? "14" : "16"} />
-                </InputAdornment>
-              ),
-            }}
           />
         </Box>
 
-        {/* Date and Time Picker */}
-        <Box sx={{ mb: { xs: 2, sm: 3 } }}>
-          <Typography
-            variant="subtitle2"
-            gutterBottom
-            sx={{ fontSize: { xs: "0.9rem", sm: "0.875rem" } }}
-          >
-            Date & Time
-          </Typography>
+        {/* Date and Time */}
+        <Box sx={{ mb: 2 }}>
           <DatePicker
             selected={date}
             onChange={(date: Date | null) => date && setDate(date)}
@@ -2413,49 +2196,20 @@ export default function ManualTrackPage() {
             dateFormat="yyyy-MM-dd HH:mm"
             customInput={
               <TextField
+                label="Date & Time"
                 fullWidth
                 variant="outlined"
-                size={isMobile ? "small" : "medium"}
-                InputProps={{
-                  readOnly: true,
-                }}
+                InputProps={{ readOnly: true }}
               />
-            }
-          />
-        </Box>
-
-        {/* Privacy Setting */}
-        <Box sx={{ mb: { xs: 2, sm: 3 } }}>
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={!isLogPrivate} // Inverted: checked = public, unchecked = private
-                onChange={(e) => setIsLogPrivate(!e.target.checked)}
-                color="primary"
-                size={isMobile ? "small" : "medium"}
-              />
-            }
-            label={
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                <FaGlobe size={isMobile ? "14" : "16"} />
-                <Typography
-                  variant="body2"
-                  sx={{ fontSize: { xs: "0.85rem", sm: "0.875rem" } }}
-                >
-                  Public log
-                </Typography>
-              </Box>
             }
           />
         </Box>
 
         {/* Error Display */}
         {expError && (
-          <Box sx={{ mb: { xs: 2, sm: 3 } }}>
-            <Alert severity="error" sx={{ borderRadius: 2 }}>
-              {expError}
-            </Alert>
-          </Box>
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {expError}
+          </Alert>
         )}
 
         {/* Submit Button */}
@@ -2464,15 +2218,8 @@ export default function ManualTrackPage() {
           disabled={submitting || !selectedVariable || !value.trim()}
           variant="contained"
           fullWidth
-          sx={{
-            py: { xs: 1.5, sm: 2 },
-            fontSize: { xs: "1rem", sm: "1.1rem" },
-            fontWeight: "bold",
-            backgroundColor: "#2196f3",
-            "&:hover": {
-              backgroundColor: "#1976d2",
-            },
-          }}
+          size="large"
+          sx={{ py: 1.5 }}
         >
           {submitting ? "Saving..." : "Save Log"}
         </Button>
