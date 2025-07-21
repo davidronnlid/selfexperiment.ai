@@ -15,10 +15,6 @@ import {
   ListItemIcon,
   ListItemText,
   ListItemSecondaryAction,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   TextField,
   Select,
   MenuItem,
@@ -42,16 +38,13 @@ import {
   Warning as WarningIcon,
   CheckCircle as CheckCircleIcon,
   ExpandMore as ExpandMoreIcon,
-  AccessTime as AccessTimeIcon,
   Send as SendIcon,
-  Cancel as CancelIcon,
   Save as SaveIcon,
   Refresh as RefreshIcon,
   Info as InfoIcon,
-  Close as CloseIcon,
 } from "@mui/icons-material";
 import { supabase } from "@/utils/supaBase";
-import { useNotifications } from "@/hooks/useNotifications";
+
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 interface NotificationPreferences {
@@ -60,8 +53,6 @@ interface NotificationPreferences {
   routine_reminder_enabled: boolean;
   routine_reminder_minutes: number;
   routine_notification_timing: "before" | "at_time" | "after";
-  test_notification_enabled: boolean;
-  test_notification_time?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -74,16 +65,9 @@ export default function NotificationManager({
   userId,
 }: NotificationManagerProps) {
   const {
-    hasPermission,
-    isSupported,
-    requestPermission,
-    sendNotification,
-    scheduleTestNotification,
-    cancelScheduledNotification,
-  } = useNotifications(userId);
-
-  const {
     isSupported: isPushSupported,
+    hasPermission,
+    requestPermission,
     isPushSubscribed,
     subscribeToPush,
     unsubscribeFromPush,
@@ -98,17 +82,10 @@ export default function NotificationManager({
     routine_reminder_enabled: true,
     routine_reminder_minutes: 15,
     routine_notification_timing: "before",
-    test_notification_enabled: false,
   });
 
   const [loading, setLoading] = useState(false);
   const [loadingPreferences, setLoadingPreferences] = useState(true);
-  const [testDialog, setTestDialog] = useState(false);
-  const [scheduledTestExpanded, setScheduledTestExpanded] = useState(false);
-  const [scheduledTime, setScheduledTime] = useState("");
-  const [testMessage, setTestMessage] = useState("");
-  const [currentScheduledNotification, setCurrentScheduledNotification] =
-    useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
@@ -176,7 +153,7 @@ export default function NotificationManager({
           "NOT_SET",
       },
       pushHook: {
-        isSupported,
+        isPushSupported,
         hasPermission,
         isPushSubscribed,
         loading,
@@ -218,16 +195,6 @@ export default function NotificationManager({
   useEffect(() => {
     loadPreferences();
   }, [userId]);
-
-  useEffect(() => {
-    // Set default scheduled time to 30 seconds from now
-    const defaultTime = new Date();
-    defaultTime.setSeconds(defaultTime.getSeconds() + 30);
-    setScheduledTime(defaultTime.toISOString().slice(0, 16)); // Format for datetime-local input
-    setTestMessage(
-      "🎉 Test notification! Your notification system is working perfectly."
-    );
-  }, []);
 
   const showSnackbar = (
     message: string,
@@ -318,64 +285,6 @@ export default function NotificationManager({
     }
   };
 
-  const sendTestNotification = async () => {
-    if (!hasPermission) {
-      showSnackbar("Please enable notifications first", "warning");
-      return;
-    }
-
-    try {
-      await sendNotification("🎉 Test Notification", {
-        body: "Your notifications are working perfectly!",
-        data: { type: "test_notification" },
-        icon: "/icon-192x192.png",
-        badge: "/icon-192x192.png",
-      });
-      setTestDialog(false);
-      showSnackbar("Test notification sent!", "success");
-    } catch (error) {
-      console.error("Error sending test notification:", error);
-      showSnackbar("Failed to send test notification", "error");
-    }
-  };
-
-  const handleScheduleTest = async () => {
-    if (!hasPermission) {
-      showSnackbar("Please enable notifications first", "warning");
-      return;
-    }
-
-    if (!scheduledTime) {
-      showSnackbar("Please select a time for the test notification", "warning");
-      return;
-    }
-
-    try {
-      const schedTime = new Date(scheduledTime);
-      const notificationId = await scheduleTestNotification(
-        schedTime,
-        testMessage
-      );
-      setCurrentScheduledNotification(notificationId);
-      setScheduledTestExpanded(false);
-      showSnackbar(
-        `Test notification scheduled for ${schedTime.toLocaleString()}`,
-        "success"
-      );
-    } catch (error) {
-      console.error("Error scheduling test notification:", error);
-      showSnackbar("Failed to schedule test notification", "error");
-    }
-  };
-
-  const handleCancelScheduled = () => {
-    if (currentScheduledNotification) {
-      cancelScheduledNotification(currentScheduledNotification);
-      setCurrentScheduledNotification(null);
-      showSnackbar("Scheduled notification cancelled", "info");
-    }
-  };
-
   const handlePreferenceChange = (
     key: keyof NotificationPreferences,
     value: any
@@ -385,13 +294,10 @@ export default function NotificationManager({
   };
 
   const getEnabledCount = () => {
-    return [
-      preferences.routine_reminder_enabled,
-      preferences.test_notification_enabled,
-    ].filter(Boolean).length;
+    return preferences.routine_reminder_enabled ? 1 : 0;
   };
 
-  if (!isSupported) {
+  if (!isPushSupported) {
     return (
       <Card>
         <CardContent>
@@ -452,7 +358,7 @@ export default function NotificationManager({
             </Box>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
               <Chip
-                label={`${getEnabledCount()}/2 enabled`}
+                label={`${getEnabledCount()}/1 enabled`}
                 color={getEnabledCount() > 0 ? "success" : "default"}
                 size="small"
               />
@@ -587,99 +493,6 @@ export default function NotificationManager({
               <Divider sx={{ my: 2 }} />
 
               <Stack spacing={2}>
-                {/* Test Notification Section */}
-                <Accordion
-                  expanded={scheduledTestExpanded}
-                  onChange={(_, isExpanded) =>
-                    setScheduledTestExpanded(isExpanded)
-                  }
-                >
-                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                      <AccessTimeIcon />
-                      <Typography variant="h6">Test Notifications</Typography>
-                      <Tooltip title="Test your notification settings">
-                        <InfoIcon fontSize="small" color="action" />
-                      </Tooltip>
-                    </Box>
-                  </AccordionSummary>
-                  <AccordionDetails>
-                    <Stack spacing={2}>
-                      <Alert severity="info">
-                        <Typography variant="body2">
-                          Test your notification settings to make sure
-                          everything is working correctly.
-                        </Typography>
-                      </Alert>
-
-                      <Box sx={{ display: "flex", gap: 1 }}>
-                        <Button
-                          variant="outlined"
-                          onClick={sendTestNotification}
-                          startIcon={<SendIcon />}
-                          disabled={!hasPermission}
-                        >
-                          Quick Test
-                        </Button>
-                        <Button
-                          variant="outlined"
-                          onClick={() => setTestDialog(true)}
-                          startIcon={<NotificationsIcon />}
-                          disabled={!hasPermission}
-                        >
-                          Custom Test
-                        </Button>
-                      </Box>
-
-                      <Divider />
-
-                      <Typography variant="subtitle2" gutterBottom>
-                        Schedule Test Notification
-                      </Typography>
-                      <TextField
-                        label="Scheduled Time"
-                        type="datetime-local"
-                        value={scheduledTime}
-                        onChange={(e) => setScheduledTime(e.target.value)}
-                        InputLabelProps={{ shrink: true }}
-                        fullWidth
-                        size="small"
-                      />
-                      <TextField
-                        label="Test Message"
-                        multiline
-                        rows={2}
-                        value={testMessage}
-                        onChange={(e) => setTestMessage(e.target.value)}
-                        fullWidth
-                        size="small"
-                      />
-                      <Box sx={{ display: "flex", gap: 1 }}>
-                        <Button
-                          variant="outlined"
-                          onClick={handleScheduleTest}
-                          startIcon={<AccessTimeIcon />}
-                          disabled={!hasPermission || !scheduledTime}
-                          size="small"
-                        >
-                          Schedule Test
-                        </Button>
-                        {currentScheduledNotification && (
-                          <Button
-                            variant="outlined"
-                            color="error"
-                            onClick={handleCancelScheduled}
-                            startIcon={<CancelIcon />}
-                            size="small"
-                          >
-                            Cancel Scheduled
-                          </Button>
-                        )}
-                      </Box>
-                    </Stack>
-                  </AccordionDetails>
-                </Accordion>
-
                 {/* Server Push Notifications Section */}
                 <Accordion>
                   <AccordionSummary expandIcon={<ExpandMoreIcon />}>
@@ -879,50 +692,6 @@ export default function NotificationManager({
           )}
         </CardContent>
       </Card>
-
-      {/* Test Notification Dialog */}
-      <Dialog
-        open={testDialog}
-        onClose={() => setTestDialog(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>
-          Send Test Notification
-          <IconButton
-            aria-label="close"
-            onClick={() => setTestDialog(false)}
-            sx={{ position: "absolute", right: 8, top: 8 }}
-          >
-            <CloseIcon />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" sx={{ mb: 2 }}>
-            This will send a test notification to verify your settings are
-            working correctly.
-          </Typography>
-          <TextField
-            label="Custom Message"
-            multiline
-            rows={3}
-            value={testMessage}
-            onChange={(e) => setTestMessage(e.target.value)}
-            fullWidth
-            sx={{ mt: 1 }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setTestDialog(false)}>Cancel</Button>
-          <Button
-            onClick={sendTestNotification}
-            variant="contained"
-            startIcon={<SendIcon />}
-          >
-            Send Test
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       {/* Snackbar for notifications */}
       <Snackbar
