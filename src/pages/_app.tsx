@@ -349,6 +349,50 @@ export default function App({ Component, pageProps }: AppProps) {
     }
   }, []);
 
+  // Register service worker for push notifications
+  useEffect(() => {
+    if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+      const registerServiceWorker = async () => {
+        try {
+          console.log("[SW] Attempting to register service worker...");
+
+          // Check if already registered
+          const existingRegistration =
+            await navigator.serviceWorker.getRegistration();
+          if (existingRegistration) {
+            console.log(
+              "[SW] Service worker already registered:",
+              existingRegistration
+            );
+            return;
+          }
+
+          // Register the service worker
+          const registration = await navigator.serviceWorker.register(
+            "/sw-notifications.js",
+            {
+              scope: "/",
+            }
+          );
+
+          console.log(
+            "[SW] Service worker registered successfully:",
+            registration
+          );
+
+          // Wait for it to be ready
+          await navigator.serviceWorker.ready;
+          console.log("[SW] Service worker is ready!");
+        } catch (error) {
+          console.error("[SW] Service worker registration failed:", error);
+        }
+      };
+
+      // Register on page load
+      registerServiceWorker();
+    }
+  }, []);
+
   // Function to fetch user profile
   const fetchUserProfile = useCallback(async (userId: string) => {
     try {

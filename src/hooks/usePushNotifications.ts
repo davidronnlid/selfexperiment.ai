@@ -183,26 +183,52 @@ export function usePushNotifications(userId: string): PushNotificationHook {
     setError(null);
 
     try {
+      console.log('[DEBUG] Step 1: Starting subscription process...');
+      
       // Register service worker if not already registered
-      const registration = await navigator.serviceWorker.ready;
+      console.log('[DEBUG] Step 2: Waiting for service worker...');
+      const registration = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Service worker timeout after 10s')), 10000)
+        )
+      ]) as ServiceWorkerRegistration;
+      
+      console.log('[DEBUG] Step 3: Service worker ready, checking existing subscription...');
 
       // Check if already subscribed
-      const existingSubscription = await registration.pushManager.getSubscription();
+      const existingSubscription = await Promise.race([
+        registration.pushManager.getSubscription(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Get subscription timeout after 5s')), 5000)
+        )
+      ]) as PushSubscription | null;
+      
       if (existingSubscription) {
-        console.log('Already subscribed to push notifications');
+        console.log('[DEBUG] Already subscribed to push notifications');
         setIsPushSubscribed(true);
         setLoading(false);
         return true;
       }
 
+      console.log('[DEBUG] Step 4: Converting VAPID key...');
       // Convert VAPID key to Uint8Array
       const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
+      console.log('[DEBUG] VAPID key converted successfully');
 
+      console.log('[DEBUG] Step 5: Subscribing to push manager...');
       // Subscribe to push notifications
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey,
-      });
+      const subscription = await Promise.race([
+        registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey,
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Push manager subscribe timeout after 15s')), 15000)
+        )
+      ]) as PushSubscription;
+      
+      console.log('[DEBUG] Step 6: Push subscription created successfully');
 
       // Get device information
       const deviceInfo = {
@@ -212,37 +238,50 @@ export function usePushNotifications(userId: string): PushNotificationHook {
         browser: getBrowser(),
       };
 
+      console.log('[DEBUG] Step 7: Saving subscription to server...');
       // Save subscription to server
-      const response = await fetch('/api/push-notifications?action=subscribe', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      const response = await Promise.race([
+        fetch('/api/push-notifications?action=subscribe', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+                  body: JSON.stringify({
           userId,
-          subscription: subscription.toJSON(),
+          subscription: (subscription as any).toJSON(),
           deviceInfo,
         }),
-      });
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Server API timeout after 10s')), 10000)
+        )
+      ]) as Response;
+
+      console.log('[DEBUG] Step 8: Server response received, status:', response.status);
 
       if (!response.ok) {
-        throw new Error('Failed to save push subscription');
+        const errorText = await response.text();
+        throw new Error(`Failed to save push subscription: ${response.status} - ${errorText}`);
       }
 
       const result = await response.json();
-      console.log('Push subscription saved:', result);
+      console.log('[DEBUG] Step 9: Push subscription saved successfully:', result);
 
       setIsPushSubscribed(true);
+      
+      console.log('[DEBUG] Step 10: Reloading subscriptions...');
       await loadSubscriptions();
       
+      console.log('[DEBUG] Subscription process completed successfully!');
       return true;
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to subscribe to push notifications';
-      console.error('Push subscription error:', err);
+      console.error('[DEBUG] Push subscription error at step:', err);
       setError(errorMessage);
       return false;
     } finally {
+      console.log('[DEBUG] Setting loading to false...');
       setLoading(false);
     }
   }, [isSupported, hasPermission, userId]);
