@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { supabase } from "@/utils/supaBase";
 import { PlannedRoutineLog } from "@/utils/batchRoutineLogging";
+import { getUserDisplayUnit } from "@/utils/variableUtils";
 
 export default async function handler(
   req: NextApiRequest,
@@ -41,6 +42,18 @@ export default async function handler(
         // Create the log timestamp
         const logTimestamp = `${log.date}T${log.time_of_day}:00`;
 
+        // Get user's preferred unit for this variable (with fallback to default_unit)
+        let preferredUnit = log.default_unit || null;
+        try {
+          const userUnit = await getUserDisplayUnit(userId, log.variable_id);
+          if (userUnit) {
+            preferredUnit = userUnit;
+          }
+        } catch (error) {
+          console.warn(`Failed to get user preferred unit for variable ${log.variable_id}:`, error);
+          // Keep the default_unit as fallback
+        }
+
         // Insert the log
         const { error: insertError } = await supabase
           .from("variable_logs")
@@ -48,7 +61,7 @@ export default async function handler(
             user_id: userId,
             variable_id: log.variable_id,
             display_value: log.default_value,
-            display_unit: log.default_unit || null,
+            display_unit: preferredUnit,
             source: "routine",
             logged_at: logTimestamp,
             notes: `Auto-generated from routine: ${log.routine_name}`,

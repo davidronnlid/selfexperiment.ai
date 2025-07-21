@@ -30,6 +30,8 @@ import ConstrainedInput from "@/components/ConstrainedInput";
 import ValidatedVariableInput from "@/components/ValidatedVariableInput";
 import VariableCreationDialog from "@/components/VariableCreationDialog";
 import VariableLabel from "@/components/VariableLabel";
+import VariableUnitSelector from "@/components/VariableUnitSelector";
+import { useUserDisplayUnit } from "@/hooks/useUserDisplayUnit";
 import Link from "next/link";
 import {
   Container,
@@ -199,6 +201,29 @@ export default function ManualTrackPage() {
 
   // Add state to control visibility of the Active Experiments card
   const [showActiveExperiments, setShowActiveExperiments] = useState(true);
+
+  // Unit selection state
+  const [selectedUnit, setSelectedUnit] = useState<string>("");
+
+  // Get user's preferred display unit for the selected variable
+  const {
+    displayUnit,
+    loading: displayUnitLoading,
+    refetch: refetchDisplayUnit,
+  } = useUserDisplayUnit(
+    selectedVariable?.id || "",
+    selectedVariable || undefined
+  );
+
+  // Update selected unit when display unit changes or variable changes
+  useEffect(() => {
+    if (displayUnit) {
+      setSelectedUnit(displayUnit);
+    } else if (selectedVariable) {
+      // Reset unit when variable changes but no preferred unit is set
+      setSelectedUnit("");
+    }
+  }, [displayUnit, selectedVariable]);
 
   const [routineSnackbar, setRoutineSnackbar] = useState<{
     open: boolean;
@@ -752,6 +777,7 @@ export default function ManualTrackPage() {
         user_id: user.id,
         variable_id: selectedVariable.id,
         value: value.trim(),
+        display_unit: selectedUnit || null, // Include the selected unit
         notes: notes.trim() || null,
         created_at: localDateString, // store as local time string
         date: localDateString, // store as local time string for display
@@ -769,7 +795,9 @@ export default function ManualTrackPage() {
 
       // Success
       setSuccessMessage(
-        `Successfully logged ${selectedVariable.label}: ${value}`
+        `Successfully logged ${selectedVariable.label}: ${value}${
+          selectedUnit ? ` ${selectedUnit}` : ""
+        }`
       );
       setShowSuccess(true);
 
@@ -777,6 +805,7 @@ export default function ManualTrackPage() {
       setSelectedVariable(null);
       setValue("");
       setNotes("");
+      setSelectedUnit("");
 
       // Refresh logs
       await fetchLogs(selectedViewDate);
@@ -828,10 +857,31 @@ export default function ManualTrackPage() {
       )}:${pad(selectedDateTime.getMinutes())}:${pad(
         selectedDateTime.getSeconds()
       )}`;
+
+      // Get user's preferred unit for this variable
+      let preferredUnit = null;
+      try {
+        const { getUserDisplayUnit } = await import("@/utils/variableUtils");
+        const userUnit = await getUserDisplayUnit(
+          user.id,
+          variable.id,
+          variable
+        );
+        if (userUnit) {
+          preferredUnit = userUnit;
+        }
+      } catch (error) {
+        console.warn(
+          `Failed to get user preferred unit for variable ${variable.id}:`,
+          error
+        );
+      }
+
       const logData = {
         user_id: user.id,
         variable_id: variable.id,
         value: logValue.trim(),
+        display_unit: preferredUnit,
         notes: logNotes.trim() || null,
         created_at: localDateString,
         date: localDateString,
@@ -888,20 +938,43 @@ export default function ManualTrackPage() {
     )}:${pad(selectedDateTime.getMinutes())}:${pad(
       selectedDateTime.getSeconds()
     )}`;
-    const logDataArray = variablesToLog
-      .map((variable) => {
-        const variableObj = variables.find((v) => v.label === variable.name);
-        return {
-          user_id: user.id,
-          variable_id: variableObj?.id,
-          value: variable.value.trim(),
-          notes: variable.notes.trim() || null,
-          created_at: localDateString,
-          date: localDateString,
-          source: ["manual"],
-        };
-      })
-      .filter((log) => log.variable_id);
+    // Create log data array with user preferred units
+    const logDataArray = [];
+
+    for (const variable of variablesToLog) {
+      const variableObj = variables.find((v) => v.label === variable.name);
+      if (!variableObj?.id) continue;
+
+      // Get user's preferred unit for this variable
+      let preferredUnit = null;
+      try {
+        const { getUserDisplayUnit } = await import("@/utils/variableUtils");
+        const userUnit = await getUserDisplayUnit(
+          user.id,
+          variableObj.id,
+          variableObj
+        );
+        if (userUnit) {
+          preferredUnit = userUnit;
+        }
+      } catch (error) {
+        console.warn(
+          `Failed to get user preferred unit for variable ${variableObj.id}:`,
+          error
+        );
+      }
+
+      logDataArray.push({
+        user_id: user.id,
+        variable_id: variableObj.id,
+        value: variable.value.trim(),
+        display_unit: preferredUnit,
+        notes: variable.notes.trim() || null,
+        created_at: localDateString,
+        date: localDateString,
+        source: ["manual"],
+      });
+    }
 
     if (logDataArray.length === 0) return;
 
@@ -2247,6 +2320,52 @@ export default function ManualTrackPage() {
             />
           )}
         </Box>
+
+        {/* Unit Selector - only show when variable is selected */}
+        {selectedVariable && (
+          <Box sx={{ mb: { xs: 2, sm: 3 } }}>
+            <Typography
+              variant="subtitle2"
+              gutterBottom
+              sx={{
+                fontSize: { xs: "0.9rem", sm: "0.875rem" },
+                display: "flex",
+                alignItems: "center",
+                gap: 1,
+              }}
+            >
+              Unit
+              {displayUnitLoading && (
+                <Typography variant="caption" color="textSecondary">
+                  (Loading your preference...)
+                </Typography>
+              )}
+            </Typography>
+            <VariableUnitSelector
+              variableId={selectedVariable.id}
+              userId={user?.id || ""}
+              currentUnit={selectedUnit}
+              onUnitChange={async (unitId, unitGroup) => {
+                setSelectedUnit(unitId);
+                // The unit selector automatically saves the preference,
+                // but we can optionally refresh our hook
+                await refetchDisplayUnit();
+              }}
+              disabled={displayUnitLoading}
+              label="Select unit"
+              size={isMobile ? "small" : "medium"}
+            />
+            {selectedUnit && (
+              <Typography
+                variant="caption"
+                color="textSecondary"
+                sx={{ mt: 0.5, display: "block" }}
+              >
+                Your preference is saved for future logging
+              </Typography>
+            )}
+          </Box>
+        )}
 
         {/* Notes */}
         <Box sx={{ mb: { xs: 2, sm: 3 } }}>

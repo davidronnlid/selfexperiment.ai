@@ -745,9 +745,6 @@ export default function VariableDataPointsPage() {
               </Typography>
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-                Display Unit:
-              </Typography>
               <Box sx={{ maxWidth: 300 }}>
                 <VariableUnitSelector
                   variableId={variableInfo.id}
@@ -760,16 +757,10 @@ export default function VariableDataPointsPage() {
                     await refetchDisplayUnit();
                   }}
                   disabled={displayUnitLoading}
-                  label="Preferred Unit"
+                  label="Default Unit"
                   size="small"
                 />
               </Box>
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <Typography variant="body2" color="textSecondary">
-                Total Data Points:
-              </Typography>
-              <Typography variant="body1">{dataPoints.length}</Typography>
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
               <Typography variant="body2" color="textSecondary">
@@ -808,7 +799,16 @@ export default function VariableDataPointsPage() {
               mb: 2,
             }}
           >
-            <Typography variant="h6">Recent Data Points</Typography>
+            <Box>
+              <Typography variant="h6">All Your Data Points</Typography>
+              <Typography
+                variant="body2"
+                color="textSecondary"
+                sx={{ mt: 0.5 }}
+              >
+                Total Data Points: {dataPoints.length}
+              </Typography>
+            </Box>
             <Alert severity="info" sx={{ py: 0, px: 2 }}>
               Click the edit/delete icons to modify your data points
             </Alert>

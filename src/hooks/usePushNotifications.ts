@@ -43,6 +43,28 @@ export function usePushNotifications(userId: string): PushNotificationHook {
     }
   }, [userId]);
 
+  // Periodic permission check to keep state in sync
+  useEffect(() => {
+    const checkPermissionPeriodically = () => {
+      if ('Notification' in window) {
+        const currentPermission = Notification.permission === 'granted';
+        if (currentPermission !== hasPermission) {
+          setHasPermission(currentPermission);
+          // Clear permission error if now granted
+          if (currentPermission && error === 'Notification permission not granted') {
+            setError(null);
+          }
+        }
+      }
+    };
+
+    // Check immediately and then every 5 seconds
+    checkPermissionPeriodically();
+    const interval = setInterval(checkPermissionPeriodically, 5000);
+
+    return () => clearInterval(interval);
+  }, [hasPermission, error]);
+
   const checkSupport = useCallback(() => {
     const supported = 
       'serviceWorker' in navigator &&
@@ -113,13 +135,28 @@ export function usePushNotifications(userId: string): PushNotificationHook {
   }, [isSupported]);
 
   const subscribeToPush = useCallback(async (): Promise<boolean> => {
+    // Always check current permission status, not stale state
+    const currentPermission = 'Notification' in window ? Notification.permission : 'not-available';
+    const currentHasPermission = currentPermission === 'granted';
+    
     console.log('[DEBUG] Subscribe attempt:', {
       isSupported,
       hasPermission,
-      notificationPermission: 'Notification' in window ? Notification.permission : 'not-available'
+      currentPermission,
+      currentHasPermission,
+      notificationPermission: currentPermission
     });
 
-    if (!isSupported || !hasPermission) {
+    // Update state with current permission if it changed
+    if (currentHasPermission !== hasPermission) {
+      setHasPermission(currentHasPermission);
+      // Clear error if permission is now granted
+      if (currentHasPermission && error === 'Notification permission not granted') {
+        setError(null);
+      }
+    }
+
+    if (!isSupported || !currentHasPermission) {
       const detailedError = !isSupported 
         ? 'Push notifications are not supported in this browser/mode'
         : 'Notification permission not granted';
