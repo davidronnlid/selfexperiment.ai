@@ -73,6 +73,7 @@ interface DataPointEntry {
   created_at?: string;
   user_id?: string;
   variable_id?: string;
+  display_unit?: string;
 }
 
 interface VariableInfo {
@@ -122,6 +123,7 @@ export default function VariableDataPointsPage() {
   const [editingLogId, setEditingLogId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const [editUnit, setEditUnit] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [showSuccess, setShowSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -201,7 +203,7 @@ export default function VariableDataPointsPage() {
         // Regular variable - fetch from data_points table
         const { data: uuidLogs, error: uuidError } = await supabase
           .from("data_points")
-          .select("id, created_at, date, variable_id, value, notes, user_id")
+          .select("id, created_at, date, variable_id, value, notes, user_id, display_unit")
           .eq("user_id", user.id)
           .eq("variable_id", variableInfo.id)
           .order("created_at", { ascending: false })
@@ -217,6 +219,7 @@ export default function VariableDataPointsPage() {
             created_at: log.created_at,
             user_id: log.user_id,
             variable_id: log.variable_id,
+            display_unit: log.display_unit,
           }));
         }
       }
@@ -480,12 +483,15 @@ export default function VariableDataPointsPage() {
     setEditingLogId(dataPoint.id);
     setEditValue(dataPoint.value);
     setEditNotes(dataPoint.notes || "");
+    // Use the data point's display unit, or fall back to the user's preferred unit
+    setEditUnit(dataPoint.display_unit || displayUnit || "");
   };
 
   const cancelEdit = () => {
     setEditingLogId(null);
     setEditValue("");
     setEditNotes("");
+    setEditUnit("");
   };
 
   const updateLog = async (logId: number) => {
@@ -503,7 +509,11 @@ export default function VariableDataPointsPage() {
         // Regular variable - update data_points table
         const { error: dataPointsError } = await supabase
           .from("data_points")
-          .update({ value: editValue, notes: editNotes })
+          .update({ 
+            value: editValue, 
+            notes: editNotes,
+            display_unit: editUnit 
+          })
           .eq("id", logId);
         error = dataPointsError;
       }
@@ -512,6 +522,7 @@ export default function VariableDataPointsPage() {
         setEditingLogId(null);
         setEditValue("");
         setEditNotes("");
+        setEditUnit("");
         await fetchDataPoints();
         setSuccessMessage("Data point updated successfully!");
         setShowSuccess(true);
@@ -711,21 +722,19 @@ export default function VariableDataPointsPage() {
         >
           Back
         </Button>
-        <Typography
-          variant="h3"
-          component="h1"
-          sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}
-        >
-          <span>{variableInfo?.icon || "📊"}</span>
-          {variableInfo?.label || variableName}
-        </Typography>
       </Box>
 
       {/* Variable Information Card */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Variable Information
+          <Typography 
+            variant="h4" 
+            component="h1"
+            sx={{ display: "flex", alignItems: "center", gap: 1, mb: 3 }}
+            gutterBottom
+          >
+            <span>{variableInfo?.icon || "📊"}</span>
+            {variableInfo?.label || variableName}
           </Typography>
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, sm: 6 }}>
@@ -810,7 +819,7 @@ export default function VariableDataPointsPage() {
               </Typography>
             </Box>
             <Alert severity="info" sx={{ py: 0, px: 2 }}>
-              Click the edit/delete icons to modify your data points
+              💡 Click the edit/delete icons to modify your data points. Both value and unit can be edited.
             </Alert>
           </Box>
           {dataPoints.length === 0 ? (
@@ -823,10 +832,10 @@ export default function VariableDataPointsPage() {
               <Table>
                 <TableHead>
                   <TableRow>
-                    <TableCell>Date</TableCell>
-                    <TableCell>Value</TableCell>
-                    <TableCell>Notes</TableCell>
-                    <TableCell>Actions</TableCell>
+                    <TableCell sx={{ width: "20%" }}>Date</TableCell>
+                    <TableCell sx={{ width: "35%" }}>Value & Unit</TableCell>
+                    <TableCell sx={{ width: "30%" }}>Notes</TableCell>
+                    <TableCell sx={{ width: "15%" }}>Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -838,12 +847,27 @@ export default function VariableDataPointsPage() {
                       <TableCell>{formatDate(dataPoint.date)}</TableCell>
                       <TableCell>
                         {editingLogId === dataPoint.id ? (
-                          <TextField
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            size="small"
-                            fullWidth
-                          />
+                          <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start", minWidth: 250 }}>
+                            <TextField
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              size="small"
+                              label="Value"
+                              sx={{ flex: 2, minWidth: 100 }}
+                            />
+                            <Box sx={{ flex: 1, minWidth: 120 }}>
+                              <VariableUnitSelector
+                                variableId={variableInfo.id}
+                                userId={user?.id || ""}
+                                currentUnit={editUnit}
+                                onUnitChange={(unitId, unitGroup) => {
+                                  setEditUnit(unitId);
+                                }}
+                                label="Unit"
+                                size="small"
+                              />
+                            </Box>
+                          </Box>
                         ) : (
                           <Box
                             sx={{
@@ -852,7 +876,16 @@ export default function VariableDataPointsPage() {
                               gap: 1,
                             }}
                           >
-                            {dataPoint.value}
+                            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                              <Typography variant="body2" fontWeight="medium">
+                                {dataPoint.value}
+                              </Typography>
+                              {dataPoint.display_unit && (
+                                <Typography variant="body2" color="text.secondary">
+                                  {dataPoint.display_unit}
+                                </Typography>
+                              )}
+                            </Box>
                             {variableInfo?.source_type === "oura" && (
                               <Chip
                                 label="Oura"

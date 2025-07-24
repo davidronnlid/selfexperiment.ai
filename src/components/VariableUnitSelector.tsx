@@ -9,6 +9,7 @@ import {
   Typography,
   Chip,
   SelectChangeEvent,
+  Tooltip,
 } from "@mui/material";
 import { supabase } from "@/utils/supaBase";
 
@@ -162,7 +163,16 @@ export default function VariableUnitSelector({
   };
 
   const getUnitDisplayText = (unit: Unit) => {
-    return `${unit.label} (${unit.symbol})${unit.is_base ? " - Base" : ""}`;
+    return `${unit.label} (${unit.symbol})`;
+  };
+
+  const getUnitTooltip = (unit: Unit) => {
+    const parts = [];
+    if (unit.is_base) {
+      parts.push("Base unit for this measurement type");
+    }
+    parts.push(`Unit group: ${formatUnitGroupName(unit.unit_group)}`);
+    return parts.join(" • ");
   };
 
   if (loading) {
@@ -190,8 +200,62 @@ export default function VariableUnitSelector({
 
   return (
     <FormControl size={size} disabled={disabled} fullWidth>
-      <InputLabel>{label}</InputLabel>
-      <Select value={selectedUnit} label={label} onChange={handleUnitChange}>
+      <InputLabel sx={{ color: 'white' }}>{label}</InputLabel>
+      <Select 
+        value={selectedUnit} 
+        label={label} 
+        onChange={handleUnitChange}
+        MenuProps={{
+          PaperProps: {
+            sx: {
+              bgcolor: 'background.paper',
+              '& .MuiMenuItem-root': {
+                color: 'text.primary',
+                '&:hover': {
+                  backgroundColor: 'action.hover',
+                },
+                '&.Mui-selected': {
+                  backgroundColor: 'action.selected',
+                  '&:hover': {
+                    backgroundColor: 'action.selected',
+                  },
+                },
+                '&.Mui-disabled': {
+                  color: 'text.secondary',
+                  fontWeight: 'bold',
+                },
+              },
+            },
+          },
+        }}
+        sx={{
+          '& .MuiSelect-select': {
+            color: 'white !important',
+          },
+          '& .MuiInputBase-input': {
+            color: 'white !important',
+          },
+          '& .MuiSelect-nativeInput': {
+            color: 'white !important',
+          },
+          '& .MuiOutlinedInput-input': {
+            color: 'white !important',
+          },
+          '& .MuiOutlinedInput-notchedOutline': {
+            borderColor: 'rgba(255, 255, 255, 0.23)',
+          },
+          '&:hover .MuiOutlinedInput-notchedOutline': {
+            borderColor: 'rgba(255, 255, 255, 0.4)',
+          },
+          '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+            borderColor: '#ffd700',
+          },
+          '& .MuiSvgIcon-root': {
+            color: 'white !important',
+          },
+          color: 'white !important',
+        }}
+      >
         {unitGroups.map((groupName) => {
           const units = groupedUnits[groupName];
           const isDefaultGroup = units.some((u) => u.is_default_group);
@@ -217,18 +281,16 @@ export default function VariableUnitSelector({
             </MenuItem>,
             // Units in this group
             ...units.map((unit) => (
-              <MenuItem key={unit.unit_id} value={unit.unit_id} sx={{ pl: 3 }}>
-                {getUnitDisplayText(unit)}
-              </MenuItem>
+              <Tooltip key={unit.unit_id} title={getUnitTooltip(unit)} placement="right">
+                <MenuItem value={unit.unit_id} sx={{ pl: 3 }}>
+                  {getUnitDisplayText(unit)}
+                </MenuItem>
+              </Tooltip>
             )),
           ];
         })}
       </Select>
-      {unitGroups.length > 1 && (
-        <FormHelperText>
-          This variable supports {unitGroups.join(" and ")} measurements
-        </FormHelperText>
-      )}
+
     </FormControl>
   );
 }

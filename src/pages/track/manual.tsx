@@ -45,7 +45,7 @@ import {
 import { useUser } from "../_app";
 import SearchIcon from "@mui/icons-material/Search";
 import "react-datepicker/dist/react-datepicker.css";
-import { LinearProgress } from "@mui/material";
+import { LinearProgress, CircularProgress } from "@mui/material";
 import { LOG_LABELS, validateValue } from "@/utils/logLabels";
 import {
   validateVariableValue as validateWithConstraints,
@@ -55,6 +55,7 @@ import {
 import { useTheme } from "@mui/material/styles";
 import { useMediaQuery } from "@mui/material";
 import { useRouter } from "next/router";
+import { uploadNotesImage, deleteNotesImage, compressImage, type UploadedImage, type ImageUploadProgress } from "@/utils/imageUpload";
 import {
   Collapse,
   Card,
@@ -191,6 +192,12 @@ export default function ManualTrackPage() {
     useState<string>("");
   const [editingIsValid, setEditingIsValid] = useState<boolean>(true);
 
+  // Notes and image upload state
+  const [notesImages, setNotesImages] = useState<{id?: number, file?: File, url: string, uploading?: boolean, error?: string, name: string}[]>([]);
+  const [notesCharCount, setNotesCharCount] = useState(0);
+  const [notesFocused, setNotesFocused] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState<Set<string>>(new Set());
+
   // New variable creation state
   const [showVariableCreationDialog, setShowVariableCreationDialog] =
     useState(false);
@@ -204,6 +211,9 @@ export default function ManualTrackPage() {
 
   // Unit selection state
   const [selectedUnit, setSelectedUnit] = useState<string>("");
+  
+  // Track variables from landing page correlation intent
+  const [nextVariableToSelect, setNextVariableToSelect] = useState<string | null>(null);
 
   // Get user's preferred display unit for the selected variable
   const {
@@ -224,6 +234,11 @@ export default function ManualTrackPage() {
       setSelectedUnit("");
     }
   }, [displayUnit, selectedVariable]);
+
+  // Initialize character count
+  useEffect(() => {
+    setNotesCharCount(notes.length);
+  }, [notes]);
 
   const [routineSnackbar, setRoutineSnackbar] = useState<{
     open: boolean;
@@ -413,6 +428,89 @@ export default function ManualTrackPage() {
       }
     })();
   }, [user]);
+
+  // Handle variable pre-selection from landing page correlation intent
+  useEffect(() => {
+    if (variables.length > 0 && router.isReady) {
+      const { var1, var2 } = router.query;
+      
+      // First try URL parameters (from auth redirect)
+      if (var1) {
+        const firstVar = variables.find(v => v.label === var1);
+        if (firstVar) {
+          setSelectedVariable(firstVar);
+          console.log('Pre-selected variable 1 from URL:', firstVar.label);
+          
+          if (var2) {
+            setNextVariableToSelect(var2 as string);
+            console.log('Will select variable 2 after logging:', var2);
+          }
+          
+          // Clear the query parameters to clean up the URL
+          const { var1: _, var2: __, ...cleanQuery } = router.query;
+          router.replace({
+            pathname: router.pathname,
+            query: cleanQuery
+          }, undefined, { shallow: true });
+          
+          // Clear localStorage after using it
+          localStorage.removeItem('correlationIntent');
+          return;
+        }
+      }
+      
+      // Fallback to localStorage (for page refreshes or direct navigation)
+      try {
+        const storedIntent = localStorage.getItem('correlationIntent');
+        if (storedIntent) {
+          const intent = JSON.parse(storedIntent);
+          const now = Date.now();
+          const maxAge = 30 * 60 * 1000; // 30 minutes
+          
+          // Check if the intent is still fresh
+          if (intent.timestamp && (now - intent.timestamp) < maxAge) {
+            const firstVar = variables.find(v => v.label === intent.variable1);
+            if (firstVar) {
+              setSelectedVariable(firstVar);
+              console.log('Pre-selected variable 1 from localStorage:', firstVar.label);
+              
+              if (intent.variable2) {
+                setNextVariableToSelect(intent.variable2);
+                console.log('Will select variable 2 after logging:', intent.variable2);
+              }
+              
+              // Clear localStorage after using it
+              localStorage.removeItem('correlationIntent');
+            }
+          } else {
+            // Clear expired intent
+            localStorage.removeItem('correlationIntent');
+          }
+        }
+      } catch (error) {
+        console.error('Error reading correlation intent from localStorage:', error);
+        localStorage.removeItem('correlationIntent');
+      }
+    }
+  }, [variables, router]);
+
+  // Handle auto-selection when variables are loaded after nextVariableToSelect is set
+  useEffect(() => {
+    if (nextVariableToSelect && variables.length > 0) {
+      const nextVar = variables.find(v => v.label === nextVariableToSelect);
+      if (nextVar) {
+        setSelectedVariable(nextVar);
+        console.log('Auto-selected next variable after variables loaded:', nextVar.label);
+        
+        // Show a success message to prompt the user
+        setSuccessMessage(`Great! Now let's log data for ${nextVar.label}`);
+        setShowSuccess(true);
+        
+        // Clear the next variable so it only happens once
+        setNextVariableToSelect(null);
+      }
+    }
+  }, [nextVariableToSelect, variables]);
 
   // Helper function to get variable name from variable_id
   const getVariableNameFromLog = (log: DataPointEntry): string => {
@@ -801,11 +899,52 @@ export default function ManualTrackPage() {
       );
       setShowSuccess(true);
 
+      // Associate uploaded images with the new data point
+      const uploadedImageIds = notesImages
+        .filter(img => img.id && !img.uploading)
+        .map(img => img.id!)
+        .filter(id => id !== undefined);
+
+      if (uploadedImageIds.length > 0 && data[0]) {
+        try {
+          const { associateImagesWithDataPoint } = await import("@/utils/imageUpload");
+          await associateImagesWithDataPoint(uploadedImageIds, data[0].id, user.id);
+        } catch (error) {
+          console.error('Failed to associate images with data point:', error);
+          // Don't fail the whole submission if image association fails
+        }
+      }
+
       // Reset form
       setSelectedVariable(null);
       setValue("");
       setNotes("");
+      setNotesImages([]);
       setSelectedUnit("");
+
+      // Auto-select next variable if we have one from correlation intent
+      console.log('Checking for next variable to select:', nextVariableToSelect);
+      console.log('Variables loaded:', variables.length);
+      if (nextVariableToSelect && variables.length > 0) {
+        const nextVar = variables.find(v => v.label === nextVariableToSelect);
+        console.log('Found next variable:', nextVar);
+        if (nextVar) {
+          setSelectedVariable(nextVar);
+          console.log('Auto-selected next variable:', nextVar.label);
+          
+          // Show a success message to prompt the user
+          setSuccessMessage(`Great! Now let's log data for ${nextVar.label}`);
+          setShowSuccess(true);
+          
+          // Clear the next variable so it only happens once
+          setNextVariableToSelect(null);
+        } else {
+          console.log('Next variable not found in variables list:', nextVariableToSelect);
+          console.log('Available variables:', variables.map(v => v.label));
+        }
+      } else if (nextVariableToSelect && variables.length === 0) {
+        console.log('Variables not loaded yet, will retry auto-selection later');
+      }
 
       // Refresh logs
       await fetchLogs(selectedViewDate);
@@ -2009,18 +2148,7 @@ export default function ManualTrackPage() {
 
       {/* Manual Tracking Form */}
       <Paper elevation={3} sx={{ p: { xs: 3, sm: 4 }, mb: { xs: 4, sm: 5 } }}>
-        <Typography
-          variant="h6"
-          gutterBottom
-          sx={{
-            fontSize: { xs: "1.1rem", sm: "1.25rem" },
-            mb: { xs: 2, sm: 3 },
-          }}
-        >
-          {experimentsNeedingLogs.length > 0
-            ? "Log Any Other Variables"
-            : "What are you tracking today?"}
-        </Typography>
+
 
         {experimentsNeedingLogs.length > 0 && (
           <Alert severity="info" sx={{ mb: { xs: 3, sm: 4 } }}>
@@ -2045,6 +2173,8 @@ export default function ManualTrackPage() {
             value={selectedVariable}
             onChange={handleVariableChange}
             freeSolo
+            clearOnEscape
+            disableClearable={false}
             renderInput={(params) => (
               <TextField
                 {...params}
@@ -2058,6 +2188,28 @@ export default function ManualTrackPage() {
                     <InputAdornment position="start">
                       <SearchIcon />
                     </InputAdornment>
+                  ),
+                  endAdornment: (
+                    <Box sx={{ display: "flex", alignItems: "center" }}>
+                      {selectedVariable && (
+                        <IconButton
+                          component={Link}
+                          href={`/variable/${selectedVariable.slug}`}
+                          size="small"
+                          sx={{
+                            color: "primary.main",
+                            mr: 0.5,
+                            "&:hover": {
+                              backgroundColor: "rgba(25, 118, 210, 0.08)",
+                            },
+                          }}
+                          title="View analytics & details for this variable"
+                        >
+                          📊
+                        </IconButton>
+                      )}
+                      {params.InputProps.endAdornment}
+                    </Box>
                   ),
                 }}
               />
@@ -2084,54 +2236,66 @@ export default function ManualTrackPage() {
           />
         </Box>
 
-        {/* Selected Variable - Simple Display */}
+        {/* Compact Input Row */}
         {selectedVariable && (
           <Box sx={{ mb: 2 }}>
-            <Alert severity="info">
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                <span>{selectedVariable.icon || "📝"}</span>
-                <Typography variant="body2" fontWeight="medium">
-                  {selectedVariable.label}
-                </Typography>
+            {/* Input & Unit Row */}
+            <Box 
+              sx={{ 
+                display: "flex", 
+                gap: 1.5,
+                alignItems: "flex-start",
+                flexDirection: { xs: "column", sm: "row" }
+              }}
+            >
+              {/* Value Input - Takes most space */}
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <ValidatedVariableInput
+                  variable={selectedVariable as ValidationVariable}
+                  value={value}
+                  onChange={setValue}
+                  selectedUnit={selectedUnit}
+                  fullWidth
+                  showConstraints={false}
+                  size={isMobile ? "small" : "medium"}
+                />
               </Box>
-              {selectedVariable.description && (
-                <Typography variant="caption" color="text.secondary">
-                  {selectedVariable.description}
-                </Typography>
-              )}
-            </Alert>
+
+              {/* Unit Selector - Compact */}
+              <Box sx={{ width: { xs: "100%", sm: "160px" } }}>
+                <VariableUnitSelector
+                  variableId={selectedVariable.id}
+                  userId={user?.id || ""}
+                  currentUnit={selectedUnit}
+                  onUnitChange={async (unitId, unitGroup) => {
+                    setSelectedUnit(unitId);
+                    await refetchDisplayUnit();
+                  }}
+                  disabled={displayUnitLoading}
+                  label="Unit"
+                  size={isMobile ? "small" : "medium"}
+                />
+                {selectedUnit && (
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ mt: 0.25, display: "block", fontSize: "0.7rem" }}
+                  >
+                    Saved for future use
+                  </Typography>
+                )}
+              </Box>
+
+
+            </Box>
+
+
           </Box>
         )}
 
-        {/* Validation Rules */}
-        {selectedVariable &&
-          (() => {
-            const constraintText = getConstraintsText(
-              selectedVariable as ValidationVariable
-            );
-            if (constraintText) {
-              return (
-                <Alert severity="warning" sx={{ mb: 2 }}>
-                  <Typography variant="body2">
-                    <strong>Validation:</strong> {constraintText}
-                  </Typography>
-                </Alert>
-              );
-            }
-            return null;
-          })()}
-
-        {/* Value Input */}
-        <Box sx={{ mb: 2 }}>
-          {selectedVariable ? (
-            <ValidatedVariableInput
-              variable={selectedVariable as ValidationVariable}
-              value={value}
-              onChange={setValue}
-              fullWidth
-              showConstraints={false}
-            />
-          ) : (
+        {/* Fallback for no variable selected */}
+        {!selectedVariable && (
+          <Box sx={{ mb: 2 }}>
             <TextField
               label="Value"
               value={value}
@@ -2140,34 +2304,8 @@ export default function ManualTrackPage() {
               variant="outlined"
               fullWidth
               disabled
+              size={isMobile ? "small" : "medium"}
             />
-          )}
-        </Box>
-
-        {/* Unit Selector */}
-        {selectedVariable && (
-          <Box sx={{ mb: 2 }}>
-            <VariableUnitSelector
-              variableId={selectedVariable.id}
-              userId={user?.id || ""}
-              currentUnit={selectedUnit}
-              onUnitChange={async (unitId, unitGroup) => {
-                setSelectedUnit(unitId);
-                await refetchDisplayUnit();
-              }}
-              disabled={displayUnitLoading}
-              label="Unit"
-              size="medium"
-            />
-            {selectedUnit && (
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ mt: 0.5, display: "block" }}
-              >
-                Preference saved for future logging
-              </Typography>
-            )}
           </Box>
         )}
 
@@ -2177,12 +2315,210 @@ export default function ManualTrackPage() {
             label="Notes (Optional)"
             fullWidth
             multiline
-            rows={2}
+            minRows={1}
+            maxRows={8}
             value={notes}
-            onChange={(e) => setNotes(e.target.value)}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              if (newValue.length <= 1000) {
+                setNotes(newValue);
+                setNotesCharCount(newValue.length);
+              }
+            }}
+            onFocus={() => setNotesFocused(true)}
+            onBlur={() => {
+              // Keep focused state if there are images or text
+              if (notes.trim() === "" && notesImages.length === 0) {
+                setNotesFocused(false);
+              }
+            }}
             placeholder="Add context or notes..."
             variant="outlined"
+            inputProps={{
+              maxLength: 1000,
+            }}
+            helperText={`${notesCharCount}/1000 characters`}
+            sx={{
+              "& .MuiFormHelperText-root": {
+                color: notesCharCount > 900 ? "warning.main" : "text.secondary",
+              },
+            }}
           />
+          
+          {/* Image Upload - Only show when notes is focused or has content/images */}
+          {(notesFocused || notes.trim() !== "" || notesImages.length > 0) && (
+            <Box sx={{ mt: 1 }}>
+              <input
+                accept="image/*"
+                style={{ display: "none" }}
+                id="notes-image-upload"
+                multiple
+                type="file"
+                onChange={async (e) => {
+                  const files = Array.from(e.target.files || []);
+                  if (!user) return;
+
+                  for (const file of files) {
+                    const tempId = `temp-${Date.now()}-${Math.random()}`;
+                    
+                    // Add to UI immediately with loading state
+                    setNotesImages(prev => [...prev, {
+                      id: undefined,
+                      file,
+                      url: URL.createObjectURL(file),
+                      uploading: true,
+                      name: file.name
+                    }]);
+
+                    try {
+                      // Compress image if it's large
+                      const compressedFile = await compressImage(file);
+                      
+                      // Upload to Supabase (without data point ID for now)
+                      const uploadedImage = await uploadNotesImage(
+                        compressedFile,
+                        user.id,
+                        undefined, // Will associate with data point when form is submitted
+                        (progress) => {
+                          // Could add progress UI here if desired
+                          console.log(`Upload progress: ${progress.progress}%`);
+                        }
+                      );
+
+                      // Update the image entry with uploaded data
+                      setNotesImages(prev => prev.map(img => 
+                        img.file === file 
+                          ? { ...img, id: uploadedImage.id, uploading: false, url: uploadedImage.imageUrl }
+                          : img
+                      ));
+
+                    } catch (error) {
+                      console.error('Upload failed:', error);
+                      // Update with error state
+                      setNotesImages(prev => prev.map(img => 
+                        img.file === file 
+                          ? { ...img, uploading: false, error: error instanceof Error ? error.message : 'Upload failed' }
+                          : img
+                      ));
+                    }
+                  }
+                  
+                  // Clear the input
+                  e.target.value = '';
+                }}
+              />
+              <label htmlFor="notes-image-upload">
+                <Button
+                  component="span"
+                  variant="outlined"
+                  size="small"
+                  startIcon={<span>📷</span>}
+                  sx={{ mr: 1, mb: 1 }}
+                  disabled={!user}
+                >
+                  Add Images
+                </Button>
+              </label>
+              
+              {/* Display uploaded images */}
+              {notesImages.length > 0 && (
+                <Box sx={{ mt: 1, display: "flex", flexWrap: "wrap", gap: 1 }}>
+                  {notesImages.map((image, index) => (
+                    <Box
+                      key={image.id || index}
+                      sx={{
+                        position: "relative",
+                        width: 80,
+                        height: 80,
+                        borderRadius: 1,
+                        overflow: "hidden",
+                        border: "1px solid",
+                        borderColor: image.error ? "error.main" : "divider",
+                      }}
+                    >
+                      <img
+                        src={image.url}
+                        alt={`Upload ${index + 1}`}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                          opacity: image.uploading ? 0.5 : 1,
+                        }}
+                      />
+                      
+                      {/* Upload progress overlay */}
+                      {image.uploading && (
+                        <Box
+                          sx={{
+                            position: "absolute",
+                            inset: 0,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            backgroundColor: "rgba(0,0,0,0.3)",
+                          }}
+                        >
+                          <CircularProgress size={16} sx={{ color: "white" }} />
+                        </Box>
+                      )}
+
+                      {/* Error overlay */}
+                      {image.error && (
+                        <Box
+                          sx={{
+                            position: "absolute",
+                            inset: 0,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            backgroundColor: "rgba(255,0,0,0.2)",
+                          }}
+                        >
+                          <Typography variant="caption" sx={{ color: "white", fontSize: "10px" }}>
+                            Error
+                          </Typography>
+                        </Box>
+                      )}
+                      
+                      {/* Delete button */}
+                      {!image.uploading && (
+                        <IconButton
+                          size="small"
+                          onClick={async () => {
+                            if (image.id && user) {
+                              try {
+                                await deleteNotesImage(image.id, user.id);
+                              } catch (error) {
+                                console.error('Delete failed:', error);
+                              }
+                            }
+                            // Remove from UI
+                            setNotesImages(prev => prev.filter((_, i) => i !== index));
+                          }}
+                          sx={{
+                            position: "absolute",
+                            top: 2,
+                            right: 2,
+                            backgroundColor: "rgba(0,0,0,0.5)",
+                            color: "white",
+                            width: 20,
+                            height: 20,
+                            fontSize: "12px",
+                            "&:hover": {
+                              backgroundColor: "rgba(0,0,0,0.7)",
+                            },
+                          }}
+                        >
+                          ×
+                        </IconButton>
+                      )}
+                    </Box>
+                  ))}
+                </Box>
+              )}
+            </Box>
+          )}
         </Box>
 
         {/* Date and Time */}
@@ -2212,17 +2548,21 @@ export default function ManualTrackPage() {
           </Alert>
         )}
 
-        {/* Submit Button */}
-        <Button
-          onClick={submitLog}
-          disabled={submitting || !selectedVariable || !value.trim()}
-          variant="contained"
-          fullWidth
-          size="large"
-          sx={{ py: 1.5 }}
-        >
-          {submitting ? "Saving..." : "Save Log"}
-        </Button>
+        {/* Submit Button & Navigation */}
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          <Button
+            onClick={submitLog}
+            disabled={submitting || !selectedVariable || !value.trim()}
+            variant="contained"
+            fullWidth
+            size="large"
+            sx={{ py: 1.5 }}
+          >
+            {submitting ? "Saving..." : "Save Data Point"}
+          </Button>
+          
+          
+        </Box>
       </Paper>
 
       {/* Today's Logs */}
@@ -2256,7 +2596,7 @@ export default function ManualTrackPage() {
                 mb: 2,
               }}
             >
-              📊 Data Points
+              📊 Tracked data points
             </Typography>
 
             {/* Date Navigation */}
@@ -2864,12 +3204,6 @@ export default function ManualTrackPage() {
                                       </>
                                     )}
                                   </Box>
-                                )}
-                                {log._source !== "planned" && (
-                                  <VariableNameLink
-                                    log={log}
-                                    variables={variables}
-                                  />
                                 )}
                               </Box>
                               {log._source === "manual" && (

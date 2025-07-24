@@ -44,6 +44,7 @@ import {
 } from "@mui/icons-material";
 import ChartSelection from "./ChartSelection";
 import { useRouter } from "next/router";
+import VariableLabel from "./VariableLabel";
 
 // Register Chart.js components
 ChartJS.register(
@@ -1343,9 +1344,10 @@ export default function ComprehensiveHealthDashboard({
                       <Box sx={{ display: "flex", alignItems: "center" }}>
                         {getVariableIcon(variable)}
                         <Box sx={{ ml: 1 }}>
-                          <Typography
+                          <VariableLabel
+                            variableLabel={getVariableLabel(variable)}
+                            variableSlug={variableSlugs[variable]}
                             variant="subtitle1"
-                            onClick={() => handleVariableLabelClick(variable)}
                             sx={{
                               cursor: "pointer",
                               "&:hover": {
@@ -1353,9 +1355,7 @@ export default function ComprehensiveHealthDashboard({
                                 color: "primary.main",
                               },
                             }}
-                          >
-                            {getVariableLabel(variable)}
-                          </Typography>
+                          />
                           <Typography variant="body2" color="textSecondary">
                             Latest: {formatValue(variable, stats.latest)}
                           </Typography>

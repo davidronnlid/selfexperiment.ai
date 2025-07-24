@@ -34,6 +34,7 @@ import { format } from "date-fns";
 import { generatePlannedRoutineLogs } from "@/utils/batchRoutineLogging";
 import { PlannedRoutineLog } from "@/utils/batchRoutineLogging";
 import BatchRoutineLoggingModal from "./BatchRoutineLoggingModal";
+import VariableUnitSelector from "./VariableUnitSelector";
 
 const weekdays = [
   { value: 1, label: "Monday" },
@@ -49,6 +50,21 @@ const timeString = (time: string): string => {
   if (!time) return "";
   const [hours, minutes] = time.split(":");
   return `${hours.padStart(2, "0")}:${minutes.padStart(2, "0")}`;
+};
+
+const formatDefaultValue = (value: any, unit: string, variableInfo: any): string => {
+  if (!value) return "Not set";
+  
+  const valueStr = String(value);
+  
+  // Special formatting for score units
+  if (unit === "score" || variableInfo?.default_display_unit === "score" || 
+      variableInfo?.label?.toLowerCase().includes("score")) {
+    return unit ? `Score ${valueStr}` : `Score ${valueStr}`;
+  }
+  
+  // Regular formatting
+  return unit ? `${valueStr} ${unit}` : valueStr;
 };
 
 const getCurrentTimeString = (): string => {
@@ -91,11 +107,13 @@ export default function RoutineManager() {
   });
   const [plannedLogs, setPlannedLogs] = useState<PlannedRoutineLog[]>([]);
   const [batchLoading, setBatchLoading] = useState(false);
+  const [batchSuccessMessage, setBatchSuccessMessage] = useState<string | null>(null);
 
   // Batch tracking filters
   const [selectedRoutineIds, setSelectedRoutineIds] = useState<string[]>([]);
   const [selectedVariableIds, setSelectedVariableIds] = useState<string[]>([]);
   const [selectedTimeIds, setSelectedTimeIds] = useState<string[]>([]);
+  const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([]);
 
   // Load all routines
   async function loadRoutines() {
@@ -103,11 +121,14 @@ export default function RoutineManager() {
     setLoading(true);
 
     try {
+      console.log("Loading routines for user:", user.id);
+      
       // First, get all routines for the user
       const { data: routinesData, error: routinesError } = await supabase
         .from("routines")
         .select("*")
-        .eq("user_id", user.id);
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
 
       if (routinesError) {
         console.error("Error loading routines:", routinesError);
@@ -116,35 +137,82 @@ export default function RoutineManager() {
         return;
       }
 
-      // Then, get all routine_variables for these routines
-      const routineIds = routinesData?.map((r) => r.id) || [];
+      console.log("Found routines:", routinesData?.length || 0, routinesData);
 
+      if (!routinesData || routinesData.length === 0) {
+        setRoutines([]);
+        setLoading(false);
+        return;
+      }
+
+      // Then, get all routine_variables for these routines
+      const routineIds = routinesData.map((r) => r.id);
+      console.log("Looking for routine variables for routine IDs:", routineIds);
+
+      // First try without the join to see if basic data loads
       const { data: variablesData, error: variablesError } = await supabase
         .from("routine_variables")
-        .select(
-          `
-          *,
-          variables (
-            id,
-            label,
-            slug,
-            canonical_unit
-          )
-        `
-        )
+        .select("*")
         .in("routine_id", routineIds);
+
+      // If that works, get the variable info separately
+      let variableInfoMap: Record<string, any> = {};
+      if (variablesData && variablesData.length > 0) {
+        const variableIds = [...new Set(variablesData.map((rv: any) => rv.variable_id))];
+        const { data: variableInfos, error: varInfoError } = await supabase
+          .from("variables")
+          .select("id, label, slug, default_display_unit, data_type")
+          .in("id", variableIds);
+        
+        if (varInfoError) {
+          console.error("Error loading variable info:", varInfoError);
+        }
+        
+        if (!varInfoError && variableInfos) {
+          console.log("Loaded variable infos:", variableInfos);
+          variableInfoMap = variableInfos.reduce((acc: Record<string, any>, v: any) => {
+            acc[v.id] = v;
+            return acc;
+          }, {});
+          console.log("Created variable info map:", variableInfoMap);
+        }
+      }
 
       if (variablesError) {
         console.error("Error loading routine variables:", variablesError);
+        console.error("Full error details:", {
+          message: variablesError.message,
+          details: variablesError.details,
+          hint: variablesError.hint,
+          code: variablesError.code
+        });
       }
 
-      // Combine the data
-      const routinesWithVariables =
-        routinesData?.map((routine) => {
+      console.log("Found routine variables:", variablesData?.length || 0);
+      console.log("Sample routine variable data:", variablesData?.[0]);
+      console.log("Variable info map:", variableInfoMap);
+
+              // Combine the data
+        const routinesWithVariables = routinesData.map((routine) => {
+          console.log(`\n🔧 Processing routine: "${routine.routine_name}" (ID: ${routine.id})`);
+          
           const routineVariables = (variablesData || [])
             .filter((rv) => rv.routine_id === routine.id)
             .map((rv) => {
-              // Parse times if it's a JSON string
+              const variableInfo = variableInfoMap[rv.variable_id];
+              const actualVariable = allVariables.find(v => v.id === rv.variable_id);
+              console.log(`  📋 Processing variable:`, {
+                variable_id: rv.variable_id,
+                variable_info_exists: !!variableInfo,
+                actual_variable_exists: !!actualVariable,
+                variable_name: actualVariable?.label || variableInfo?.label,
+                all_variables_count: allVariables.length,
+                default_value: rv.default_value,
+                times: rv.times,
+                weekdays: rv.weekdays
+              });
+
+              // Parse times if it's a JSON string, otherwise use as-is
               let times = rv.times;
               if (typeof times === "string") {
                 try {
@@ -155,40 +223,82 @@ export default function RoutineManager() {
                 }
               }
 
-              return {
+              // Ensure times is always an array
+              if (!Array.isArray(times)) {
+                times = times ? [times] : [];
+              }
+
+              // Parse weekdays if it's a JSON string, otherwise use as-is
+              let weekdays = rv.weekdays;
+              if (typeof weekdays === "string") {
+                try {
+                  weekdays = JSON.parse(weekdays);
+                } catch (error) {
+                  console.error("Failed to parse weekdays JSON:", error);
+                  weekdays = [1, 2, 3, 4, 5, 6, 7];
+                }
+              }
+
+              // Ensure weekdays is always an array
+              if (!Array.isArray(weekdays)) {
+                weekdays = [1, 2, 3, 4, 5, 6, 7];
+              }
+
+              const variableConfig = {
                 id: rv.id,
                 variable_id: rv.variable_id,
-                variable_name: rv.variables?.label || "Unknown Variable",
-                variable_slug: rv.variables?.slug || "",
+                variable_name: actualVariable?.label || variableInfo?.label || `Unknown Variable (ID: ${rv.variable_id})`,
+                variable_slug: actualVariable?.slug || variableInfo?.slug || "",
                 default_value: rv.default_value,
-                default_unit:
-                  rv.variables?.canonical_unit || rv.default_unit || "",
-                weekdays: routine.weekdays || [1, 2, 3, 4, 5, 6, 7],
-                times: Array.isArray(times) ? times : times ? [times] : [],
+                default_unit: rv.default_unit || actualVariable?.default_display_unit || variableInfo?.default_display_unit || "",
+                weekdays: weekdays,
+                times: times,
               };
+              
+              if (!actualVariable && !variableInfo) {
+                console.warn(`⚠️ Variable not found in allVariables or variableInfoMap for variable_id: ${rv.variable_id}`);
+                console.warn(`AllVariables count:`, allVariables.length);
+                console.warn(`VariableInfoMap keys:`, Object.keys(variableInfoMap));
+              }
+
+              console.log(`  ✅ Final variable config:`, variableConfig);
+              return variableConfig;
             });
 
-          // Count unique time slots
-          const uniqueTimes = new Set();
-          routineVariables.forEach((variable) => {
-            if (Array.isArray(variable.times)) {
-              variable.times.forEach((timeObj) => {
-                if (timeObj.time) {
-                  uniqueTimes.add(timeObj.time);
-                }
-              });
-            }
-          });
+          console.log(`  📊 Total variables for routine "${routine.routine_name}": ${routineVariables.length}`);
+          console.log(`  📋 AllVariables available: ${allVariables.length}`);
 
-          return {
-            ...routine,
-            routine_name: routine.name || routine.routine_name,
-            variables: routineVariables,
-            timeSlotCount: uniqueTimes.size,
-          };
-        }) || [];
+        // Count unique time slots
+        const uniqueTimes = new Set();
+        routineVariables.forEach((variable) => {
+          if (Array.isArray(variable.times)) {
+            variable.times.forEach((timeObj) => {
+              if (typeof timeObj === 'string') {
+                uniqueTimes.add(timeObj);
+              } else if (timeObj && timeObj.time) {
+                uniqueTimes.add(timeObj.time);
+              }
+            });
+          }
+        });
 
-      console.log("Loaded routines with variables:", routinesWithVariables);
+        const routineWithVars = {
+          ...routine,
+          routine_name: routine.routine_name || routine.name,
+          variables: routineVariables,
+          timeSlotCount: uniqueTimes.size,
+        };
+
+        console.log(`Routine "${routineWithVars.routine_name}" configured with:`, {
+          variables: routineVariables.length,
+          timeSlots: uniqueTimes.size,
+          uniqueTimes: Array.from(uniqueTimes)
+        });
+
+        return routineWithVars;
+      });
+
+      console.log("Final routines with variables:", routinesWithVariables);
       setRoutines(routinesWithVariables);
     } catch (error) {
       console.error("Unexpected error loading routines:", error);
@@ -201,7 +311,11 @@ export default function RoutineManager() {
   async function loadVariables() {
     if (!user?.id) return;
     try {
-      const variables = await getVariables(user.id);
+      console.log("🔄 Loading all variables...");
+      // Don't pass userId to get ALL active variables (including system variables)
+      const variables = await getVariables();
+      console.log("✅ Loaded variables:", variables.length);
+      console.log("Sample variables:", variables.slice(0, 3).map(v => ({ id: v.id, label: v.label })));
       setAllVariables(variables);
     } catch (error) {
       console.error("Error loading variables:", error);
@@ -568,14 +682,19 @@ export default function RoutineManager() {
   }, [routines, selectedRoutineIds, selectedVariableIds]);
 
   const handleOpenBatchLogging = () => {
+    // Clear any previous success message
+    setBatchSuccessMessage(null);
+    
     // Start with all routines
     let filteredRoutines = routines;
 
     console.log("=== BATCH TRACKING DEBUG ===");
-    console.log("All routines:", routines);
+    console.log("All routines:", routines.length);
+    console.log("Available variables count:", allVariables.length);
     console.log("Selected routine IDs:", selectedRoutineIds);
     console.log("Selected variable IDs:", selectedVariableIds);
     console.log("Selected time IDs:", selectedTimeIds);
+    console.log("Selected weekdays:", selectedWeekdays);
     console.log(
       "Date range:",
       format(batchStartDate, "yyyy-MM-dd"),
@@ -583,67 +702,70 @@ export default function RoutineManager() {
       format(batchEndDate, "yyyy-MM-dd")
     );
 
+    // Check if we have any routines with variables
+    if (routines.length === 0) {
+      setMessage({
+        type: "error",
+        text: "No routines found. Please create a routine first."
+      });
+      return;
+    }
+
+    const routinesWithVariables = routines.filter(r => r.variables && r.variables.length > 0);
+    if (routinesWithVariables.length === 0) {
+      setMessage({
+        type: "error", 
+        text: "No routines with variables found. Please add variables to your routines first."
+      });
+      return;
+    }
+
+    console.log("Routines with variables:", routinesWithVariables.length);
+
     // Filter by selected routines if any are selected
     if (selectedRoutineIds.length > 0) {
       filteredRoutines = filteredRoutines.filter((r) =>
         selectedRoutineIds.includes(r.id)
       );
-      console.log("After routine filter:", filteredRoutines);
+      console.log("After routine filter:", filteredRoutines.length);
     }
 
     // Filter variables and times if any are selected
     if (selectedVariableIds.length > 0 || selectedTimeIds.length > 0) {
       filteredRoutines = filteredRoutines
         .map((routine) => {
-          console.log(
-            "Processing routine:",
-            routine.routine_name,
-            "variables:",
-            routine.variables
-          );
+          console.log(`Processing routine: ${routine.routine_name} with ${routine.variables?.length || 0} variables`);
 
           // Filter variables for this routine
           const filteredVariables = (routine.variables || []).filter(
             (variable: any) => {
-              console.log(
-                "Checking variable:",
-                variable.variable_name,
-                "ID:",
-                variable.variable_id
-              );
+              console.log(`Checking variable: ${variable.variable_name} (ID: ${variable.variable_id})`);
 
               // Check if variable should be included
               const variableIncluded =
                 selectedVariableIds.length === 0 ||
                 selectedVariableIds.includes(variable.variable_id);
 
-              console.log("Variable included?", variableIncluded);
-
-              if (!variableIncluded) return false;
+              if (!variableIncluded) {
+                console.log("Variable excluded by filter");
+                return false;
+              }
 
               // If times are selected, filter the variable's times
               if (selectedTimeIds.length > 0) {
-                console.log("Variable times:", variable.times);
                 const filteredTimes = (variable.times || []).filter(
                   (time: any) => {
                     const timeId = `${routine.id}_${time.time}_${variable.variable_id}`;
-                    console.log(
-                      "Checking time ID:",
-                      timeId,
-                      "against selected:",
-                      selectedTimeIds
-                    );
                     return selectedTimeIds.includes(timeId);
                   }
                 );
-
-                console.log("Filtered times:", filteredTimes);
 
                 // Only include variable if it has matching times
                 if (filteredTimes.length > 0) {
                   variable.times = filteredTimes;
                   return true;
                 }
+                console.log("Variable excluded - no matching times");
                 return false;
               }
 
@@ -651,7 +773,7 @@ export default function RoutineManager() {
             }
           );
 
-          console.log("Filtered variables for routine:", filteredVariables);
+          console.log(`Filtered variables for routine: ${filteredVariables.length}`);
 
           return {
             ...routine,
@@ -661,7 +783,52 @@ export default function RoutineManager() {
         .filter((routine) => routine.variables && routine.variables.length > 0);
     }
 
-    console.log("Final filtered routines:", filteredRoutines);
+    // Filter by selected weekdays if any are selected
+    if (selectedWeekdays.length > 0) {
+      filteredRoutines = filteredRoutines
+        .map((routine) => {
+          console.log(`Filtering weekdays for routine: ${routine.routine_name}`);
+          
+          const filteredVariables = (routine.variables || []).map((variable: any) => {
+            // Filter the variable's weekdays to only include selected ones
+            if (variable.weekdays && Array.isArray(variable.weekdays)) {
+              const originalWeekdays = variable.weekdays;
+              const filteredWeekdays = variable.weekdays.filter((day: number) => 
+                selectedWeekdays.includes(day)
+              );
+              
+              console.log(`Variable ${variable.variable_name}: ${originalWeekdays} -> ${filteredWeekdays}`);
+              
+              // Only include the variable if it has matching weekdays
+              if (filteredWeekdays.length > 0) {
+                return {
+                  ...variable,
+                  weekdays: filteredWeekdays
+                };
+              }
+            }
+            return null;
+          }).filter(Boolean); // Remove null entries
+          
+          return {
+            ...routine,
+            variables: filteredVariables,
+          };
+        })
+        .filter((routine) => routine.variables && routine.variables.length > 0);
+      
+      console.log("After weekday filter:", filteredRoutines.length);
+    }
+
+    console.log("Final filtered routines:", filteredRoutines.length);
+
+    if (filteredRoutines.length === 0) {
+      setMessage({
+        type: "error",
+        text: "No routines match your selected filters. Please adjust your filters or create routines with variables."
+      });
+      return;
+    }
 
     // Generate planned logs for the selected date range
     const startDateStr = format(batchStartDate, "yyyy-MM-dd");
@@ -673,14 +840,25 @@ export default function RoutineManager() {
       endDateStr
     );
 
-    console.log("Generated planned logs:", planned);
+    console.log("Generated planned logs:", planned.length);
+    console.log("First few planned logs:", planned.slice(0, 3));
     console.log("=== END DEBUG ===");
+
+    if (planned.length === 0) {
+      setMessage({
+        type: "warning",
+        text: "No data points will be generated for the selected date range and filters. This might be because the routines don't run on the selected weekdays within your date range, or no variables match your current filters."
+      });
+      return;
+    }
+
     setPlannedLogs(planned);
     setBatchLoggingOpen(true);
   };
 
   const handleBatchLogConfirm = async (selectedLogs: PlannedRoutineLog[]) => {
     setBatchLoading(true);
+    setBatchSuccessMessage(null); // Clear any previous success message
 
     try {
       const response = await fetch("/api/routines/batch-log", {
@@ -696,25 +874,49 @@ export default function RoutineManager() {
 
       if (response.ok) {
         const result = await response.json();
-        setSnackbar({
-          open: true,
-          message:
-            `Successfully created ${result.created} routine logs!` +
-            (result.skipped > 0 ? ` (${result.skipped} already existed)` : ""),
-        });
+        
+        if (result.created > 0) {
+          // Success - logs were actually created
+          const successMessage = `Successfully created ${result.created} data points!` +
+            (result.skipped > 0 ? ` (${result.skipped} already existed)` : "");
+          
+          setBatchSuccessMessage(successMessage);
+          setSnackbar({
+            open: true,
+            message: successMessage,
+          });
+        } else {
+          // No logs were created - show appropriate message
+          let message = "";
+          if (result.skipped > 0) {
+            message = `No new logs created. ${result.skipped} logs already existed for the selected date range.`;
+          } else {
+            message = "No logs were created. Please check your filters and date range.";
+          }
+          
+          setBatchSuccessMessage(message);
+          setSnackbar({
+            open: true,
+            message: message,
+          });
+        }
         setBatchLoggingOpen(false);
       } else {
         const error = await response.json();
+        const errorMessage = `Error creating data points: ${error.error}`;
+        setBatchSuccessMessage(errorMessage);
         setSnackbar({
           open: true,
-          message: `Error creating logs: ${error.error}`,
+          message: errorMessage,
         });
       }
     } catch (error) {
       console.error("Error creating batch data points:", error);
+      const errorMessage = "Error creating data points. Please try again.";
+      setBatchSuccessMessage(errorMessage);
       setSnackbar({
         open: true,
-        message: "Error creating logs. Please try again.",
+        message: errorMessage,
       });
     } finally {
       setBatchLoading(false);
@@ -806,116 +1008,216 @@ export default function RoutineManager() {
 
       {!loading &&
         sortedRoutines.map((routine) => (
-          <Paper key={routine.id} sx={{ p: 2, mb: 3, background: "#222" }}>
+          <Paper key={routine.id} sx={{ p: 3, mb: 3, background: "#222", borderRadius: 2 }}>
             <Box
               display="flex"
               alignItems="center"
               justifyContent="space-between"
+              sx={{ mb: 2 }}
             >
-              <Box>
-                <Typography variant="h6">{routine.routine_name}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {routine.timeSlotCount || 0} time slot
-                  {routine.timeSlotCount !== 1 ? "s" : ""} •{" "}
-                  {routine.variables?.length || 0} variable
-                  {routine.variables?.length !== 1 ? "s" : ""}
-                  {sortBy === "time" && getEarliestTime(routine) && (
-                    <span>
-                      {" "}
-                      • Earliest: {timeString(getEarliestTime(routine) || "")}
-                    </span>
-                  )}
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="h6" sx={{ mb: 0.5, fontWeight: 600 }}>
+                  {routine.routine_name}
                 </Typography>
+                <Box sx={{ display: "flex", gap: 2, alignItems: "center", flexWrap: "wrap" }}>
+                  <Chip
+                    size="small"
+                    label={`${routine.timeSlotCount || 0} time slot${routine.timeSlotCount !== 1 ? "s" : ""}`}
+                    color="primary"
+                    variant="outlined"
+                  />
+                  <Chip
+                    size="small"
+                    label={`${routine.variables?.length || 0} variable${routine.variables?.length !== 1 ? "s" : ""}`}
+                    color="secondary"
+                    variant="outlined"
+                  />
+                  {sortBy === "time" && getEarliestTime(routine) && (
+                    <Chip
+                      size="small"
+                      label={`Earliest: ${timeString(getEarliestTime(routine) || "")}`}
+                      color="info"
+                      variant="outlined"
+                    />
+                  )}
+                </Box>
 
                 {routine.variables && routine.variables.length > 0 && (
                   <Typography
                     variant="body2"
-                    color="primary"
-                    sx={{ mt: 0.5, fontWeight: 500 }}
+                    color="primary.light"
+                    sx={{ mt: 1, fontWeight: 500, fontSize: "0.9rem" }}
                   >
-                    Will auto-track:{" "}
+                    📝 Auto-tracks:{" "}
                     {routine.variables
-                      .map((v: any) => v.variable_name)
+                      .map((v: any) => {
+                        // Try to get the actual variable name from allVariables
+                        const actualVariable = allVariables.find(av => av.id === v.variable_id);
+                        return actualVariable?.label || v.variable_name;
+                      })
+                      .slice(0, 3)
                       .join(", ")}
-                    {getEarliestTime(routine) && (
-                      <span>
-                        {" "}
-                        at {timeString(getEarliestTime(routine) || "")}
-                      </span>
-                    )}
+                    {routine.variables.length > 3 && ` and ${routine.variables.length - 3} more`}
                   </Typography>
                 )}
               </Box>
-              <Box>
-                <IconButton onClick={() => openEditDialog(routine)}>
-                  <Edit />
+              <Box sx={{ display: "flex", gap: 1 }}>
+                <IconButton 
+                  onClick={() => openEditDialog(routine)}
+                  size="small"
+                  sx={{ 
+                    backgroundColor: "rgba(255, 255, 255, 0.1)",
+                    "&:hover": { backgroundColor: "rgba(255, 255, 255, 0.2)" }
+                  }}
+                >
+                  <Edit fontSize="small" />
                 </IconButton>
-                <IconButton onClick={() => handleDeleteRoutine(routine.id)}>
-                  <Delete />
+                <IconButton 
+                  onClick={() => handleDeleteRoutine(routine.id)}
+                  size="small"
+                  sx={{ 
+                    backgroundColor: "rgba(255, 0, 0, 0.1)",
+                    "&:hover": { backgroundColor: "rgba(255, 0, 0, 0.2)" }
+                  }}
+                >
+                  <Delete fontSize="small" />
                 </IconButton>
               </Box>
             </Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              {routine.notes}
+            
+            {routine.notes && (
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontStyle: "italic" }}>
+                💬 {routine.notes}
+              </Typography>
+            )}
+
+            <Divider sx={{ my: 2 }} />
+
+            <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600 }}>
+              📊 Variables Configuration ({routine.variables?.length || 0})
             </Typography>
 
-            <Divider sx={{ my: 1 }} />
+            {(routine.variables || []).length > 0 ? (
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {routine.variables.map((variable: any, index: number) => (
+                  <Box
+                    key={variable.id || index}
+                    sx={{
+                      p: 2.5,
+                      backgroundColor: "rgba(255, 255, 255, 0.08)",
+                      borderRadius: 2,
+                      border: "1px solid rgba(255, 255, 255, 0.1)",
+                    }}
+                  >
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.5 }}>
+                      <Typography variant="h6" sx={{ fontWeight: 600, color: "primary.light" }}>
+                        📈 {(() => {
+                          const actualVar = allVariables.find(v => v.id === variable.variable_id);
+                          return actualVar?.label || variable.variable_name;
+                        })()}
+                      </Typography>
+                    </Box>
 
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-              Variables ({routine.variables?.length || 0})
-            </Typography>
+                    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2, mb: 2 }}>
+                      <Box>
+                        <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                          🎯 Default Value:
+                        </Typography>
+                        <Typography variant="body1" sx={{ 
+                          backgroundColor: "rgba(76, 175, 80, 0.2)", 
+                          px: 1.5, 
+                          py: 0.5, 
+                          borderRadius: 1,
+                          fontWeight: 600,
+                          display: "inline-block"
+                        }}>
+                          {(() => {
+                            const variableInfo = allVariables.find(v => v.id === variable.variable_id);
+                            return formatDefaultValue(
+                              variable.default_value, 
+                              variable.default_unit, 
+                              variableInfo
+                            );
+                          })()}
+                        </Typography>
+                      </Box>
 
-            {(routine.variables || []).map((variable: any) => (
-              <Box
-                key={variable.id}
-                sx={{
-                  mb: 2,
-                  ml: 2,
-                  p: 2,
-                  backgroundColor: "rgba(255, 255, 255, 0.05)",
-                  borderRadius: 1,
-                }}
-              >
-                <Typography variant="body2" sx={{ fontWeight: "bold", mb: 1 }}>
-                  {variable.variable_name}
+                      {variable.times?.length > 0 && (
+                        <Box>
+                          <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                            ⏰ Tracking Times:
+                          </Typography>
+                          <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                            {variable.times.map((timeObj: any, timeIndex: number) => {
+                              const timeValue = typeof timeObj === 'string' ? timeObj : timeObj?.time;
+                              return (
+                                <Chip
+                                  key={timeIndex}
+                                  size="small"
+                                  label={timeString(timeValue || "")}
+                                  color="warning"
+                                  variant="filled"
+                                  sx={{ fontWeight: 600 }}
+                                />
+                              );
+                            })}
+                          </Box>
+                        </Box>
+                      )}
+                    </Box>
+
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                        📅 Active Days:
+                      </Typography>
+                      <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+                        {(variable.weekdays || []).map((d: number) => {
+                          const day = weekdays.find((w) => w.value === d);
+                          return (
+                            <Chip
+                              key={d}
+                              size="small"
+                              label={day?.label?.substring(0, 3) || d}
+                              color="info"
+                              variant="outlined"
+                              sx={{ fontSize: "0.75rem" }}
+                            />
+                          );
+                        })}
+                      </Box>
+                    </Box>
+
+                    {(!variable.times || variable.times.length === 0) && (
+                      <Box sx={{ 
+                        mt: 1, 
+                        p: 1, 
+                        backgroundColor: "rgba(255, 152, 0, 0.1)", 
+                        borderRadius: 1,
+                        border: "1px solid rgba(255, 152, 0, 0.3)"
+                      }}>
+                        <Typography variant="caption" color="warning.main" sx={{ fontWeight: 600 }}>
+                          ⚠️ No times configured - variable won't be auto-tracked
+                        </Typography>
+                      </Box>
+                    )}
+                  </Box>
+                ))}
+              </Box>
+            ) : (
+              <Box sx={{ 
+                p: 3, 
+                textAlign: "center", 
+                backgroundColor: "rgba(255, 152, 0, 0.1)", 
+                borderRadius: 2,
+                border: "2px dashed rgba(255, 152, 0, 0.3)"
+              }}>
+                <Typography variant="body1" color="warning.main" sx={{ fontWeight: 600, mb: 1 }}>
+                  ⚠️ No variables configured for this routine
                 </Typography>
-
-                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, mb: 1 }}>
-                  <Typography variant="body2" component="span">
-                    <strong>Value:</strong>{" "}
-                    {variable.default_value || "Not set"}
-                    {variable.default_unit && ` ${variable.default_unit}`}
-                  </Typography>
-                </Box>
-
-                {variable.times?.length > 0 && (
-                  <Typography variant="body2" sx={{ mb: 1 }}>
-                    <strong>Times:</strong>{" "}
-                    {variable.times
-                      .map((timeObj: any) => timeString(timeObj.time))
-                      .join(", ")}
-                  </Typography>
-                )}
-
-                <Typography variant="caption" color="text.secondary">
-                  <strong>Active on:</strong>{" "}
-                  {variable.weekdays
-                    ?.map(
-                      (d: number) => weekdays.find((w) => w.value === d)?.label
-                    )
-                    .join(", ")}
+                <Typography variant="body2" color="text.secondary">
+                  Click the edit button to add variables, set default values, and configure tracking times.
                 </Typography>
               </Box>
-            ))}
-
-            {(!routine.variables || routine.variables.length === 0) && (
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ ml: 2, fontStyle: "italic" }}
-              >
-                No variables configured for this routine.
-              </Typography>
             )}
           </Paper>
         ))}
@@ -935,6 +1237,22 @@ export default function RoutineManager() {
         <Typography variant="subtitle2" sx={{ mb: 2 }}>
           Filters (leave empty to include all):
         </Typography>
+
+        {/* Debug Section - Show current state */}
+        <Box sx={{ mb: 2, p: 2, backgroundColor: "rgba(33, 150, 243, 0.1)", borderRadius: 1 }}>
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>Current State:</Typography>
+          <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+            <Chip label={`${routines.length} routines loaded`} size="small" color="info" />
+            <Chip label={`${allVariables.length} variables available`} size="small" color="info" />
+            <Chip label={`${availableVariables.length} routine variables`} size="small" color="secondary" />
+            <Chip label={`${availableTimes.length} time slots`} size="small" color="secondary" />
+          </Box>
+          {availableVariables.length === 0 && (
+            <Typography variant="caption" color="warning.main" sx={{ mt: 1, display: "block" }}>
+              ⚠️ No variables found in routines. Make sure your routines have variables configured.
+            </Typography>
+          )}
+        </Box>
 
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, mb: 3 }}>
           {/* Routine Filter */}
@@ -1055,6 +1373,40 @@ export default function RoutineManager() {
               </Select>
             </FormControl>
           </Box>
+
+          {/* Day of Week Filter */}
+          <Box sx={{ flex: "1 1 300px", minWidth: "250px" }}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Select Days</InputLabel>
+              <Select
+                multiple
+                value={selectedWeekdays}
+                onChange={(e) => setSelectedWeekdays(e.target.value as number[])}
+                label="Select Days"
+                renderValue={(selected) => (
+                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                    {selected.map((dayValue) => {
+                      const day = weekdays.find((d) => d.value === dayValue);
+                      return (
+                        <Chip
+                          key={dayValue}
+                          label={day?.label || dayValue}
+                          size="small"
+                        />
+                      );
+                    })}
+                  </Box>
+                )}
+              >
+                {weekdays.map((day) => (
+                  <MenuItem key={day.value} value={day.value}>
+                    <Checkbox checked={selectedWeekdays.includes(day.value)} />
+                    <ListItemText primary={day.label} />
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
         </Box>
 
         {/* Clear Filters */}
@@ -1066,6 +1418,7 @@ export default function RoutineManager() {
               setSelectedRoutineIds([]);
               setSelectedVariableIds([]);
               setSelectedTimeIds([]);
+              setSelectedWeekdays([]);
             }}
           >
             Clear All Filters
@@ -1094,11 +1447,57 @@ export default function RoutineManager() {
             variant="contained"
             onClick={handleOpenBatchLogging}
             startIcon={<AccessTime />}
+            disabled={routines.length === 0 || allVariables.length === 0}
           >
             Preview & Generate Data Points
           </Button>
+          
+          {/* Test button for debugging */}
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => {
+              console.log("=== DEBUG INFO ===");
+              console.log("Routines:", routines);
+              console.log("AllVariables:", allVariables);
+              console.log("Available Variables:", availableVariables);
+              console.log("Available Times:", availableTimes);
+              
+              // Test data generation with a simple example
+              if (routines.length > 0) {
+                const testLogs = generatePlannedRoutineLogs(
+                  routines.slice(0, 1), // Just first routine
+                  format(new Date(), "yyyy-MM-dd"), // Today
+                  format(new Date(), "yyyy-MM-dd")  // Today
+                );
+                console.log("Test generated data points:", testLogs);
+                setMessage({
+                  type: "info",
+                  text: `Debug: Found ${routines.length} routines, ${allVariables.length} variables. Generated ${testLogs.length} test data points. Check console for details.`
+                });
+              } else {
+                setMessage({
+                  type: "warning",
+                  text: "No routines found for testing. Please create a routine first."
+                });
+              }
+            }}
+          >
+            🐛 Debug Info
+          </Button>
         </Box>
       </Paper>
+
+      {/* Batch Success Message */}
+      {batchSuccessMessage && (
+        <Alert
+          severity={batchSuccessMessage.includes("Successfully") ? "success" : batchSuccessMessage.includes("Error") ? "error" : "info"}
+          sx={{ mt: 2, mb: 2 }}
+          onClose={() => setBatchSuccessMessage(null)}
+        >
+          {batchSuccessMessage}
+        </Alert>
+      )}
 
       {/* Dialogs */}
       <Dialog
@@ -1229,29 +1628,18 @@ export default function RoutineManager() {
                     helperText={variableValidationErrors[idx]}
                   />
 
-                  <FormControl sx={{ width: 120 }}>
-                    <InputLabel>Unit</InputLabel>
-                    <Select
-                      value={variable.default_unit || ""}
-                      onChange={(e) =>
-                        handleVariableChange(
-                          idx,
-                          "default_unit",
-                          e.target.value
-                        )
+                  <Box sx={{ width: 120 }}>
+                    <VariableUnitSelector
+                      variableId={variable.variable_id}
+                      userId={user?.id || ""}
+                      currentUnit={variable.default_unit}
+                      onUnitChange={(unitId, unitGroup) =>
+                        handleVariableChange(idx, "default_unit", unitId)
                       }
                       label="Unit"
-                    >
-                      <MenuItem value="">
-                        <em>No unit</em>
-                      </MenuItem>
-                      {(variableInfo?.convertible_units || []).map((unit) => (
-                        <MenuItem key={unit} value={unit}>
-                          {unit}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
+                      size="small"
+                    />
+                  </Box>
 
                   <FormControl sx={{ width: 200 }}>
                     <InputLabel>Weekdays</InputLabel>

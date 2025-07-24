@@ -116,14 +116,8 @@ export function validateVariableName(name: string): ModerationResult {
     };
   }
 
-  // Check for obviously invalid names
-  if (/^[^a-zA-Z0-9\s\-_().,!?]+$/.test(name)) {
-    return {
-      isAllowed: false,
-      reason: "Variable name contains invalid characters",
-      severity: "medium",
-    };
-  }
+  // Allow any printable characters - no character restrictions
+  // The slug creation function will handle special characters appropriately
 
   return { isAllowed: true };
 }

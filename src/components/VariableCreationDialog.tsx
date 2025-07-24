@@ -31,6 +31,7 @@ import {
 import { addVariableUnit, setVariableUnits } from "../utils/variableUnitsUtils";
 import { fetchUnits } from "../utils/unitsTableUtils";
 import { Unit } from "../types/variables";
+import { createPermissiveSlug } from "@/utils/slugUtils";
 
 interface VariableCreationDialogProps {
   open: boolean;
@@ -555,7 +556,7 @@ export default function VariableCreationDialog({
       }
 
       // Create the variable in the universal variables system
-      const slug = variableName.toLowerCase().replace(/\s+/g, "-");
+      const slug = createPermissiveSlug(variableName);
 
       const validationRules: any = {};
       if (constraints.min) validationRules.min = parseFloat(constraints.min);
@@ -714,8 +715,15 @@ export default function VariableCreationDialog({
                 value={variableName}
                 onChange={(e) => setVariableName(e.target.value)}
                 required
-                helperText="This will be the display name for your variable"
+                inputProps={{ maxLength: 100 }}
+                helperText={`${variableName.length}/100 characters. You can use any symbols and spaces.`}
               />
+              
+              {variableName && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                  Slug: {createPermissiveSlug(variableName)}
+                </Typography>
+              )}
 
               <TextField
                 fullWidth

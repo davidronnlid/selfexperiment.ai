@@ -185,20 +185,12 @@ export default function Header() {
             aria-label="Modular Health home page"
           >
             <Box className="flex items-center gap-2 lg:gap-3">
-              <Typography
-                variant="h6"
-                sx={{
-                  fontWeight: 700,
-                  letterSpacing: 1,
-                  color: "var(--gold)",
-                  fontFamily: "inherit",
-                  fontSize: { xs: "1.1rem", md: "1.35rem" },
-                  lineHeight: 1.2,
-                  textTransform: "none",
-                }}
-              >
-                Modular Health
-              </Typography>
+              <img 
+                src="/modular-health-logo.svg" 
+                alt="Modular Health" 
+                className="h-8 w-auto"
+                style={{ height: '32px', width: 'auto' }}
+              />
               <span
                 className="bg-gradient-to-r from-blue-400 to-blue-600 text-white font-bold text-xs px-2 lg:px-3 py-1 rounded-full border border-blue-500 shadow-sm"
                 aria-label="Beta version"

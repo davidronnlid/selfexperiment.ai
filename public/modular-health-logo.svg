@@ -1,7 +1,16 @@
-<svg width="400" height="200" viewBox="0 0 400 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="400" height="200" fill="black"/>
-<!-- Main "M" shape -->
-<path d="M100 34H133V200L200 134L267 200V34H300V334H267V224L200 290L133 224V334H100V34Z" fill="#FFD700"/>
-<!-- Integrated "i" dot -->
-<rect x="184" y="76" width="32" height="8" fill="#FFD700"/>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Black background -->
+  <rect width="1024" height="1024" fill="#000000"/>
+  
+  <!-- Main M structure with integrated H -->
+  <path d="M254 232 L370 232 L370 450 L460 450 L460 232 L564 232 L564 450 L654 450 L654 232 L770 232 L770 792 L654 792 L654 590 L564 590 L564 792 L460 792 L460 590 L370 590 L370 792 L254 792 Z" 
+        fill="#F4D03F" 
+        stroke="none"/>
+        
+  <!-- Top connecting part of M -->
+  <path d="M370 232 L512 400 L654 232" 
+        stroke="#F4D03F" 
+        stroke-width="116" 
+        fill="none" 
+        stroke-linejoin="miter"/>
 </svg> 

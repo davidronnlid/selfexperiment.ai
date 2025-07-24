@@ -22,7 +22,8 @@ export function generatePlannedRoutineLogs(
   endDate: string
 ): PlannedRoutineLog[] {
   console.log("=== GENERATE PLANNED LOGS DEBUG ===");
-  console.log("Input routines:", routines);
+  console.log("Input routines count:", routines.length);
+  console.log("Input routines detailed:", JSON.stringify(routines, null, 2));
   console.log("Date range:", startDate, "to", endDate);
   
   const plannedLogs: PlannedRoutineLog[] = [];
@@ -40,62 +41,98 @@ export function generatePlannedRoutineLogs(
     const weekdayFormatted = currentWeekday === 0 ? 7 : currentWeekday;
     const dateString = format(currentDate, "yyyy-MM-dd");
 
-    console.log("Processing date:", dateString, "weekday:", weekdayFormatted);
+    console.log(`\n📅 Processing date: ${dateString}, weekday: ${weekdayFormatted} (${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][currentWeekday]})`);
 
     // Process each routine
-    routines.forEach((routine: any) => {
-      console.log("Processing routine:", routine.routine_name);
-      console.log("Routine weekdays:", routine.weekdays);
+    routines.forEach((routine: any, routineIndex: number) => {
+      console.log(`\n🔄 [${routineIndex + 1}/${routines.length}] Processing routine:`, {
+        id: routine.id,
+        name: routine.routine_name,
+        variables_count: routine.variables?.length || 0,
+        routine_weekdays: routine.weekdays,
+        has_variables: !!(routine.variables && routine.variables.length > 0)
+      });
       
-      // Check if this routine should run on this weekday
-      if (routine.weekdays?.includes(weekdayFormatted)) {
-        console.log("Routine runs on this weekday");
-        
-        // Process each variable in the routine
-        (routine.variables || []).forEach((variable: any) => {
-          console.log("Processing variable:", variable.variable_name);
-          console.log("Variable weekdays:", variable.weekdays);
-          
-          // Check if this variable should run on this weekday
-          if (variable.weekdays?.includes(weekdayFormatted)) {
-            console.log("Variable runs on this weekday");
-            
-            // Process each time for this variable
-            (variable.times || []).forEach((time: any) => {
-              console.log("Processing time:", time);
-              
-              const plannedLog = {
-                id: `${routine.id}_${variable.variable_id}_${dateString}_${time.time}`,
-                routine_id: routine.id,
-                routine_name: routine.routine_name,
-                variable_id: variable.variable_id,
-                variable_name: variable.variable_name,
-                variable_slug: variable.variable_slug,
-                default_value: variable.default_value,
-                default_unit: variable.default_unit || "",
-                date: dateString,
-                time_of_day: time.time,
-                time_name: time.name || "",
-                weekday: weekdayFormatted,
-                enabled: true,
-              };
-              
-              console.log("Created planned log:", plannedLog);
-              plannedLogs.push(plannedLog);
-            });
-          } else {
-            console.log("Variable does NOT run on this weekday");
-          }
-        });
-      } else {
-        console.log("Routine does NOT run on this weekday");
+      // For routines, we don't check routine-level weekdays anymore - check variable level weekdays
+      // Process each variable in the routine
+      if (!routine.variables || routine.variables.length === 0) {
+        console.log("❌ Routine has no variables configured");
+        return;
       }
+
+      routine.variables.forEach((variable: any, varIndex: number) => {
+        console.log(`\n  📊 [${varIndex + 1}/${routine.variables.length}] Processing variable:`, {
+          id: variable.variable_id,
+          name: variable.variable_name,
+          times_count: variable.times?.length || 0,
+          weekdays: variable.weekdays,
+          default_value: variable.default_value,
+          times: variable.times
+        });
+        
+        // Check if this variable should run on this weekday
+        if (!variable.weekdays || !Array.isArray(variable.weekdays)) {
+          console.log("❌ Variable has no weekdays configured or weekdays is not an array");
+          return;
+        }
+
+        if (!variable.weekdays.includes(weekdayFormatted)) {
+          console.log(`❌ Variable does NOT run on weekday ${weekdayFormatted}. Configured for:`, variable.weekdays);
+          return;
+        }
+
+        console.log(`✅ Variable runs on weekday ${weekdayFormatted}`);
+        
+        // Check if variable has times
+        if (!variable.times || !Array.isArray(variable.times) || variable.times.length === 0) {
+          console.log("❌ Variable has no times configured");
+          return;
+        }
+
+        // Process each time for this variable
+        variable.times.forEach((time: any, timeIndex: number) => {
+          console.log(`\n    ⏰ [${timeIndex + 1}/${variable.times.length}] Processing time:`, time);
+          
+          if (!time || typeof time !== 'object') {
+            console.log("❌ Time is not an object:", typeof time, time);
+            return;
+          }
+
+          if (!time.time) {
+            console.log("❌ Time object has no 'time' property:", time);
+            return;
+          }
+          
+          const plannedLog = {
+            id: `${routine.id}_${variable.variable_id}_${dateString}_${time.time}`,
+            routine_id: routine.id,
+            routine_name: routine.routine_name,
+            variable_id: variable.variable_id,
+            variable_name: variable.variable_name || `Variable ${variable.variable_id}`,
+            variable_slug: variable.variable_slug || "",
+            default_value: variable.default_value,
+            default_unit: variable.default_unit || "",
+            date: dateString,
+            time_of_day: time.time,
+            time_name: time.name || "",
+            weekday: weekdayFormatted,
+            enabled: true,
+          };
+          
+          console.log("✅ Created planned data point:", plannedLog);
+          plannedLogs.push(plannedLog);
+        });
+      });
     });
 
     currentDate = addDays(currentDate, 1);
   }
 
-  console.log("Final planned logs:", plannedLogs);
+  console.log(`\n🎯 FINAL RESULTS:`);
+  console.log(`Total planned data points created: ${plannedLogs.length}`);
+  if (plannedLogs.length > 0) {
+    console.log("Sample planned data points:", plannedLogs.slice(0, 3));
+  }
   console.log("=== END GENERATE DEBUG ===");
   return plannedLogs;
 }

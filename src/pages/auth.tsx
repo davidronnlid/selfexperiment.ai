@@ -29,13 +29,34 @@ export default function Auth() {
   const [success, setSuccess] = useState("");
 
   useEffect(() => {
+    // Check for mode parameter and set signup as default
+    const { mode } = router.query;
+    if (mode === 'signup') {
+      setIsSignUp(true);
+    }
+
     // Check if user is already authenticated
     const checkUser = async () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (user) {
-        router.push("/track/manual");
+        // Check for stored correlation intent and redirect accordingly
+        const correlationIntent = localStorage.getItem('correlationIntent');
+        if (correlationIntent) {
+          try {
+            const intent = JSON.parse(correlationIntent);
+            // Don't clear localStorage here - let the track/manual page handle it
+            // Redirect to track/manual with the stored variables
+            router.push(`/track/manual?var1=${encodeURIComponent(intent.variable1)}&var2=${encodeURIComponent(intent.variable2)}`);
+          } catch (error) {
+            console.error('Error parsing correlation intent:', error);
+            localStorage.removeItem('correlationIntent'); // Clear invalid data
+            router.push("/track/manual");
+          }
+        } else {
+          router.push("/track/manual");
+        }
       }
     };
     checkUser();
@@ -46,8 +67,19 @@ export default function Auth() {
     console.log("Current origin:", window.location.origin);
     console.log("NODE_ENV:", process.env.NODE_ENV);
 
-    // Always use the current origin to redirect back to the same domain the user logged in from
-    const redirectUrl = `${window.location.origin}/track/manual`;
+    // Check if we have correlation intent to preserve
+    const correlationIntent = localStorage.getItem('correlationIntent');
+    let redirectUrl = `${window.location.origin}/track/manual`;
+    
+    if (correlationIntent) {
+      try {
+        const intent = JSON.parse(correlationIntent);
+        redirectUrl = `${window.location.origin}/track/manual?var1=${encodeURIComponent(intent.variable1)}&var2=${encodeURIComponent(intent.variable2)}`;
+      } catch (error) {
+        console.error('Error parsing correlation intent for OAuth:', error);
+        localStorage.removeItem('correlationIntent');
+      }
+    }
 
     console.log("Redirect URL:", redirectUrl);
 

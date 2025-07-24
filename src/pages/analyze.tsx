@@ -45,9 +45,7 @@ export default function Analyze() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState(0);
 
-  // Show success messages if redirected from callbacks
-  const showOuraSuccess = router.query.oura === "success";
-  const showWithingsSuccess = router.query.withings === "success";
+
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue);
@@ -84,101 +82,9 @@ export default function Analyze() {
         Analyze your health data to discover patterns and insights
       </Typography>
 
-      {/* Success Messages */}
-      {showOuraSuccess && (
-        <Alert severity="success" sx={{ mb: 2 }}>
-          Oura Ring connected successfully! Your data is now being synchronized.
-        </Alert>
-      )}
-      {showWithingsSuccess && (
-        <Alert severity="success" sx={{ mb: 2 }}>
-          Withings device connected successfully! Your data is now being
-          synchronized.
-        </Alert>
-      )}
 
-      {/* Data Source Connections - Hidden but can be easily restored
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
-            <FaLink />
-            <Typography variant="h6">Data Source Connections</Typography>
-          </Box>
-          <Box
-            sx={{
-              display: "flex",
-              flexDirection: { xs: "column", sm: "row" },
-              gap: 2,
-            }}
-          >
-            <Box
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                gap: 2,
-                p: 2,
-                border: "1px solid #e0e0e0",
-                borderRadius: 1,
-                flex: 1,
-              }}
-            >
-              <Box sx={{ fontSize: "1.5rem" }}>🛏️</Box>
-              <Box sx={{ flex: 1 }}>
-                <Typography variant="subtitle1" fontWeight="bold">
-                  Oura Ring
-                </Typography>
-                <Typography variant="body2" color="textSecondary">
-                  Sleep and recovery data
-                </Typography>
-              </Box>
-              <Button
-                variant="contained"
-                size="small"
-                color="success"
-                sx={{ mr: 1 }}
-              >
-                Connected
-              </Button>
-              <Button variant="outlined" size="small" color="warning">
-                Sync
-              </Button>
-            </Box>
-            <Box
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                gap: 2,
-                p: 2,
-                border: "1px solid #e0e0e0",
-                borderRadius: 1,
-                flex: 1,
-              }}
-            >
-              <Box sx={{ fontSize: "1.5rem" }}>⚖️</Box>
-              <Box sx={{ flex: 1 }}>
-                <Typography variant="subtitle1" fontWeight="bold">
-                  Withings Scale
-                </Typography>
-                <Typography variant="body2" color="textSecondary">
-                  Body composition data
-                </Typography>
-              </Box>
-              <Button
-                variant="contained"
-                size="small"
-                color="success"
-                sx={{ mr: 1 }}
-              >
-                Connected
-              </Button>
-              <Button variant="outlined" size="small" color="warning">
-                Sync
-              </Button>
-            </Box>
-          </Box>
-        </CardContent>
-      </Card>
-      */}
+
+
 
       {/* Main Analytics Tabs */}
       <Paper elevation={3} sx={{ overflow: "auto", height: "auto" }}>

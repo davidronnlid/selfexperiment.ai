@@ -25,6 +25,7 @@ export default function DataSourcesAnalysis({
     modularHealth: 0,
     oura: 0,
     withings: 0,
+    appleHealth: 0,
     variablesTracked: 0,
     total: 0,
     loading: true,
@@ -34,12 +35,14 @@ export default function DataSourcesAnalysis({
   const [connectionStatus, setConnectionStatus] = useState({
     ouraConnected: false,
     withingsConnected: false,
+    appleHealthConnected: false,
     loading: true,
   });
 
   // Sync states
   const [syncingOura, setSyncingOura] = useState(false);
   const [syncingWithings, setSyncingWithings] = useState(false);
+  const [syncingAppleHealth, setSyncingAppleHealth] = useState(false);
 
   // Helper function to check connection status
   const checkConnectionStatus = async () => {
@@ -60,9 +63,17 @@ export default function DataSourcesAnalysis({
         .eq("user_id", userId)
         .limit(1);
 
+      // Check Apple Health connection
+      const { data: appleHealthTokens } = await supabase
+        .from("apple_health_tokens")
+        .select("id")
+        .eq("user_id", userId)
+        .limit(1);
+
       setConnectionStatus({
         ouraConnected: !!ouraTokens && ouraTokens.length > 0,
         withingsConnected: !!withingsTokens && withingsTokens.length > 0,
+        appleHealthConnected: !!appleHealthTokens && appleHealthTokens.length > 0,
         loading: false,
       });
     } catch (error) {
@@ -90,6 +101,12 @@ export default function DataSourcesAnalysis({
         .select("*", { count: "exact", head: true })
         .eq("user_id", userId);
 
+      // Count Apple Health data points
+      const { count: appleHealthCount } = await supabase
+        .from("apple_health_variable_data_points")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", userId);
+
       // Count Modular Health data points (manual + routine + auto)
       const { count: modularHealthCount } = await supabase
         .from("data_points")
@@ -105,12 +122,13 @@ export default function DataSourcesAnalysis({
       const variablesTracked = variablesData?.length || 0;
 
       const total =
-        (ouraCount || 0) + (withingsCount || 0) + (modularHealthCount || 0);
+        (ouraCount || 0) + (withingsCount || 0) + (appleHealthCount || 0) + (modularHealthCount || 0);
 
       setDataCounts({
         modularHealth: modularHealthCount || 0,
         oura: ouraCount || 0,
         withings: withingsCount || 0,
+        appleHealth: appleHealthCount || 0,
         variablesTracked,
         total,
         loading: false,
@@ -130,6 +148,30 @@ export default function DataSourcesAnalysis({
   const connectWithings = () => {
     const withingsAuthUrl = "/api/withings/auth";
     window.location.href = withingsAuthUrl;
+  };
+
+  const connectAppleHealth = async () => {
+    if (!userId) return;
+
+    try {
+      const response = await fetch("/api/applehealth/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        alert(errorData.error || "Failed to connect to Apple Health");
+        return;
+      }
+
+      const { authUrl } = await response.json();
+      window.location.href = authUrl;
+    } catch (error) {
+      console.error("Error connecting to Apple Health:", error);
+      alert("Failed to connect to Apple Health");
+    }
   };
 
   // Sync functions
@@ -182,6 +224,30 @@ export default function DataSourcesAnalysis({
       console.error("Error syncing Withings data:", error);
     } finally {
       setSyncingWithings(false);
+    }
+  };
+
+  const syncAppleHealth = async () => {
+    if (!userId) return;
+
+    try {
+      setSyncingAppleHealth(true);
+      const response = await fetch("/api/applehealth/fetch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+
+      if (response.ok) {
+        // Refresh data counts after sync
+        setTimeout(() => {
+          fetchDataCounts();
+        }, 1000);
+      }
+    } catch (error) {
+      console.error("Error syncing Apple Health data:", error);
+    } finally {
+      setSyncingAppleHealth(false);
     }
   };
 
@@ -336,6 +402,60 @@ export default function DataSourcesAnalysis({
                   }}
                 >
                   Connect Withings
+                </Button>
+              )}
+
+              {/* Apple Health Connection */}
+              {connectionStatus.appleHealthConnected ? (
+                <Chip
+                  label={
+                    <Box
+                      sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
+                    >
+                      <span>{`Apple Health: ${formatLargeNumber(
+                        dataCounts.appleHealth
+                      )} data points`}</span>
+                      <IconButton
+                        size="small"
+                        onClick={syncAppleHealth}
+                        disabled={syncingAppleHealth}
+                        sx={{
+                          width: 22,
+                          height: 22,
+                          color: "info.main",
+                          "&:hover": { backgroundColor: "info.light" },
+                          ml: 0.25,
+                        }}
+                      >
+                        {syncingAppleHealth ? (
+                          <CircularProgress size={12} />
+                        ) : (
+                          <SyncIcon sx={{ fontSize: 12 }} />
+                        )}
+                      </IconButton>
+                    </Box>
+                  }
+                  size="small"
+                  color="info"
+                  variant="outlined"
+                />
+              ) : (
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<LinkIcon />}
+                  onClick={connectAppleHealth}
+                  sx={{
+                    textTransform: "none",
+                    color: "info.main",
+                    borderColor: "info.main",
+                    "&:hover": {
+                      backgroundColor: "info.light",
+                      borderColor: "info.main",
+                    },
+                  }}
+                >
+                  Connect Apple Health
                 </Button>
               )}
 

@@ -14,6 +14,12 @@ export default async function handler(
   try {
     const { userId, logs }: { userId: string; logs: PlannedRoutineLog[] } = req.body;
 
+    console.log("Batch log API called with:", {
+      userId,
+      logsCount: logs?.length,
+      logs: logs?.slice(0, 2) // Log first 2 logs for debugging
+    });
+
     if (!userId || !logs || !Array.isArray(logs)) {
       return res.status(400).json({ error: "Invalid request data" });
     }
@@ -54,13 +60,28 @@ export default async function handler(
           // Keep the default_unit as fallback
         }
 
+        // Convert default_value to number if it's a string
+        const displayValue = typeof log.default_value === 'string' 
+          ? parseFloat(log.default_value) || 0 
+          : log.default_value;
+
+        console.log(`Inserting log for ${log.variable_name}:`, {
+          user_id: userId,
+          variable_id: log.variable_id,
+          display_value: displayValue,
+          display_unit: preferredUnit,
+          source: "routine",
+          logged_at: logTimestamp,
+          notes: `Auto-generated from routine: ${log.routine_name}`,
+        });
+
         // Insert the log
         const { error: insertError } = await supabase
           .from("variable_logs")
           .insert({
             user_id: userId,
             variable_id: log.variable_id,
-            display_value: log.default_value,
+            display_value: displayValue,
             display_unit: preferredUnit,
             source: "routine",
             logged_at: logTimestamp,

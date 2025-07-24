@@ -3,6 +3,7 @@ import "@/styles/globals.css";
 import "./log-datepicker.css";
 import type { AppProps } from "next/app";
 import Header from "@/components/header";
+import Footer from "@/components/Footer";
 import InstallPrompt from "@/components/InstallPrompt";
 import {
   useEffect,
@@ -343,7 +344,7 @@ export default function App({ Component, pageProps }: AppProps) {
         const meta = document.createElement("meta");
         meta.name = "viewport";
         meta.content =
-          "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover";
+          "width=device-width, initial-scale=1.0, viewport-fit=cover";
         document.head.appendChild(meta);
       }
     }
@@ -614,7 +615,7 @@ export default function App({ Component, pageProps }: AppProps) {
           }}
         >
           <InstallPrompt />
-          <Box className="min-h-screen bg-background">
+          <Box className="min-h-screen bg-background" sx={{ display: "flex", flexDirection: "column" }}>
             <Header />
             <Box
               component="main"
@@ -651,6 +652,7 @@ export default function App({ Component, pageProps }: AppProps) {
                 <Component {...pageProps} />
               </Container>
             </Box>
+            <Footer />
           </Box>
 
           {/* Auto-log notification */}

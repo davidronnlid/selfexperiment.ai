@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "@/utils/supaBase";
-import { LOG_LABELS } from "@/utils/logLabels";
+
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import CreatableSelect from "react-select/creatable";
@@ -31,41 +31,38 @@ import {
 } from "@mui/material";
 
 // Custom hook for typewriter effect
-const useTypewriter = (text: string, speed: number = 80) => {
+const useTypewriter = (text: string, shouldType: boolean, speed: number = 100) => {
   const [displayText, setDisplayText] = useState("");
   const [isTyping, setIsTyping] = useState(false);
 
   useEffect(() => {
-    if (!text) {
-      setDisplayText("");
-      setIsTyping(false);
+    if (!text || !shouldType) {
+      if (!shouldType) {
+        setDisplayText(text);
+        setIsTyping(false);
+      }
       return;
     }
 
     setIsTyping(true);
     setDisplayText("");
 
-    // Add a small delay before starting to type
-    const startDelay = setTimeout(() => {
-      let index = 0;
-      const timer = setInterval(() => {
-        setDisplayText(text.slice(0, index + 1));
-        index++;
+    let index = 0;
+    const timer = setInterval(() => {
+      setDisplayText(text.slice(0, index + 1));
+      index++;
 
-        if (index >= text.length) {
-          clearInterval(timer);
-          setIsTyping(false);
-        }
-      }, speed);
-
-      return () => clearInterval(timer);
-    }, 200); // 200ms delay before starting
+      if (index >= text.length) {
+        clearInterval(timer);
+        setIsTyping(false);
+      }
+    }, speed);
 
     return () => {
-      clearTimeout(startDelay);
+      clearInterval(timer);
       setIsTyping(false);
     };
-  }, [text, speed]);
+  }, [text, shouldType, speed]);
 
   return { displayText, isTyping };
 };
@@ -79,6 +76,7 @@ const VariableSelector = ({
   disabled = false,
   getVariableDisplayName,
   placeholderVariable = "",
+  shouldType = false,
 }: {
   label: string;
   value: string;
@@ -87,6 +85,7 @@ const VariableSelector = ({
   disabled?: boolean;
   getVariableDisplayName: (variable: string) => string;
   placeholderVariable?: string;
+  shouldType?: boolean;
 }) => {
   const handleSelect = (_event: any, newValue: string | null) => {
     if (newValue) {
@@ -97,7 +96,8 @@ const VariableSelector = ({
   // Use typewriter effect for cycling variables
   const { displayText: typedPlaceholder, isTyping } = useTypewriter(
     placeholderVariable ? getVariableDisplayName(placeholderVariable) : "",
-    80 // typing speed in milliseconds
+    shouldType,
+    100 // typing speed in milliseconds
   );
 
   // Add typing cursor effect
@@ -210,9 +210,7 @@ export default function LandingPage() {
   const { user, loading: userLoading } = useUser();
   const animatedComponents = makeAnimated();
   const [tabValue, setTabValue] = useState(0);
-  const [variableOptions, setVariableOptions] = useState(
-    LOG_LABELS.map((opt) => ({ label: opt.label, value: opt.label }))
-  );
+  const [variableOptions, setVariableOptions] = useState<any[]>([]);
   const [variable, setVariable] = useState("");
   const [startDate, setStartDate] = useState(new Date());
   const [experimentDays, setExperimentDays] = useState(30); // Number of days for the experiment
@@ -243,6 +241,8 @@ export default function LandingPage() {
   const [cyclingVariable1, setCyclingVariable1] = useState("");
   const [cyclingVariable2, setCyclingVariable2] = useState("");
   const cyclingInterval = useRef<NodeJS.Timeout | null>(null);
+  const [isTyping1, setIsTyping1] = useState(false);
+  const [isTyping2, setIsTyping2] = useState(false);
 
   const missingDataOptions = [
     { value: "Ignore missing data", label: "Skip missing days (recommended)" },
@@ -255,117 +255,12 @@ export default function LandingPage() {
     startDate.getTime() + (experimentDays - 1) * 24 * 60 * 60 * 1000
   );
 
-  // Helper function to get units for a variable
-  const getVariableUnits = (variableName: string): string => {
-    const logLabel = LOG_LABELS.find((l) => l.label === variableName);
-    if (!logLabel?.constraints) return "";
-
-    if (logLabel.constraints.unit) {
-      return ` (${logLabel.constraints.unit})`;
-    }
-    return "";
-  };
-
-  // Helper function to get display name with units
+  // Helper function to get display name (simplified for correlation analysis)
   const getVariableDisplayName = (variableName: string): string => {
-    return variableName + getVariableUnits(variableName);
+    return variableName;
   };
 
-  // Group variables by category for better organization
-  const groupedVariables = {
-    "Mental & Emotional": LOG_LABELS.filter((v) =>
-      [
-        "Stress",
-        "Cognitive Control",
-        "Anxiety Before Bed",
-        "Mood",
-        "Emotional Event",
-      ].includes(v.label)
-    ),
-    "Sleep & Recovery": LOG_LABELS.filter((v) =>
-      [
-        "Sleep Time",
-        "Fell Asleep Time",
-        "Sleep Duration",
-        "Sleep Quality",
-        "Naps",
-      ].includes(v.label)
-    ),
-    "Physical Health": LOG_LABELS.filter((v) =>
-      [
-        "Exercise",
-        "Illness/Symptoms",
-        "Body Temp (subjective)",
-        "Menstrual Phase",
-      ].includes(v.label)
-    ),
-    "Substances & Diet": LOG_LABELS.filter((v) =>
-      [
-        "Caffeine",
-        "Alcohol",
-        "Nicotine",
-        "Cannabis/THC",
-        "Medications/Supplements",
-        "Big Meal Late",
-        "Late Sugar Intake",
-        "Intermittent Fasting",
-        "Hydration",
-      ].includes(v.label)
-    ),
-    Environment: LOG_LABELS.filter((v) =>
-      [
-        "Room Temp",
-        "Light Exposure",
-        "Noise Disturbances",
-        "Travel/Jet Lag",
-        "Altitude Change",
-      ].includes(v.label)
-    ),
-    "Oura Data": [
-      {
-        label: "Heart Rate",
-        type: "number",
-        description: "Resting heart rate data",
-        icon: "❤️",
-      },
-      {
-        label: "Sleep Score",
-        type: "number",
-        description: "Oura sleep score",
-        icon: "😴",
-      },
-      {
-        label: "Readiness Score",
-        type: "number",
-        description: "Oura readiness score",
-        icon: "⚡",
-      },
-      {
-        label: "Activity Score",
-        type: "number",
-        description: "Oura activity score",
-        icon: "🏃",
-      },
-      {
-        label: "Deep Sleep",
-        type: "number",
-        description: "Deep sleep duration",
-        icon: "🌙",
-      },
-      {
-        label: "REM Sleep",
-        type: "number",
-        description: "REM sleep duration",
-        icon: "💭",
-      },
-      {
-        label: "Light Sleep",
-        type: "number",
-        description: "Light sleep duration",
-        icon: "😌",
-      },
-    ],
-  };
+
 
   // Calculate total data points and power level
   const numberOfDays = experimentDays;
@@ -388,48 +283,89 @@ export default function LandingPage() {
 
   useEffect(() => {
     async function fetchAndSortVariables() {
-      const { data: logs } = await supabase.from("data_points").select("label");
-      const logCounts: Record<string, number> = {};
-      (logs || []).forEach((row: any) => {
-        if (row.label) logCounts[row.label] = (logCounts[row.label] || 0) + 1;
-      });
-      const { data: userVars } = await supabase
-        .from("user_variables")
-        .select("label");
-      const allVars = [
-        ...LOG_LABELS.map((l) => l.label),
-        ...(userVars?.map((u: any) => u.label) || []),
-      ];
-      const uniqueVars = Array.from(new Set(allVars));
-      const varWithCounts = uniqueVars.map((label) => ({
-        label,
-        value: label,
-        count: logCounts[label] || 0,
-      }));
-      varWithCounts.sort((a, b) => b.count - a.count);
-      setVariableOptions(varWithCounts);
+      try {
+        // Fetch all variables from the variables table
+        const { data: variables, error } = await supabase
+          .from("variables")
+          .select("id, label, slug, data_type, is_active")
+          .eq("is_active", true)
+          .order("label", { ascending: true });
+
+        if (error) {
+          console.error("Error fetching variables:", error);
+          // Log the specific error for debugging
+          console.log("Supabase error details:", error);
+          // If there's an error, use fallback variables
+          throw new Error("Failed to fetch variables from database");
+        }
+
+        // Only proceed if we have variables
+        if (!variables || variables.length === 0) {
+          console.log("No variables found in database");
+          throw new Error("No variables available");
+        }
+
+        // Get log counts for each variable if we have access
+        let logCounts: Record<string, number> = {};
+        try {
+          const { data: logs } = await supabase.from("data_points").select("variable_id");
+          (logs || []).forEach((row: any) => {
+            if (row.variable_id) {
+              logCounts[row.variable_id] = (logCounts[row.variable_id] || 0) + 1;
+            }
+          });
+        } catch (logError) {
+          console.log("Could not fetch log counts, using default counts");
+        }
+
+        // Create variable options with counts
+        const varWithCounts = variables.map((variable, index) => ({
+          label: variable.label,
+          value: variable.label,
+          id: variable.id,
+          slug: variable.slug,
+          data_type: variable.data_type,
+          count: logCounts[variable.id] || Math.max(50 - index * 2, 5), // Fallback count
+        }));
+
+        // Sort by count (most logged first) then alphabetically
+        varWithCounts.sort((a, b) => {
+          if (b.count !== a.count) {
+            return b.count - a.count;
+          }
+          return a.label.localeCompare(b.label);
+        });
+
+        setVariableOptions(varWithCounts);
+        console.log(`✅ Loaded ${varWithCounts.length} variables successfully`);
+      } catch (error) {
+        console.error("Error in fetchAndSortVariables:", error);
+        // Use fallback variables if everything fails
+        const fallbackVariables = [
+          { label: "Sleep Quality", value: "Sleep Quality", id: "1", slug: "sleep-quality", data_type: "numeric", count: 45 },
+          { label: "Weight", value: "Weight", id: "2", slug: "weight", data_type: "numeric", count: 42 },
+          { label: "Mood", value: "Mood", id: "3", slug: "mood", data_type: "numeric", count: 38 },
+          { label: "Exercise Duration", value: "Exercise Duration", id: "4", slug: "exercise-duration", data_type: "numeric", count: 35 },
+          { label: "Heart Rate", value: "Heart Rate", id: "5", slug: "heart-rate", data_type: "numeric", count: 33 },
+          { label: "Steps", value: "Steps", id: "6", slug: "steps", data_type: "numeric", count: 31 },
+          { label: "Stress Level", value: "Stress Level", id: "7", slug: "stress-level", data_type: "numeric", count: 27 },
+          { label: "Hydration", value: "Hydration", id: "8", slug: "hydration", data_type: "numeric", count: 25 },
+        ];
+        setVariableOptions(fallbackVariables);
+      }
     }
     fetchAndSortVariables();
   }, []);
 
-  const userVars = variableOptions.filter(
-    (opt: any) => typeof opt === "object" && opt !== null && opt.icon
+  const selectOptions: { label: string; value: string }[] = variableOptions.map(
+    (opt: any) => ({
+      label: opt.label,
+      value: opt.value,
+    })
   );
 
-  const selectOptions: { label: string; value: string }[] = variableOptions.map(
-    (opt: any) => {
-      if (typeof opt === "string") {
-        return { label: opt, value: opt };
-      } else {
-        return { label: opt.label, value: opt.value };
-      }
-    }
-  );
-  if (
-    !variableOptions.some(
-      (opt: any) => (typeof opt === "string" ? opt : opt.value) === variable
-    )
-  ) {
+  // Add current variable if it's not in the options
+  if (variable && !variableOptions.some((opt: any) => opt.value === variable)) {
     selectOptions.push({ label: variable, value: variable });
   }
 
@@ -470,13 +406,33 @@ export default function LandingPage() {
   // Set up cycling interval when both variables are empty
   useEffect(() => {
     if (!variable && !dependentVar && selectOptions.length > 1) {
-      // Set up interval to cycle through variables every 6 seconds (allowing time for typewriter effect)
-      cyclingInterval.current = setInterval(() => {
+      // Start cycling immediately
+      const startCycling = () => {
         const newVar1 = getRandomVariable();
         const newVar2 = getRandomVariable(newVar1);
+        
+        // Start typing animation for variable 1
+        setIsTyping1(true);
         setCyclingVariable1(newVar1);
-        setCyclingVariable2(newVar2);
-      }, 6000);
+        
+        // Start typing animation for variable 2 after a small delay
+        setTimeout(() => {
+          setIsTyping2(true);
+          setCyclingVariable2(newVar2);
+        }, 500);
+        
+        // Stop typing animations after 3 seconds
+        setTimeout(() => {
+          setIsTyping1(false);
+          setIsTyping2(false);
+        }, 3000);
+      };
+      
+      // Start immediately
+      startCycling();
+      
+      // Set up interval to cycle every 5 seconds (3s typing + 2s pause)
+      cyclingInterval.current = setInterval(startCycling, 5000);
     } else {
       // Clear cycling if user has selected variables
       if (cyclingInterval.current) {
@@ -485,6 +441,8 @@ export default function LandingPage() {
       }
       setCyclingVariable1("");
       setCyclingVariable2("");
+      setIsTyping1(false);
+      setIsTyping2(false);
     }
 
     // Cleanup interval on unmount
@@ -494,7 +452,7 @@ export default function LandingPage() {
         cyclingInterval.current = null;
       }
     };
-  }, [variable, dependentVar]);
+  }, [variable, dependentVar, selectOptions.length]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -630,18 +588,81 @@ export default function LandingPage() {
   };
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Typography variant="h3" component="h1" gutterBottom align="center">
-        🧪 Build a Self-Experiment
-      </Typography>
-      <Typography
-        variant="h6"
-        color="textSecondary"
-        align="center"
-        sx={{ mb: 4 }}
+    <Container maxWidth="lg" sx={{ py: { xs: 6, md: 8 } }}>
+      {/* Hero Section */}
+      <Box 
+        sx={{ 
+          textAlign: 'center',
+          mb: 8,
+          position: 'relative',
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            top: -20,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: '200px',
+            height: '4px',
+            background: 'linear-gradient(90deg, transparent, #ffd700, transparent)',
+            borderRadius: '2px',
+          }
+        }}
       >
-        Start with a question that matters to you.
-      </Typography>
+        <Typography 
+          variant="h1" 
+          component="h1" 
+          gutterBottom 
+          align="center"
+          sx={{
+            background: 'linear-gradient(135deg, #ffd700 0%, #ffea70 50%, #ffd700 100%)',
+            backgroundClip: 'text',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            fontWeight: 800,
+            fontSize: { xs: '2.5rem', md: '4rem', lg: '4.5rem' },
+            mb: 3,
+            letterSpacing: '-0.02em',
+            lineHeight: { xs: 1.1, md: 1.05 },
+            textShadow: '0 4px 8px rgba(0,0,0,0.2)',
+            position: 'relative',
+            '&::after': {
+              content: '""',
+              position: 'absolute',
+              bottom: -10,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: '60px',
+              height: '3px',
+              background: 'linear-gradient(90deg, #ffd700, #ffea70)',
+              borderRadius: '2px',
+            }
+          }}
+        >
+          Your Health Data, Your Insights
+        </Typography>
+        
+        <Typography
+          variant="h4"
+          color="textSecondary"
+          align="center"
+          sx={{ 
+            mb: 4,
+            fontWeight: 400,
+            color: '#e0e0e0',
+            maxWidth: '700px',
+            mx: 'auto',
+            fontSize: { xs: '1.25rem', md: '1.5rem' },
+            lineHeight: 1.4,
+            letterSpacing: '0.01em',
+            opacity: 0.95
+          }}
+        >
+          Track health data → Find patterns & correlations → Get insights
+        </Typography>
+        
+
+      </Box>
+
       {error && (
         <Alert severity="error" sx={{ mb: 4 }}>
           {error}
@@ -655,28 +676,70 @@ export default function LandingPage() {
           </Box>
         </Alert>
       )}
-      <Paper elevation={3} sx={{ p: 4 }}>
+      {/* Interactive Demo Section */}
+      <Box
+        sx={{
+          background: 'linear-gradient(135deg, rgba(26, 26, 26, 0.95) 0%, rgba(0, 0, 0, 0.98) 100%)',
+          backdropFilter: 'blur(20px)',
+          borderRadius: { xs: 2, md: 4 },
+          border: '1px solid rgba(255, 215, 0, 0.2)',
+          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 215, 0, 0.1)',
+          p: { xs: 4, md: 6 },
+          position: 'relative',
+          overflow: 'hidden',
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '1px',
+            background: 'linear-gradient(90deg, transparent, rgba(255, 215, 0, 0.5), transparent)',
+          },
+          '&::after': {
+            content: '""',
+            position: 'absolute',
+            top: -50,
+            right: -50,
+            width: 100,
+            height: 100,
+            background: 'radial-gradient(circle, rgba(255, 215, 0, 0.1) 0%, transparent 70%)',
+            borderRadius: '50%',
+          }
+        }}
+      >
         <form onSubmit={handleSubmit}>
-          {/* Variable Selection with Tabs */}
-          <Box sx={{ mb: 4 }}>
+
+
+          {/* Variable Selection */}
+          <Box sx={{ mb: 6 }}>
             {/* Research Question */}
             <Box
               sx={{
-                mb: 2,
-                p: 3,
-                backgroundColor: "grey.900",
+                mb: 4,
+                p: { xs: 3, md: 4 },
+                background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.6) 0%, rgba(26, 26, 26, 0.8) 100%)',
                 color: "white",
-                borderRadius: 2,
-                border: "2px solid",
-                borderColor: "grey.700",
-                boxShadow: 2,
+                borderRadius: 3,
+                border: "1px solid rgba(255, 215, 0, 0.3)",
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
                 display: "flex",
                 flexDirection: { xs: "column", md: "row" },
                 alignItems: "center",
                 justifyContent: "center",
-                gap: { xs: 2, md: 1 },
+                gap: { xs: 3, md: 2 },
                 flexWrap: "wrap",
                 position: "relative",
+                backdropFilter: 'blur(10px)',
+                '&::before': {
+                  content: '""',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: '1px',
+                  background: 'linear-gradient(90deg, transparent, rgba(255, 215, 0, 0.6), transparent)',
+                }
               }}
             >
               {/* Cycling indicator */}
@@ -712,7 +775,7 @@ export default function LandingPage() {
                   lineHeight: 1.2,
                 }}
               >
-                Does
+                Does Your
               </Typography>
 
               <Box sx={{ mx: { xs: 0, md: 1 } }}>
@@ -725,6 +788,7 @@ export default function LandingPage() {
                   onSelect={setVariable}
                   getVariableDisplayName={getVariableDisplayName}
                   placeholderVariable={cyclingVariable1}
+                  shouldType={isTyping1}
                 />
               </Box>
 
@@ -738,7 +802,7 @@ export default function LandingPage() {
                   textAlign: "center",
                 }}
               >
-                cause an effect on
+                Correlate with Your
               </Typography>
 
               <Box sx={{ mx: { xs: 0, md: 1 } }}>
@@ -751,6 +815,7 @@ export default function LandingPage() {
                   onSelect={setDependentVar}
                   getVariableDisplayName={getVariableDisplayName}
                   placeholderVariable={cyclingVariable2}
+                  shouldType={isTyping2}
                 />
               </Box>
 
@@ -768,408 +833,89 @@ export default function LandingPage() {
             </Box>
           </Box>
 
-          {/* Experiment Configuration */}
-          <Box sx={{ mb: 4 }}>
-            <Typography
-              variant="h6"
+          {/* Professional CTA Section */}
+          <Box sx={{ textAlign: "center", mt: 8 }}>
+            {/* Main CTA Button */}
+            <Box
               sx={{
-                mb: 3,
-                p: 3,
-                backgroundColor: "grey.800",
-                color: "white",
-                borderRadius: 2,
-                fontWeight: 600,
-                textAlign: "center",
-                boxShadow: 2,
+                position: 'relative',
+                display: 'inline-block',
+                mb: 4
               }}
             >
-              To get a{" "}
-              <Box
-                component="span"
+              <Button
+                variant="contained"
+                size="large"
                 onClick={() => {
-                  // Cycle through power levels by adjusting days to hit the right thresholds
-                  const currentTotalPoints = experimentDays * frequency;
-                  if (currentTotalPoints < 10) {
-                    // Currently Low, go to Medium (need >= 10 points)
-                    setExperimentDays(Math.ceil(10 / frequency));
-                  } else if (currentTotalPoints < 30) {
-                    // Currently Medium, go to High (need >= 30 points)
-                    setExperimentDays(Math.ceil(30 / frequency));
-                  } else {
-                    // Currently High, go to Low (need < 10 points)
-                    setExperimentDays(Math.max(2, Math.floor(9 / frequency)));
+                  // Store selected variables in localStorage for post-auth redirect
+                  if (variable || dependentVar) {
+                    const correlationIntent = {
+                      variable1: variable || cyclingVariable1,
+                      variable2: dependentVar || cyclingVariable2,
+                      timestamp: Date.now()
+                    };
+                    localStorage.setItem('correlationIntent', JSON.stringify(correlationIntent));
                   }
+                  // Redirect to auth page with signup intent
+                  router.push('/auth?mode=signup');
                 }}
                 sx={{
+                  background: "linear-gradient(135deg, #ffd700 0%, #ffea70 50%, #ffd700 100%)",
+                  color: "black",
+                  width: "100%",
+                  maxWidth: 500,
+                  py: { xs: 3, md: 4 },
+                  px: { xs: 4, md: 6 },
+                  fontSize: { xs: "1.1rem", md: "1.3rem" },
                   fontWeight: 700,
-                  color: "white",
-                  backgroundColor:
-                    powerLevel === "High"
-                      ? "green"
-                      : powerLevel === "Medium"
-                      ? "orange"
-                      : "red",
-                  padding: "4px 8px",
-                  borderRadius: 1,
-                  cursor: "pointer",
+                  borderRadius: 4,
+                  boxShadow: "0 16px 48px rgba(255, 215, 0, 0.3), 0 0 0 1px rgba(255, 215, 0, 0.2)",
+                  textTransform: "none",
+                  position: "relative",
+                  overflow: "hidden",
+                  letterSpacing: '0.01em',
+                  border: '2px solid transparent',
+                  backgroundClip: 'padding-box',
+                  "&::before": {
+                    content: '""',
+                    position: "absolute",
+                    top: 0,
+                    left: "-100%",
+                    width: "100%",
+                    height: "100%",
+                    background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)",
+                    transition: "left 0.6s ease",
+                  },
+                  "&::after": {
+                    content: '""',
+                    position: "absolute",
+                    inset: 0,
+                    background: "linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 50%)",
+                    borderRadius: 4,
+                    pointerEvents: 'none',
+                  },
                   "&:hover": {
-                    backgroundColor:
-                      powerLevel === "High"
-                        ? "rgba(0, 128, 0, 0.8)"
-                        : powerLevel === "Medium"
-                        ? "rgba(255, 165, 0, 0.8)"
-                        : "rgba(255, 0, 0, 0.8)",
+                    background: "linear-gradient(135deg, #ffea70 0%, #ffd700 50%, #ffea70 100%)",
+                    transform: "translateY(-3px)",
+                    boxShadow: "0 20px 60px rgba(255, 215, 0, 0.4), 0 0 0 1px rgba(255, 215, 0, 0.3)",
+                    "&::before": {
+                      left: "100%",
+                    },
+                  },
+                  "&:active": {
+                    transform: "translateY(-1px)",
                   },
                 }}
               >
-                {powerLevel.toUpperCase()}
-              </Box>{" "}
-              confidence answer, you will log{" "}
-              <Box
-                component="span"
-                onClick={(e) => {
-                  setFrequencyAnchorEl(e.currentTarget);
-                  setShowFrequencyMenu(true);
-                }}
-                sx={{
-                  fontWeight: 700,
-                  color: "white",
-                  backgroundColor: "black",
-                  padding: "4px 8px",
-                  borderRadius: 1,
-                  cursor: "pointer",
-                  "&:hover": {
-                    backgroundColor: "rgba(0, 0, 0, 0.8)",
-                  },
-                }}
-              >
-                {frequency}
-              </Box>{" "}
-              {frequency === 1 ? "time" : "times"} per day for{" "}
-              {editingDays ? (
-                <TextField
-                  type="number"
-                  value={tempDays}
-                  onChange={(e) => setTempDays(Number(e.target.value))}
-                  onBlur={() => {
-                    if (tempDays >= 2 && tempDays <= 365) {
-                      setExperimentDays(tempDays);
-                    } else {
-                      setTempDays(experimentDays);
-                    }
-                    setEditingDays(false);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      if (tempDays >= 2 && tempDays <= 365) {
-                        setExperimentDays(tempDays);
-                      } else {
-                        setTempDays(experimentDays);
-                      }
-                      setEditingDays(false);
-                    } else if (e.key === "Escape") {
-                      setTempDays(experimentDays);
-                      setEditingDays(false);
-                    }
-                  }}
-                  autoFocus
-                  size="small"
-                  inputProps={{ min: 2, max: 365 }}
-                  sx={{
-                    width: 80,
-                    "& .MuiInputBase-root": {
-                      fontSize: "inherit",
-                      fontWeight: 700,
-                      color: "white",
-                      backgroundColor: "black",
-                      borderRadius: 1,
-                    },
-                    "& .MuiInputBase-input": {
-                      textAlign: "center",
-                      padding: "4px 8px",
-                      color: "white",
-                    },
-                    "& .MuiOutlinedInput-notchedOutline": {
-                      borderColor: "white",
-                    },
-                  }}
-                />
-              ) : (
-                <Box
-                  component="span"
-                  onClick={(e) => {
-                    setDaysAnchorEl(e.currentTarget);
-                    setShowDaysMenu(true);
-                  }}
-                  sx={{
-                    fontWeight: 700,
-                    color: "white",
-                    backgroundColor: "black",
-                    padding: "4px 8px",
-                    borderRadius: 1,
-                    cursor: "pointer",
-                    "&:hover": {
-                      backgroundColor: "rgba(0, 0, 0, 0.8)",
-                    },
-                  }}
-                >
-                  {experimentDays}
-                </Box>
-              )}{" "}
-              days.
-            </Typography>
+                🚀 Start Tracking - Free
+              </Button>
+            </Box>
+            
 
-            {/* Frequency Selection Menu */}
-            <Menu
-              anchorEl={frequencyAnchorEl}
-              open={showFrequencyMenu}
-              onClose={() => {
-                setShowFrequencyMenu(false);
-                setFrequencyAnchorEl(null);
-              }}
-              PaperProps={{
-                sx: {
-                  borderRadius: 2,
-                  boxShadow: 3,
-                  minWidth: 200,
-                },
-              }}
-            >
-              {[1, 2, 3, 4, 5].map((freq) => (
-                <MenuItem
-                  key={freq}
-                  onClick={() => {
-                    setFrequency(freq);
-                    setShowFrequencyMenu(false);
-                    setFrequencyAnchorEl(null);
-                  }}
-                  selected={frequency === freq}
-                  sx={{
-                    py: 1.5,
-                    justifyContent: "center",
-                    fontWeight: frequency === freq ? 600 : 400,
-                  }}
-                >
-                  {freq} {freq === 1 ? "time" : "times"} per day
-                </MenuItem>
-              ))}
-            </Menu>
-
-            {/* Days Selection Menu */}
-            <Menu
-              anchorEl={daysAnchorEl}
-              open={showDaysMenu}
-              onClose={() => {
-                setShowDaysMenu(false);
-                setDaysAnchorEl(null);
-              }}
-              PaperProps={{
-                sx: {
-                  borderRadius: 2,
-                  boxShadow: 3,
-                  minWidth: 250,
-                  maxHeight: 400,
-                },
-              }}
-            >
-              {/* Common presets */}
-              {[7, 14, 21, 30, 45, 60, 90, 120, 180, 365].map((days) => (
-                <MenuItem
-                  key={days}
-                  onClick={() => {
-                    setExperimentDays(days);
-                    setShowDaysMenu(false);
-                    setDaysAnchorEl(null);
-                  }}
-                  selected={experimentDays === days}
-                  sx={{
-                    py: 1.5,
-                    justifyContent: "space-between",
-                    fontWeight: experimentDays === days ? 600 : 400,
-                  }}
-                >
-                  <span>{days} days</span>
-                  <span style={{ fontSize: "0.8rem", color: "gray" }}>
-                    {days === 7
-                      ? "1 week"
-                      : days === 14
-                      ? "2 weeks"
-                      : days === 21
-                      ? "3 weeks"
-                      : days === 30
-                      ? "1 month"
-                      : days === 45
-                      ? "6 weeks"
-                      : days === 60
-                      ? "2 months"
-                      : days === 90
-                      ? "3 months"
-                      : days === 120
-                      ? "4 months"
-                      : days === 180
-                      ? "6 months"
-                      : days === 365
-                      ? "1 year"
-                      : ""}
-                  </span>
-                </MenuItem>
-              ))}
-              <MenuItem
-                onClick={() => {
-                  setShowDaysMenu(false);
-                  setDaysAnchorEl(null);
-                  setCustomDaysInput(experimentDays.toString());
-                  setShowCustomDaysModal(true);
-                }}
-                sx={{
-                  py: 1.5,
-                  justifyContent: "center",
-                  fontStyle: "italic",
-                  borderTop: "1px solid",
-                  borderColor: "divider",
-                }}
-              >
-                Enter custom number...
-              </MenuItem>
-            </Menu>
-          </Box>
-          {/* Advanced Settings */}
-          <Box sx={{ mb: 4 }}>
-            <Accordion
-              sx={{
-                borderRadius: 2,
-                boxShadow: 1,
-                border: "1px solid",
-                borderColor: "divider",
-                "&:before": { display: "none" },
-              }}
-            >
-              <AccordionSummary
-                expandIcon={<ExpandMoreIcon />}
-                sx={{
-                  backgroundColor: "grey.800",
-                  borderRadius: "8px 8px 0 0",
-                  color: "white",
-                  "& .MuiSvgIcon-root": {
-                    color: "white",
-                  },
-                }}
-              >
-                <Typography variant="h6" sx={{ color: "white" }}>
-                  Advanced Settings
-                </Typography>
-              </AccordionSummary>
-              <AccordionDetails sx={{ p: 3 }}>
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                  <TimeIntervalSelector
-                    intervals={timeIntervals}
-                    onChange={setTimeIntervals}
-                    maxIntervals={frequency}
-                  />
-                  <Box>
-                    <Typography variant="subtitle1" gutterBottom>
-                      Missing Data Handling
-                    </Typography>
-                    <TextField
-                      select
-                      value={missingDataStrategy}
-                      onChange={(e) => setMissingDataStrategy(e.target.value)}
-                      fullWidth
-                      SelectProps={{ native: true }}
-                      size="small"
-                    >
-                      {missingDataOptions.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </TextField>
-                    <Typography
-                      variant="caption"
-                      color="textSecondary"
-                      sx={{ mt: 1, display: "block" }}
-                    >
-                      Choose how missing data should be handled in your
-                      experiment analysis.
-                    </Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="subtitle1" gutterBottom>
-                      Custom Date Range
-                    </Typography>
-                    <Box
-                      sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 2,
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <DatePicker
-                        selected={startDate}
-                        onChange={(date) => date && setStartDate(date)}
-                        className="border px-3 py-2 rounded"
-                        dateFormat="yyyy-MM-dd"
-                        minDate={new Date()}
-                      />
-                      <Typography variant="body2" color="textSecondary">
-                        to
-                      </Typography>
-                      <DatePicker
-                        selected={endDate}
-                        onChange={() => {}} // Read-only, calculated from start date + experiment days
-                        className="border px-3 py-2 rounded"
-                        dateFormat="yyyy-MM-dd"
-                        disabled
-                      />
-                    </Box>
-                    <Typography
-                      variant="caption"
-                      color="textSecondary"
-                      sx={{ mt: 1, display: "block" }}
-                    >
-                      By default, experiments start today. Use this to set a
-                      custom date range.
-                    </Typography>
-                  </Box>
-                </Box>
-              </AccordionDetails>
-            </Accordion>
           </Box>
 
-          {/* Start Experiment Button */}
-          <Box sx={{ textAlign: "center" }}>
-            <Button
-              type="submit"
-              variant="contained"
-              size="large"
-              sx={{
-                background: "linear-gradient(45deg, #FFD700 30%, #FFEA70 90%)",
-                color: "black",
-                width: "100%",
-                maxWidth: 400,
-                py: 2,
-                fontSize: "1.125rem",
-                fontWeight: "bold",
-                borderRadius: 2,
-                boxShadow: 3,
-                textTransform: "none",
-                "&:hover": {
-                  background:
-                    "linear-gradient(45deg, #FFD700 30%, #FFEA70 90%)",
-                  transform: "translateY(-1px)",
-                  boxShadow: 4,
-                },
-                "&:active": {
-                  transform: "translateY(0)",
-                },
-              }}
-            >
-              {loading ? "Saving..." : "Start Experiment"}
-            </Button>
-          </Box>
         </form>
-      </Paper>
+      </Box>
 
       {/* Custom Days Modal */}
       <Dialog

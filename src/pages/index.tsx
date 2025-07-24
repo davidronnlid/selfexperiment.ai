@@ -10,6 +10,7 @@ import {
 import { useUser } from "./_app";
 import { useRouter } from "next/router";
 import { useEffect } from "react";
+import LandingPage from "./landing-page";
 
 export default function Home() {
   const { user, loading } = useUser();
@@ -46,57 +47,9 @@ export default function Home() {
     );
   }
 
-  // Show sign-in page for unauthenticated users
+  // Show landing page for unauthenticated users
   if (!user) {
-    return (
-      <Container
-        maxWidth="sm"
-        className="flex items-center justify-center min-h-screen px-4"
-      >
-        <Card className="w-full shadow-2xl border border-border bg-surface/95 backdrop-blur-sm">
-          <CardContent className="flex flex-col items-center p-6 lg:p-8">
-            <Typography
-              variant="h3"
-              className="font-bold text-white mb-4 tracking-tight text-center bg-gradient-to-r from-gold to-gold-light bg-clip-text text-transparent text-2xl lg:text-3xl"
-              component="h1"
-            >
-              Modular Health
-            </Typography>
-            <Typography
-              variant="h6"
-              className="mb-6 text-gold text-center font-medium text-lg lg:text-xl"
-            >
-              Understand yourself better with AI
-            </Typography>
-            <Typography
-              variant="body1"
-              className="mb-8 text-text-secondary text-center leading-relaxed text-sm lg:text-base"
-            >
-              Sign in to start tracking your experiments, tracking data, and
-              discovering insights about yourself through intelligent analysis.
-            </Typography>
-            <Box className="flex flex-col gap-4 w-full max-w-sm">
-              <Link href="/auth" passHref>
-                <Button
-                  variant="contained"
-                  className="w-full text-lg py-3 rounded-lg shadow-lg transition-all duration-200 hover:shadow-xl"
-                  size="large"
-                  fullWidth
-                >
-                  Sign In / Sign Up
-                </Button>
-              </Link>
-              <Typography
-                variant="body2"
-                className="text-text-muted text-center mt-4 text-xs lg:text-sm"
-              >
-                Join thousands of users discovering insights about themselves
-              </Typography>
-            </Box>
-          </CardContent>
-        </Card>
-      </Container>
-    );
+    return <LandingPage />;
   }
 
   // This shouldn't be reached due to the redirect above, but just in case

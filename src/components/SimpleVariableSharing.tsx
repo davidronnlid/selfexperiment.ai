@@ -13,6 +13,7 @@ import {
 import { FaGlobe, FaLock } from "react-icons/fa";
 import Link from "next/link";
 import { supabase } from "@/utils/supaBase";
+import VariableLabel from "./VariableLabel";
 
 interface VariableWithSharing {
   id: string;
@@ -240,27 +241,21 @@ export default function SimpleVariableSharing({
                   {variable.icon || "📊"}
                 </span>
                 <Box>
-                  <Link
-                    href={`/variable/${encodeURIComponent(
-                      variable.slug ||
-                        variable.label.toLowerCase().replace(/\s+/g, "-")
-                    )}`}
-                    style={{ textDecoration: "none" }}
-                  >
-                    <Typography
-                      variant="body1"
-                      fontWeight="medium"
-                      sx={{
-                        color: "primary.main",
-                        cursor: "pointer",
-                        "&:hover": {
-                          textDecoration: "underline",
-                        },
-                      }}
-                    >
-                      {variable.label}
-                    </Typography>
-                  </Link>
+                  <VariableLabel
+                    variableId={variable.id}
+                    variableLabel={variable.label}
+                    variableSlug={variable.slug}
+                    variableIcon={variable.icon}
+                    variant="body1"
+                    fontWeight="medium"
+                    color="primary.main"
+                    sx={{
+                      cursor: "pointer",
+                      "&:hover": {
+                        textDecoration: "underline",
+                      },
+                    }}
+                  />
                   {variable.description && (
                     <Typography variant="caption" color="textSecondary">
                       {variable.description}
