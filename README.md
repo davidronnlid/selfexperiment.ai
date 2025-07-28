@@ -99,6 +99,34 @@ src/
 - Mobile app
 - Integration with wearables/APIs
 
+## 🔄 Xcode Project Sync
+
+The iOS app files are maintained in two locations:
+- **Project Structure**: `~/modularhealth/xcode-project/` (for version control)
+- **Xcode Project**: `~/Documents/Modular Health/Modular Health/` (for development)
+
+### Auto-Sync Commands
+```bash
+# Sync all Xcode files (bi-directional based on timestamps)
+npm run sync-xcode
+
+# Or run directly
+./sync-xcode-files.sh
+```
+
+The sync script automatically:
+- ✅ Copies newer files from either location
+- ✅ Handles missing files gracefully
+- ✅ Shows sync status and timestamps
+- ✅ Keeps both locations in perfect sync
+
+### When to Sync
+- **Before making iOS changes** - ensures you have latest code
+- **After making iOS changes** - saves changes to version control
+- **When switching between development environments**
+
+---
+
 Hey AI chat, if I start the message with "im" you can interpret that as "implement". Which means I want you do code what comes after in the prompt without asking me for permission to continue.
 
 Also. When asking me to Accept changes. Just accept changes per default so I don't have to accept them manually.

@@ -10,6 +10,9 @@ import {
   Button,
 } from "@mui/material";
 import { supabase } from "@/utils/supaBase";
+import { useRouter } from "next/router";
+import { useUser } from "@/pages/_app";
+import AppleHealthConnectionDialog from "./AppleHealthConnectionDialog";
 import SyncIcon from "@mui/icons-material/Sync";
 import LinkIcon from "@mui/icons-material/Link";
 
@@ -20,6 +23,9 @@ interface DataSourcesAnalysisProps {
 export default function DataSourcesAnalysis({
   userId,
 }: DataSourcesAnalysisProps) {
+  const router = useRouter();
+  const { user } = useUser();
+
   // Data source counts state
   const [dataCounts, setDataCounts] = useState({
     modularHealth: 0,
@@ -43,6 +49,9 @@ export default function DataSourcesAnalysis({
   const [syncingOura, setSyncingOura] = useState(false);
   const [syncingWithings, setSyncingWithings] = useState(false);
   const [syncingAppleHealth, setSyncingAppleHealth] = useState(false);
+
+  // Apple Health dialog state
+  const [appleHealthDialogOpen, setAppleHealthDialogOpen] = useState(false);
 
   // Helper function to check connection status
   const checkConnectionStatus = async () => {
@@ -82,7 +91,7 @@ export default function DataSourcesAnalysis({
     }
   };
 
-  // Helper function to fetch data counts
+  // Helper function to fetch data counts using direct database queries
   const fetchDataCounts = async () => {
     if (!userId) return;
 
@@ -107,11 +116,12 @@ export default function DataSourcesAnalysis({
         .select("*", { count: "exact", head: true })
         .eq("user_id", userId);
 
-      // Count Modular Health data points (manual + routine + auto)
+      // Count Modular Health data points (manual logs and other sources)
       const { count: modularHealthCount } = await supabase
         .from("data_points")
         .select("*", { count: "exact", head: true })
-        .eq("user_id", userId);
+        .eq("user_id", userId)
+        .not('source', 'cs', '{"apple_health","oura","withings"}'); // Exclude integrated sources
 
       // Count unique variables tracked
       const { data: variablesData } = await supabase
@@ -121,8 +131,7 @@ export default function DataSourcesAnalysis({
 
       const variablesTracked = variablesData?.length || 0;
 
-      const total =
-        (ouraCount || 0) + (withingsCount || 0) + (appleHealthCount || 0) + (modularHealthCount || 0);
+      const total = (ouraCount || 0) + (withingsCount || 0) + (appleHealthCount || 0) + (modularHealthCount || 0);
 
       setDataCounts({
         modularHealth: modularHealthCount || 0,
@@ -152,26 +161,9 @@ export default function DataSourcesAnalysis({
 
   const connectAppleHealth = async () => {
     if (!userId) return;
-
-    try {
-      const response = await fetch("/api/applehealth/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        alert(errorData.error || "Failed to connect to Apple Health");
-        return;
-      }
-
-      const { authUrl } = await response.json();
-      window.location.href = authUrl;
-    } catch (error) {
-      console.error("Error connecting to Apple Health:", error);
-      alert("Failed to connect to Apple Health");
-    }
+    
+    // Open the smart Apple Health connection dialog
+    setAppleHealthDialogOpen(true);
   };
 
   // Sync functions
@@ -229,26 +221,9 @@ export default function DataSourcesAnalysis({
 
   const syncAppleHealth = async () => {
     if (!userId) return;
-
-    try {
-      setSyncingAppleHealth(true);
-      const response = await fetch("/api/applehealth/fetch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
-      });
-
-      if (response.ok) {
-        // Refresh data counts after sync
-        setTimeout(() => {
-          fetchDataCounts();
-        }, 1000);
-      }
-    } catch (error) {
-      console.error("Error syncing Apple Health data:", error);
-    } finally {
-      setSyncingAppleHealth(false);
-    }
+    
+    // Open the smart Apple Health connection dialog instead of direct sync
+    setAppleHealthDialogOpen(true);
   };
 
   useEffect(() => {
@@ -263,6 +238,54 @@ export default function DataSourcesAnalysis({
       return (num / 1000).toFixed(1) + "K";
     }
     return num.toString();
+  };
+
+  // Get current user's username for navigation
+  const getUserUsername = async () => {
+    if (!user?.id) return null;
+    
+    const { data } = await supabase
+      .from('profiles')
+      .select('username')
+      .eq('id', user.id)
+      .single();
+    
+    return data?.username;
+  };
+
+  // Navigation handlers
+  const handleDataSourceClick = async (source: string) => {
+    console.log('🔗 Data source clicked:', source);
+    console.log('👤 Current user:', user);
+    
+    const username = await getUserUsername();
+    console.log('📝 Retrieved username:', username);
+    
+    if (!username) {
+      console.error('❌ No username found for navigation');
+      return;
+    }
+
+    const targetPath = `/${username}/${source}-data`;
+    console.log('🎯 Navigating to:', targetPath);
+
+    switch (source) {
+      case 'apple_health':
+        router.push(`/${username}/apple-health-data`);
+        break;
+      case 'oura':
+        router.push(`/${username}/oura-data`);
+        break;
+      case 'withings':
+        router.push(`/${username}/withings-data`);
+        break;
+      case 'modular_health':
+        router.push(`/${username}/modular-health-data`);
+        break;
+      default:
+        console.warn('⚠️ Unknown data source:', source);
+        break;
+    }
   };
 
   return (
@@ -295,6 +318,8 @@ export default function DataSourcesAnalysis({
                 size="small"
                 color="primary"
                 variant="outlined"
+                onClick={() => handleDataSourceClick('modular_health')}
+                sx={{ cursor: 'pointer', '&:hover': { backgroundColor: 'primary.light' } }}
               />
 
               {/* Oura Connection */}
@@ -309,7 +334,10 @@ export default function DataSourcesAnalysis({
                       )} data points`}</span>
                       <IconButton
                         size="small"
-                        onClick={syncOura}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          syncOura();
+                        }}
                         disabled={syncingOura}
                         sx={{
                           width: 22,
@@ -330,6 +358,8 @@ export default function DataSourcesAnalysis({
                   size="small"
                   color="secondary"
                   variant="outlined"
+                  onClick={() => handleDataSourceClick('oura')}
+                  sx={{ cursor: 'pointer', '&:hover': { backgroundColor: 'secondary.light' } }}
                 />
               ) : (
                 <Button
@@ -363,7 +393,10 @@ export default function DataSourcesAnalysis({
                       )} data points`}</span>
                       <IconButton
                         size="small"
-                        onClick={syncWithings}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          syncWithings();
+                        }}
                         disabled={syncingWithings}
                         sx={{
                           width: 22,
@@ -384,6 +417,8 @@ export default function DataSourcesAnalysis({
                   size="small"
                   color="warning"
                   variant="outlined"
+                  onClick={() => handleDataSourceClick('withings')}
+                  sx={{ cursor: 'pointer', '&:hover': { backgroundColor: 'warning.light' } }}
                 />
               ) : (
                 <Button
@@ -417,7 +452,10 @@ export default function DataSourcesAnalysis({
                       )} data points`}</span>
                       <IconButton
                         size="small"
-                        onClick={syncAppleHealth}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          syncAppleHealth();
+                        }}
                         disabled={syncingAppleHealth}
                         sx={{
                           width: 22,
@@ -438,6 +476,8 @@ export default function DataSourcesAnalysis({
                   size="small"
                   color="info"
                   variant="outlined"
+                  onClick={() => handleDataSourceClick('apple_health')}
+                  sx={{ cursor: 'pointer', '&:hover': { backgroundColor: 'info.light' } }}
                 />
               ) : (
                 <Button
@@ -492,6 +532,19 @@ export default function DataSourcesAnalysis({
           )}
         </Box>
       </CardContent>
+      
+      {/* Apple Health Connection Dialog */}
+      <AppleHealthConnectionDialog
+        open={appleHealthDialogOpen}
+        onClose={() => setAppleHealthDialogOpen(false)}
+        userId={userId}
+        onConnectionSuccess={() => {
+          setAppleHealthDialogOpen(false);
+          // Refresh connection status and data counts
+          checkConnectionStatus();
+          fetchDataCounts();
+        }}
+      />
     </Card>
   );
 }

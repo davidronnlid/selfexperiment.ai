@@ -13,6 +13,10 @@ import {
   TextField,
   InputAdornment,
   Button,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import { Line, Bar, Scatter } from "react-chartjs-2";
 import {
@@ -41,10 +45,14 @@ import {
   MonitorWeight as ScaleIcon,
   FitnessCenter as FitnessIcon,
   LocalFireDepartment as LocalFireDepartmentIcon,
+  Apple as AppleIcon,
+  PushPin as PinIcon,
+  Close as CloseIcon,
 } from "@mui/icons-material";
-import ChartSelection from "./ChartSelection";
-import { useRouter } from "next/router";
 import VariableLabel from "./VariableLabel";
+import AppleHealthConnectionDialog from "./AppleHealthConnectionDialog";
+import { useRouter } from "next/router";
+import { mapAppleHealthDataPoints } from "@/utils/appleHealthMapping";
 
 // Register Chart.js components
 ChartJS.register(
@@ -61,7 +69,7 @@ ChartJS.register(
 
 interface HealthData {
   id: string;
-  source: "oura" | "withings" | "manual" | "routine" | "auto";
+  source: "oura" | "withings" | "manual" | "routine" | "auto" | "apple_health";
   variable: string;
   date: string;
   value: number | string | null;
@@ -204,8 +212,11 @@ export default function ComprehensiveHealthDashboard({
   );
   const [ouraConnected, setOuraConnected] = useState(false);
   const [withingsConnected, setWithingsConnected] = useState(false);
+  const [appleHealthConnected, setAppleHealthConnected] = useState(false);
   const [syncingOura, setSyncingOura] = useState(false);
   const [syncingWithings, setSyncingWithings] = useState(false);
+  const [syncingAppleHealth, setSyncingAppleHealth] = useState(false);
+  const [appleHealthDialogOpen, setAppleHealthDialogOpen] = useState(false);
   const [selectedVariable, setSelectedVariable] = useState<string>("");
   const [variableLabels, setVariableLabels] = useState<Record<string, string>>(
     {}
@@ -215,12 +226,10 @@ export default function ComprehensiveHealthDashboard({
     {}
   );
 
-  // Add state for chart configuration
-  const [chartConfig, setChartConfig] = useState({
-    selectedVariables: ["", ""],
-    timeRange: "30",
-    chartType: "line",
-  });
+  // Add state for pinned variables and correlation
+  const [pinnedVariables, setPinnedVariables] = useState<string[]>([]);
+  const [showCorrelation, setShowCorrelation] = useState(false);
+  const [timeRange, setTimeRange] = useState<string>("30"); // Default to 30 days
 
   // Define chart options at component level to avoid recreation
   const chartOptions = useMemo(
@@ -398,13 +407,21 @@ export default function ComprehensiveHealthDashboard({
   // Get data for a specific variable
   const getVariableData = useCallback(
     (variable: string) => {
+      // Calculate the start date based on selected time range
+      const days = parseInt(timeRange);
+      const startDate = new Date();
+      startDate.setTime(startDate.getTime() - days * 24 * 60 * 60 * 1000);
+
       return data
-        .filter((item) => item.variable === variable)
+        .filter((item) => 
+          item.variable === variable && 
+          new Date(item.date) >= startDate
+        )
         .sort(
           (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
         );
     },
-    [data]
+    [data, timeRange]
   );
 
   // Format value based on variable type
@@ -594,6 +611,15 @@ export default function ComprehensiveHealthDashboard({
         .limit(1);
 
       setWithingsConnected(!!withingsTokens && withingsTokens.length > 0);
+
+      // Check Apple Health connection
+      const { data: appleHealthTokens } = await supabase
+        .from("apple_health_tokens")
+        .select("id")
+        .eq("user_id", userId)
+        .limit(1);
+
+      setAppleHealthConnected(!!appleHealthTokens && appleHealthTokens.length > 0);
     } catch (error) {
       console.error("Error checking connections:", error);
     }
@@ -666,6 +692,95 @@ export default function ComprehensiveHealthDashboard({
     }
   };
 
+  // Apple Health sync function
+  const syncAppleHealth = async () => {
+    try {
+      setSyncingAppleHealth(true);
+      const response = await fetch("/api/applehealth/sync", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: userId,
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log(
+          `[ComprehensiveHealthDashboard] Synced ${
+            result.data?.totalUpserted || 0
+          } Apple Health data points`
+        );
+        await fetchData();
+      } else {
+        const errorData = await response.json();
+        console.error("Apple Health sync error:", errorData);
+      }
+    } catch (error) {
+      console.error("Error syncing Apple Health data:", error);
+    } finally {
+      setSyncingAppleHealth(false);
+    }
+  };
+
+  // Connect to Apple Health
+  const connectAppleHealth = async () => {
+    setAppleHealthDialogOpen(true);
+  };
+
+  // Pin/Unpin variables
+  const togglePinVariable = (variable: string) => {
+    setPinnedVariables(prev => {
+      const newPinned = prev.includes(variable) 
+        ? prev.filter(v => v !== variable)
+        : [...prev, variable];
+      
+      // Show correlation when exactly 2 variables are pinned
+      setShowCorrelation(newPinned.length === 2);
+      
+      return newPinned;
+    });
+  };
+
+  // Clear all pinned variables
+  const clearPinnedVariables = () => {
+    setPinnedVariables([]);
+    setShowCorrelation(false);
+  };
+
+  // Calculate correlation between two variables
+  const calculateCorrelation = (var1Data: HealthData[], var2Data: HealthData[]) => {
+    // Find common dates
+    const var1Map = new Map(var1Data.map(d => [d.date, Number(d.value) || 0]));
+    const var2Map = new Map(var2Data.map(d => [d.date, Number(d.value) || 0]));
+    
+    const commonDates = [...var1Map.keys()].filter(date => var2Map.has(date));
+    
+    if (commonDates.length < 3) return null; // Need at least 3 points for meaningful correlation
+    
+    const pairs = commonDates.map(date => ({
+      x: var1Map.get(date) || 0,
+      y: var2Map.get(date) || 0,
+    }));
+    
+    // Calculate Pearson correlation coefficient
+    const n = pairs.length;
+    const sumX = pairs.reduce((sum, p) => sum + p.x, 0);
+    const sumY = pairs.reduce((sum, p) => sum + p.y, 0);
+    const sumXY = pairs.reduce((sum, p) => sum + (p.x * p.y), 0);
+    const sumX2 = pairs.reduce((sum, p) => sum + (p.x * p.x), 0);
+    const sumY2 = pairs.reduce((sum, p) => sum + (p.y * p.y), 0);
+    
+    const numerator = n * sumXY - sumX * sumY;
+    const denominator = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+    
+    if (denominator === 0) return null;
+    
+    return numerator / denominator;
+  };
+
   // Toggle metric expansion
   const toggleMetricExpansion = (variable: string) => {
     const newExpanded = new Set(expandedMetrics);
@@ -688,11 +803,20 @@ export default function ComprehensiveHealthDashboard({
 
   // Filter and sort available metrics based on search query
   const filteredAndSortedMetrics = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return availableMetrics;
-    }
-
     const query = searchQuery.toLowerCase();
+
+    // Start with pinned variables (always show them first)
+    const pinnedAvailable = pinnedVariables.filter(variable => 
+      availableMetrics.includes(variable)
+    );
+
+    if (!searchQuery.trim()) {
+      // If no search query, show pinned first, then all others
+      const unpinnedMetrics = availableMetrics.filter(variable => 
+        !pinnedVariables.includes(variable)
+      );
+      return [...pinnedAvailable, ...unpinnedMetrics];
+    }
 
     // Create a scoring system for better search results
     const scoredMetrics = availableMetrics.map((variable) => {
@@ -700,6 +824,11 @@ export default function ComprehensiveHealthDashboard({
       const variableLower = variable.toLowerCase();
 
       let score = 0;
+
+      // Pinned variables get bonus score
+      if (pinnedVariables.includes(variable)) {
+        score += 10000; // High bonus for pinned variables
+      }
 
       // Exact matches get highest score
       if (label === query || variableLower === query) {
@@ -729,19 +858,7 @@ export default function ComprehensiveHealthDashboard({
       .filter((item) => item.score > 0)
       .sort((a, b) => b.score - a.score)
       .map((item) => item.variable);
-  }, [availableMetrics, searchQuery, getVariableLabel]);
-
-  // Add chart configuration handler
-  const handleChartConfigChange = useCallback(
-    (config: {
-      selectedVariables: string[];
-      timeRange: string;
-      chartType: string;
-    }) => {
-      setChartConfig(config);
-    },
-    []
-  );
+  }, [availableMetrics, searchQuery, getVariableLabel, pinnedVariables]);
 
   // Fetch data with proper joins
   useEffect(() => {
@@ -749,41 +866,7 @@ export default function ComprehensiveHealthDashboard({
       try {
         setLoading(true);
 
-        // Check authentication status first
-        const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession();
-
-        console.log("[ComprehensiveHealthDashboard] Auth check:", {
-          hasSession: !!session,
-          userId: session?.user?.id,
-          providedUserId: userId,
-          sessionError: sessionError?.message,
-        });
-
-        if (!session?.user) {
-          console.warn(
-            "[ComprehensiveHealthDashboard] No authenticated session found - queries will likely fail with 400 errors"
-          );
-          console.log(
-            "[ComprehensiveHealthDashboard] 💡 User needs to be logged in for data to load properly"
-          );
-
-          // Don't return here, let the top-level auth check handle it
-          // Just continue with limited data
-        } else {
-          // Verify the authenticated user matches the provided userId
-          if (session.user.id !== userId) {
-            console.error("[ComprehensiveHealthDashboard] User ID mismatch:", {
-              sessionUserId: session.user.id,
-              providedUserId: userId,
-            });
-            console.log(
-              "[ComprehensiveHealthDashboard] 💡 This could cause RLS to block data access"
-            );
-          }
-        }
+        console.log("[ComprehensiveHealthDashboard] Starting data fetch for user:", userId);
 
         // Fetch variable labels from the variables table
         console.log("[ComprehensiveHealthDashboard] Fetching variables...");
@@ -1159,6 +1242,31 @@ export default function ComprehensiveHealthDashboard({
           }
         }
 
+        // Fetch Apple Health data points (direct query without join)
+        const { data: appleHealthDataRaw, error: appleHealthError } =
+          await supabase
+            .from("apple_health_variable_data_points")
+            .select(
+              "id, user_id, date, variable_id, value, source, created_at"
+            )
+            .eq("user_id", userId)
+            .order("date", { ascending: false })
+            .limit(5000); // Set high limit for Apple Health data
+
+        let appleHealthData: any[] = [];
+        if (appleHealthError) {
+          console.error(
+            "Error fetching Apple Health data:",
+            appleHealthError
+          );
+        } else if (appleHealthDataRaw) {
+          // Map Apple Health data with proper variable information using utility
+          appleHealthData = mapAppleHealthDataPoints(appleHealthDataRaw);
+          console.log(
+            `[ComprehensiveHealthDashboard] ✅ Fetched Apple Health data: ${appleHealthData.length} records`
+          );
+        }
+
         // Combine and transform data - Updated to use consistent variable handling
         const combinedData: HealthData[] = [
           ...(ouraData || []).map((item: any) => ({
@@ -1201,12 +1309,22 @@ export default function ComprehensiveHealthDashboard({
               created_at: item.created_at,
             };
           }),
+          ...(appleHealthData || []).map((item: any) => ({
+            id: item.id,
+            source: "apple_health" as const,
+            variable: item.variables?.slug || item.variable_id,
+            date: item.date,
+            value: item.value || 0,
+            user_id: item.user_id,
+            created_at: item.created_at,
+          })),
         ];
 
         console.log("[ComprehensiveHealthDashboard] Fetched data:", {
           oura: ouraData?.length || 0,
           withings: withingsData?.length || 0,
           modularHealth: modularHealthData?.length || 0,
+          appleHealth: appleHealthData?.length || 0,
           total: combinedData.length,
         });
 
@@ -1236,15 +1354,10 @@ export default function ComprehensiveHealthDashboard({
   };
 
   React.useEffect(() => {
-    const checkAuth = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      setIsAuthenticated(!!session?.user);
-      setAuthChecked(true);
-    };
-    checkAuth();
-  }, []);
+    // Since userId prop is passed, user is already authenticated
+    setIsAuthenticated(!!userId);
+    setAuthChecked(true);
+  }, [userId]);
 
   // Set first available variable as selected if none selected
   useEffect(() => {
@@ -1298,31 +1411,96 @@ export default function ComprehensiveHealthDashboard({
 
         {/* Search Input */}
         <Box sx={{ mb: 3 }}>
-          <TextField
-            fullWidth
-            variant="outlined"
-            placeholder="Search variables (e.g., 'sleep', 'weight', 'calories')..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon />
-                </InputAdornment>
-              ),
-            }}
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                backgroundColor: "background.paper",
-              },
-            }}
-          />
+          <Box sx={{ display: "flex", gap: 2, mb: 2 }}>
+            <TextField
+              fullWidth
+              variant="outlined"
+              placeholder="Search variables (e.g., 'sleep', 'weight', 'calories')..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  backgroundColor: "background.paper",
+                },
+              }}
+            />
+            <FormControl sx={{ minWidth: 150 }}>
+              <InputLabel>Time Range</InputLabel>
+              <Select
+                value={timeRange}
+                label="Time Range"
+                onChange={(e) => setTimeRange(e.target.value)}
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    backgroundColor: "background.paper",
+                  },
+                }}
+              >
+                <MenuItem value="7">Last 7 days</MenuItem>
+                <MenuItem value="14">Last 2 weeks</MenuItem>
+                <MenuItem value="30">Last 30 days</MenuItem>
+                <MenuItem value="60">Last 2 months</MenuItem>
+                <MenuItem value="90">Last 3 months</MenuItem>
+                <MenuItem value="180">Last 6 months</MenuItem>
+                <MenuItem value="365">Last year</MenuItem>
+                <MenuItem value="999999">All time</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
           {searchQuery && (
             <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
               Found {filteredAndSortedMetrics.length} matching variables
             </Typography>
           )}
+          {timeRange !== "999999" && (
+            <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5 }}>
+              Showing data from the last {timeRange} days
+            </Typography>
+          )}
         </Box>
+
+        {/* Pinned Variables Section */}
+        {pinnedVariables.length > 0 && (
+          <Box sx={{ mb: 3 }}>
+            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
+              <Typography variant="h6" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <PinIcon /> Pinned Variables ({pinnedVariables.length})
+              </Typography>
+              <Button
+                size="small"
+                onClick={clearPinnedVariables}
+                startIcon={<CloseIcon />}
+                color="secondary"
+              >
+                Clear All
+              </Button>
+            </Box>
+            <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+              {pinnedVariables.map((variable) => (
+                <Chip
+                  key={variable}
+                  label={getVariableLabel(variable)}
+                  onDelete={() => togglePinVariable(variable)}
+                  color="primary"
+                  variant="filled"
+                />
+              ))}
+            </Box>
+            {showCorrelation && pinnedVariables.length === 2 && (
+              <Alert severity="info" sx={{ mt: 2 }}>
+                📊 Correlation analysis available between {getVariableLabel(pinnedVariables[0])} and {getVariableLabel(pinnedVariables[1])}. 
+                Scroll down to see the correlation chart.
+              </Alert>
+            )}
+          </Box>
+        )}
 
         <Grid container spacing={2}>
           {filteredAndSortedMetrics.slice(0, 8).map((variable) => {
@@ -1361,12 +1539,23 @@ export default function ComprehensiveHealthDashboard({
                           </Typography>
                         </Box>
                       </Box>
-                      <IconButton
-                        onClick={() => toggleMetricExpansion(variable)}
-                        size="small"
-                      >
-                        {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                      </IconButton>
+                      <Box sx={{ display: "flex", gap: 0.5 }}>
+                        <IconButton
+                          onClick={() => togglePinVariable(variable)}
+                          size="small"
+                          color={pinnedVariables.includes(variable) ? "primary" : "default"}
+                          title={pinnedVariables.includes(variable) ? "Unpin variable" : "Pin variable"}
+                        >
+                          <PinIcon />
+                        </IconButton>
+                        <IconButton
+                          onClick={() => toggleMetricExpansion(variable)}
+                          size="small"
+                          title={isExpanded ? "Collapse" : "Expand"}
+                        >
+                          {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                        </IconButton>
+                      </Box>
                     </Box>
 
                     <Collapse in={isExpanded}>
@@ -1444,10 +1633,21 @@ export default function ComprehensiveHealthDashboard({
                               responsive: true,
                               maintainAspectRatio: false,
                               plugins: {
-                                legend: { display: false },
+                                legend: { 
+                                  display: true,
+                                  position: 'top' as const,
+                                  labels: {
+                                    filter: function(item: any) {
+                                      // Only show the data points in legend, not the trend line
+                                      return !item.text.includes('Linear Trend');
+                                    }
+                                  }
+                                },
                                 tooltip: {
-                                  mode: "index" as const,
-                                  intersect: false,
+                                  filter: function(tooltipItem: any) {
+                                    // Don't show tooltips for the trend line points
+                                    return !tooltipItem.dataset.label.includes('Linear Trend');
+                                  },
                                   callbacks: {
                                     title: function (tooltipItems: any[]) {
                                       const dataIndex =
@@ -1495,6 +1695,11 @@ export default function ComprehensiveHealthDashboard({
                                             "🖊️ Click directly on this data point to edit",
                                             "📝 Modular Health data - editable",
                                           ];
+                                        } else if (dataPoint.source === "apple_health") {
+                                          return [
+                                            "",
+                                            "🍎 Apple Health data - view only",
+                                          ];
                                         }
                                       }
                                       return "";
@@ -1508,10 +1713,10 @@ export default function ComprehensiveHealthDashboard({
                                 },
                               },
                               onClick: (event: any, elements: any[]) => {
-                                if (elements.length > 0) {
+                                if (elements.length > 0 && elements[0] && elements[0].chart && elements[0].chart.data) {
                                   const elementIndex = elements[0].index;
                                   const dataset =
-                                    elements[0].chart.data.datasets[0];
+                                    elements[0].chart.data.datasets?.[0];
                                   if (
                                     dataset &&
                                     dataset.data &&
@@ -1524,42 +1729,16 @@ export default function ComprehensiveHealthDashboard({
                                       dataPoint.source === "routine" ||
                                       dataPoint.source === "auto"
                                     ) {
-                                      // Check if click is close to a data point (improved sensitivity)
-                                      const chart = elements[0].chart;
-                                      const canvasPosition =
-                                        chart.canvas.getBoundingClientRect();
-                                      const clickX =
-                                        (event as any).x || event.clientX;
-                                      const clickY =
-                                        (event as any).y || event.clientY;
-
-                                      // Get the data point position on canvas
-                                      const meta = chart.getDatasetMeta(0);
-                                      const pointElement =
-                                        meta.data[elementIndex];
-
-                                      if (pointElement) {
-                                        const pointX =
-                                          pointElement.x + canvasPosition.left;
-                                        const pointY =
-                                          pointElement.y + canvasPosition.top;
-
-                                        // Calculate distance from click to data point
-                                        const distance = Math.sqrt(
-                                          Math.pow(clickX - pointX, 2) +
-                                            Math.pow(clickY - pointY, 2)
-                                        );
-
-                                        // Only proceed if click is within reasonable distance (20px) of the data point
-                                        if (distance <= 20) {
-                                          const variableSlug =
-                                            dataPoint.variable;
-                                          const dataPointId = dataPoint.id;
-                                          router.push(
-                                            `/variable/${variableSlug}?edit=${dataPointId}`
-                                          );
-                                        }
-                                      }
+                                      // Navigate directly to edit the data point
+                                      const variableSlug = dataPoint.variable;
+                                      const dataPointId = dataPoint.id;
+                                      router.push(
+                                        `/variable/${variableSlug}?edit=${dataPointId}`
+                                      );
+                                    } else if (dataPoint.source === "apple_health") {
+                                      // Don't navigate for Apple Health data - it's read-only
+                                      console.log("Apple Health data clicked - read only");
+                                      return;
                                     }
                                   }
                                 }
@@ -1589,254 +1768,285 @@ export default function ComprehensiveHealthDashboard({
         )}
       </Box>
 
-      {/* Chart Selection - Added between Quick Overview and Data Source Connections */}
-      <Box sx={{ mt: 4, mb: 4 }}>
-        <ChartSelection
-          userId={userId}
-          onChartConfigChange={handleChartConfigChange}
-        />
-      </Box>
-
-      {/* Custom Chart Display */}
-      {chartConfig.selectedVariables.some((v) => v !== "") && (
+      {/* Correlation Chart for Pinned Variables */}
+      {showCorrelation && pinnedVariables.length === 2 && (
         <Box sx={{ mt: 4, mb: 4 }}>
           <Card>
             <CardContent>
-              <Typography variant="h6" sx={{ mb: 2 }}>
-                📊 Custom Chart
+              <Typography variant="h6" sx={{ mb: 2, display: "flex", alignItems: "center", gap: 1 }}>
+                📊 Analysis: {getVariableLabel(pinnedVariables[0])} vs {getVariableLabel(pinnedVariables[1])}
               </Typography>
-              <Box sx={{ height: 400 }}>
-                {(() => {
-                  const selectedVars = chartConfig.selectedVariables.filter(
-                    (v): v is string => v !== ""
-                  );
-                  if (selectedVars.length === 0) {
-                    return (
-                      <Box
-                        sx={{
-                          display: "flex",
-                          justifyContent: "center",
-                          alignItems: "center",
-                          height: "100%",
-                        }}
-                      >
-                        <Typography variant="body2" color="textSecondary">
-                          Select variables in the chart selection above to view
-                          your custom chart
+              
+              {(() => {
+                const var1Data = getVariableData(pinnedVariables[0]);
+                const var2Data = getVariableData(pinnedVariables[1]);
+                const correlation = calculateCorrelation(var1Data, var2Data);
+                
+                // Find common dates for scatter plot
+                const var1Map = new Map(var1Data.map(d => [d.date, Number(d.value) || 0]));
+                const var2Map = new Map(var2Data.map(d => [d.date, Number(d.value) || 0]));
+                const commonDates = [...var1Map.keys()].filter(date => var2Map.has(date));
+                
+                return (
+                  <>
+                    {/* Correlation Analysis (only if sufficient data) */}
+                    {correlation !== null ? (
+                      <Box sx={{ mb: 3, p: 3, bgcolor: "grey.800", borderRadius: 1, color: "white" }}>
+                        <Typography variant="h6" sx={{ mb: 1, color: "white" }}>
+                          🔗 Correlation Analysis
+                        </Typography>
+                        <Typography variant="body1" sx={{ mb: 1, color: "white" }}>
+                          <strong>Correlation Coefficient:</strong> {correlation.toFixed(3)}
+                        </Typography>
+                        {(() => {
+                          const correlationStrength = Math.abs(correlation);
+                          let strengthText = "No correlation";
+                          let strengthColor = "grey.300";
+                          
+                          if (correlationStrength >= 0.7) {
+                            strengthText = "Strong correlation";
+                            strengthColor = "#4caf50"; // Green
+                          } else if (correlationStrength >= 0.3) {
+                            strengthText = "Moderate correlation";
+                            strengthColor = "#ff9800"; // Orange
+                          } else if (correlationStrength >= 0.1) {
+                            strengthText = "Weak correlation";
+                            strengthColor = "#2196f3"; // Blue
+                          }
+
+                          return (
+                            <Typography variant="body2" sx={{ color: strengthColor }}>
+                              <strong>{strengthText}</strong> {correlation > 0 ? "(positive)" : "(negative)"}
+                            </Typography>
+                          );
+                        })()}
+                        <Typography variant="caption" sx={{ display: "block", mt: 1, color: "grey.300" }}>
+                          Based on {commonDates.length} overlapping data points
                         </Typography>
                       </Box>
-                    );
-                  }
+                    ) : (
+                      <Alert severity="info" sx={{ mb: 3 }}>
+                        <Typography variant="body2">
+                          <strong>Correlation Analysis Unavailable:</strong> Need at least 3 dates with data for both variables to calculate correlation.
+                          {commonDates.length > 0 && ` Currently have ${commonDates.length} overlapping data point${commonDates.length === 1 ? '' : 's'}.`}
+                        </Typography>
+                      </Alert>
+                    )}
 
-                  // Get data for selected variables
-                  const days = parseInt(chartConfig.timeRange);
-                  const startDate = new Date();
-                  startDate.setTime(
-                    startDate.getTime() - days * 24 * 60 * 60 * 1000
-                  ); // Use milliseconds for safe date calculation
+                    {/* Individual Charts for Both Variables */}
+                    <Box sx={{ mb: 3 }}>
+                      <Typography variant="h6" sx={{ mb: 2 }}>
+                        📈 Individual Trends
+                      </Typography>
+                      <Grid container spacing={2}>
+                        {pinnedVariables.map((variable, index) => {
+                          const variableData = getVariableData(variable);
+                          
+                          if (variableData.length === 0) {
+                            return (
+                              <Grid size={{ xs: 12, md: 6 }} key={variable}>
+                                <Card variant="outlined">
+                                  <CardContent>
+                                    <Typography variant="subtitle1" sx={{ mb: 2 }}>
+                                      {getVariableLabel(variable)}
+                                    </Typography>
+                                    <Box sx={{ textAlign: "center", py: 4 }}>
+                                      <Typography variant="body2" color="text.secondary">
+                                        No data available for {getVariableLabel(variable)}
+                                      </Typography>
+                                    </Box>
+                                  </CardContent>
+                                </Card>
+                              </Grid>
+                            );
+                          }
 
-                  const filteredData = data.filter(
-                    (item) =>
-                      selectedVars.includes(item.variable) &&
-                      new Date(item.date) >= startDate
-                  );
+                          return (
+                            <Grid size={{ xs: 12, md: 6 }} key={variable}>
+                              <Card variant="outlined">
+                                <CardContent>
+                                  <Typography variant="subtitle1" sx={{ mb: 2 }}>
+                                    {getVariableLabel(variable)} ({variableData.length} data points)
+                                  </Typography>
+                                  <Box sx={{ height: 250 }}>
+                                    <Line
+                                      data={{
+                                        labels: variableData.map((d, index) => {
+                                          const dateInfo = formatDateWithYear(d.date);
+                                          const prevData = index > 0 ? variableData[index - 1] : null;
+                                          const prevDateInfo = prevData ? formatDateWithYear(prevData.date) : null;
+                                          const showYear = !prevDateInfo || prevDateInfo.year !== dateInfo.year || dateInfo.month.startsWith("Jan");
+                                          return showYear ? dateInfo.formatted : dateInfo.month;
+                                        }),
+                                        datasets: [{
+                                          label: getVariableLabel(variable),
+                                          data: variableData.map((d) => d.value || 0),
+                                          borderColor: getVariableColor(variable),
+                                          backgroundColor: `${getVariableColor(variable)}20`,
+                                          fill: false,
+                                          tension: 0.2,
+                                        }]
+                                      }}
+                                      options={{
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        plugins: {
+                                          legend: { display: false },
+                                          tooltip: {
+                                            callbacks: {
+                                              title: (context: any) => {
+                                                const index = context[0].dataIndex;
+                                                return format(parseISO(variableData[index].date), "MMM dd, yyyy");
+                                              },
+                                              label: (context: any) => {
+                                                return `${getVariableLabel(variable)}: ${context.parsed.y}`;
+                                              },
+                                            },
+                                          },
+                                        },
+                                        scales: {
+                                          y: {
+                                            beginAtZero: false,
+                                          },
+                                        },
+                                      }}
+                                    />
+                                  </Box>
+                                </CardContent>
+                              </Card>
+                            </Grid>
+                          );
+                        })}
+                      </Grid>
+                    </Box>
 
-                  if (filteredData.length === 0) {
-                    return (
-                      <Box
-                        sx={{
-                          display: "flex",
-                          justifyContent: "center",
-                          alignItems: "center",
-                          height: "100%",
-                        }}
-                      >
-                        <Typography variant="body2" color="textSecondary">
-                          No data found for the selected variables and time
-                          range
+                    {/* Scatter Plot (only if we have overlapping data) */}
+                    {commonDates.length > 0 && (
+                      <Box>
+                        <Typography variant="h6" sx={{ mb: 2 }}>
+                          🔗 Relationship Plot
+                        </Typography>
+                        <Box sx={{ height: 400 }}>
+                          <Scatter
+                            data={{
+                              datasets: [
+                                // Data points
+                                {
+                                  label: `${getVariableLabel(pinnedVariables[0])} vs ${getVariableLabel(pinnedVariables[1])}`,
+                                  data: commonDates.map(date => ({
+                                    x: var1Map.get(date) || 0,
+                                    y: var2Map.get(date) || 0,
+                                    date,
+                                  })),
+                                  backgroundColor: getVariableColor(pinnedVariables[0]),
+                                  borderColor: getVariableColor(pinnedVariables[0]),
+                                  pointRadius: 6,
+                                  pointHoverRadius: 8,
+                                },
+                                // Linear regression line as scatter points
+                                (() => {
+                                  const scatterData = commonDates.map(date => ({
+                                    x: var1Map.get(date) || 0,
+                                    y: var2Map.get(date) || 0,
+                                  }));
+                                  
+                                  // Calculate linear regression
+                                  const n = scatterData.length;
+                                  const sumX = scatterData.reduce((sum, p) => sum + p.x, 0);
+                                  const sumY = scatterData.reduce((sum, p) => sum + p.y, 0);
+                                  const sumXY = scatterData.reduce((sum, p) => sum + p.x * p.y, 0);
+                                  const sumXX = scatterData.reduce((sum, p) => sum + p.x * p.x, 0);
+                                  
+                                  const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+                                  const intercept = (sumY - slope * sumX) / n;
+                                  
+                                  // Get min and max x values for the line
+                                  const xValues = scatterData.map(p => p.x);
+                                  const minX = Math.min(...xValues);
+                                  const maxX = Math.max(...xValues);
+                                  
+                                  // Create multiple points along the line for smooth appearance
+                                  const linePoints = [];
+                                  const steps = 50;
+                                  for (let i = 0; i <= steps; i++) {
+                                    const x = minX + (maxX - minX) * (i / steps);
+                                    const y = slope * x + intercept;
+                                    linePoints.push({ x, y });
+                                  }
+                                  
+                                  return {
+                                    label: 'Linear Trend',
+                                    data: linePoints,
+                                    backgroundColor: 'transparent',
+                                    borderColor: correlation && correlation > 0 ? '#4caf50' : '#f44336',
+                                    pointRadius: 1,
+                                    pointHoverRadius: 1,
+                                    showLine: true,
+                                    borderWidth: 3,
+                                    borderDash: [5, 5],
+                                  };
+                                })()
+                              ]
+                            }}
+                            options={{
+                              responsive: true,
+                              maintainAspectRatio: false,
+                              plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                  callbacks: {
+                                    title: () => "",
+                                    label: (context: any) => {
+                                      const point = context.raw;
+                                      return [
+                                        `${getVariableLabel(pinnedVariables[0])}: ${point.x}`,
+                                        `${getVariableLabel(pinnedVariables[1])}: ${point.y}`,
+                                        `Date: ${format(parseISO(point.date), "MMM dd, yyyy")}`,
+                                      ];
+                                    },
+                                  },
+                                },
+                              },
+                              scales: {
+                                x: {
+                                  title: {
+                                    display: true,
+                                    text: getVariableLabel(pinnedVariables[0]),
+                                  },
+                                },
+                                y: {
+                                  title: {
+                                    display: true,
+                                    text: getVariableLabel(pinnedVariables[1]),
+                                  },
+                                },
+                              },
+                            }}
+                          />
+                        </Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1, textAlign: "center" }}>
+                          Scatter plot showing {commonDates.length} overlapping data points with linear trend line
+                          {correlation && (
+                            <span style={{ color: correlation > 0 ? '#4caf50' : '#f44336', fontWeight: 'bold' }}>
+                              {` (${correlation > 0 ? 'positive' : 'negative'} correlation: ${correlation.toFixed(3)})`}
+                            </span>
+                          )}
                         </Typography>
                       </Box>
-                    );
-                  }
+                    )}
 
-                  // Get all unique dates
-                  const allDates = [
-                    ...new Set(filteredData.map((item) => item.date)),
-                  ].sort(
-                    (a, b) =>
-                      new Date(a || "").getTime() - new Date(b || "").getTime()
-                  );
-
-                  // Create labels with year separators
-                  const labelsWithYears = allDates.map((date, index) => {
-                    const dateInfo = formatDateWithYear(date);
-                    const prevDate =
-                      index > 0
-                        ? formatDateWithYear(allDates[index - 1])
-                        : null;
-
-                    // Show year if it's the first occurrence of this year or if it's January
-                    const showYear =
-                      !prevDate ||
-                      dateInfo.year !== prevDate.year ||
-                      dateInfo.month.startsWith("Jan");
-
-                    return showYear ? dateInfo.formatted : dateInfo.month;
-                  });
-
-                  const chartData = {
-                    labels: labelsWithYears,
-                    datasets: selectedVars.map((variableId, index) => {
-                      const variableData = filteredData.filter(
-                        (item) => item.variable === variableId
-                      );
-                      const color = getVariableColor(variableId);
-
-                      // Create data array aligned with all dates
-                      const data = allDates.map((date) => {
-                        const item = variableData.find((d) => d.date === date);
-                        return item
-                          ? typeof item.value === "number"
-                            ? item.value
-                            : item.value !== null
-                            ? parseFloat(String(item.value)) || 0
-                            : 0
-                          : 0; // Use 0 instead of null for missing data points
-                      });
-
-                      return {
-                        label: getVariableLabel(variableId || "unknown"),
-                        data,
-                        borderColor: color,
-                        backgroundColor: color + "20",
-                        fill: false,
-                        tension: 0.2,
-                        pointRadius: 4,
-                        pointHoverRadius: 6,
-                        yAxisID: index === 0 ? "y" : "y1",
-                      };
-                    }),
-                  };
-
-                  const chartOptions = {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: {
-                        display: true,
-                        position: "top" as const,
-                      },
-                      tooltip: {
-                        mode: "index" as const,
-                        intersect: false,
-                      },
-                    },
-                    scales: {
-                      x: {
-                        display: true,
-                        title: {
-                          display: true,
-                          text: "Date",
-                        },
-                        ticks: {
-                          callback: function (
-                            value: any,
-                            index: number
-                          ): string | number {
-                            // Get the label from the chart data labels array
-                            const labels: any[] =
-                              (this as any).chart?.data?.labels || [];
-                            const label: any = labels[index] || value;
-                            // Make year labels bold and slightly larger
-                            if (
-                              typeof label === "string" &&
-                              label.includes("202")
-                            ) {
-                              return label;
-                            }
-                            return label;
-                          },
-                          font: {
-                            weight: function (context: any): "normal" | "bold" {
-                              const label =
-                                context.chart.data.labels[context.dataIndex];
-                              return label &&
-                                typeof label === "string" &&
-                                label.includes("202")
-                                ? "bold"
-                                : "normal";
-                            },
-                          },
-                        },
-                        grid: {
-                          color: function (context: any) {
-                            const label =
-                              context.chart.data.labels[context.dataIndex];
-                            // Make year boundary lines more prominent
-                            if (
-                              label &&
-                              typeof label === "string" &&
-                              label.includes("202")
-                            ) {
-                              return "rgba(255, 255, 255, 0.3)";
-                            }
-                            return "rgba(255, 255, 255, 0.1)";
-                          },
-                          lineWidth: function (context: any) {
-                            const label =
-                              context.chart.data.labels[context.dataIndex];
-                            return label &&
-                              typeof label === "string" &&
-                              label.includes("202")
-                              ? 2
-                              : 1;
-                          },
-                        },
-                      },
-                      y: {
-                        type: "linear" as const,
-                        display: true,
-                        position: "left" as const,
-                        title: {
-                          display: true,
-                          text:
-                            selectedVars[0] && selectedVars[0] !== ""
-                              ? getVariableLabel(selectedVars[0])
-                              : "Value",
-                        },
-                      },
-                      y1: {
-                        type: "linear" as const,
-                        display: selectedVars.length > 1,
-                        position: "right" as const,
-                        title: {
-                          display: true,
-                          text:
-                            selectedVars[1] && selectedVars[1] !== ""
-                              ? getVariableLabel(selectedVars[1])
-                              : "Value",
-                        },
-                        grid: {
-                          drawOnChartArea: false,
-                        },
-                      },
-                    },
-                  };
-
-                  switch (chartConfig.chartType) {
-                    case "line":
-                      return <Line data={chartData} options={chartOptions} />;
-                    case "bar":
-                      return <Bar data={chartData} options={chartOptions} />;
-                    case "scatter":
-                      return (
-                        <Scatter data={chartData} options={chartOptions} />
-                      );
-                    default:
-                      return <Line data={chartData} options={chartOptions} />;
-                  }
-                })()}
-              </Box>
+                    {/* Message when no overlapping data */}
+                    {commonDates.length === 0 && (
+                      <Alert severity="warning" sx={{ mt: 2 }}>
+                        <Typography variant="body2">
+                          <strong>No Overlapping Data:</strong> These variables don't have any dates with data for both variables, 
+                          so no relationship plot can be created. Try logging data for both variables on the same dates to see correlations.
+                        </Typography>
+                      </Alert>
+                    )}
+                  </>
+                );
+              })()}
             </CardContent>
           </Card>
         </Box>
@@ -1936,12 +2146,7 @@ export default function ComprehensiveHealthDashboard({
                       variant="contained"
                       size="small"
                       onClick={async () => {
-                        // Get current user info from Supabase to get real email
-                        const {
-                          data: { user },
-                        } = await supabase.auth.getUser();
-
-                        if (!user) {
+                        if (!userId) {
                           console.error(
                             "No user found for Withings connection"
                           );
@@ -1950,12 +2155,59 @@ export default function ComprehensiveHealthDashboard({
                           return;
                         }
 
-                        // Pass real user info as query parameters to avoid session issues
+                        // Pass user info as query parameters to avoid session issues
                         const authUrl = `/api/withings/auth?user_id=${encodeURIComponent(
-                          user.id
-                        )}&user_email=${encodeURIComponent(user.email || "")}`;
+                          userId
+                        )}`;
                         window.location.href = authUrl;
                       }}
+                    >
+                      Connect
+                    </Button>
+                  )}
+                </Box>
+              </Box>
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <Box sx={{ display: "flex", alignItems: "center" }}>
+                  <AppleIcon sx={{ mr: 1, color: "info.main" }} />
+                  <Typography variant="subtitle1">Apple Health</Typography>
+                  <Chip
+                    label={appleHealthConnected ? "Connected" : "Disconnected"}
+                    color={appleHealthConnected ? "success" : "default"}
+                    size="small"
+                    sx={{ ml: 1 }}
+                  />
+                </Box>
+                <Box sx={{ display: "flex", gap: 1 }}>
+                  {appleHealthConnected ? (
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={syncAppleHealth}
+                      disabled={syncingAppleHealth}
+                      startIcon={
+                        syncingAppleHealth ? (
+                          <CircularProgress size={16} />
+                        ) : (
+                          <SyncIcon />
+                        )
+                      }
+                    >
+                      {syncingAppleHealth ? "Syncing..." : "Sync"}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="contained"
+                      size="small"
+                      onClick={connectAppleHealth}
                     >
                       Connect
                     </Button>
@@ -1967,61 +2219,16 @@ export default function ComprehensiveHealthDashboard({
         </CardContent>
       </Card>
 
-      {/* HIDDEN: All Data Tab - uncomment to show manual logs table */}
-      {/* {activeTab === 3 && (
-        <Box>
-          <Typography variant="h6" sx={{ mb: 2 }}>
-            📋 All Health Data ({data.length} records)
-          </Typography>
-
-          <TableContainer component={Paper} variant="outlined">
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Date</TableCell>
-                  <TableCell>Source</TableCell>
-                  <TableCell>Metric</TableCell>
-                  <TableCell align="right">Value</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {data.map((item, index) => (
-                  <TableRow
-                    key={`${item.source}-${item.variable}-${item.date}-${index}`}
-                  >
-                    <TableCell>
-                      {format(parseISO(item.date), "MMM dd, yyyy")}
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={
-                          item.source === "oura"
-                            ? "Oura"
-                            : item.source === "withings"
-                            ? "Withings"
-                            : "Manual"
-                        }
-                        size="small"
-                        color={
-                          item.source === "oura"
-                            ? "primary"
-                            : item.source === "withings"
-                            ? "secondary"
-                            : "default"
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>{getVariableLabel(item.variable)}</TableCell>
-                    <TableCell align="right">
-                      {formatValue(item.variable, item.value)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Box>
-      )} */}
+      {/* Apple Health Connection Dialog */}
+      <AppleHealthConnectionDialog
+        open={appleHealthDialogOpen}
+        onClose={() => setAppleHealthDialogOpen(false)}
+        userId={userId}
+        onConnectionSuccess={() => {
+          setAppleHealthDialogOpen(false);
+          checkConnections();
+        }}
+      />
     </Box>
   );
 }

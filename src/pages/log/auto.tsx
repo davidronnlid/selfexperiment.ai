@@ -30,7 +30,7 @@ export default function AutoTrackPage() {
   return (
     <>
       <Head>
-        <title>Auto Tracking - Self Development App</title>
+        <title>Auto Tracking - Modular Health</title>
         <meta
           name="description"
           content="Set up automated tracking routines for your daily variables"

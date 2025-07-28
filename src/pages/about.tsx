@@ -182,17 +182,21 @@ export default function About() {
           
           <Card sx={{ maxWidth: 600, mx: "auto" }}>
             <CardContent sx={{ p: 4 }}>
-              <Avatar
-                src="/david-ronnlid-profile.jpg"
-                alt="David Rönnlid, Founder & CEO of Modular Health"
-                sx={{
-                  width: 120,
-                  height: 120,
-                  mx: "auto",
-                  mb: 3,
-                  border: "3px solid #ffd700",
-                }}
-              />
+              <Box sx={{ display: "flex", justifyContent: "center", mb: 3 }}>
+                <Avatar
+                  src="/david-ronnlid-profile.jpg"
+                  alt="David Rönnlid, Founder & CEO of Modular Health"
+                  sx={{
+                    width: 120,
+                    height: 120,
+                    border: "3px solid #ffd700",
+                    boxShadow: "0 4px 20px rgba(255, 215, 0, 0.3)",
+                    "& img": {
+                      objectPosition: "center 20%",
+                    },
+                  }}
+                />
+              </Box>
               
               <Typography variant="h5" sx={{ mb: 2 }}>
                 David Rönnlid
@@ -261,7 +265,7 @@ export default function About() {
                       },
                     }}
                   >
-                    Start Tracking Your Health
+                    Track Your Health
                   </Button>
                 </Link>
               </Box>

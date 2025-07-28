@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { supabase } from "@/utils/supaBase";
+import { VARIABLE_CATEGORIES } from "@/utils/categories";
 import {
   Dialog,
   DialogTitle,
@@ -6,33 +8,36 @@ import {
   DialogActions,
   Button,
   TextField,
-  FormControl,
-  InputLabel,
+  Box,
+  Typography,
   Select,
   MenuItem,
-  Typography,
-  Box,
-  Chip,
-  Alert,
-  Tabs,
-  Tab,
-  Grid,
+  FormControl,
+  InputLabel,
+  CircularProgress,
   Card,
   CardContent,
   IconButton,
-  Tooltip,
-  Switch,
+  Chip,
+  Tabs,
+  Tab,
   FormControlLabel,
-  Slider,
+  Switch,
+  Alert,
+  Grid,
+  Snackbar,
+  Tooltip,
 } from "@mui/material";
 import {
-  FaPlus,
-  FaEdit,
-  FaTrash,
-  FaStar,
-  FaEye,
-  FaEyeSlash,
-} from "react-icons/fa";
+  Add as AddIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  Save as SaveIcon,
+  Settings as SettingsIcon,
+  Refresh as RefreshIcon,
+  Close as CloseIcon,
+} from "@mui/icons-material";
+import { FaEdit } from "react-icons/fa";
 import {
   Variable,
   UserVariablePreference,
@@ -473,14 +478,22 @@ export default function VariableManager({
           </FormControl>
         </Box>
         <Box sx={{ display: "flex", gap: 2 }}>
-          <TextField
-            fullWidth
-            label="Category"
-            value={createForm.category}
-            onChange={(e) =>
-              setCreateForm((prev) => ({ ...prev, category: e.target.value }))
-            }
-          />
+          <FormControl fullWidth>
+            <InputLabel>Category</InputLabel>
+            <Select
+              value={createForm.category}
+              onChange={(e) =>
+                setCreateForm((prev) => ({ ...prev, category: e.target.value }))
+              }
+              label="Category"
+            >
+              {VARIABLE_CATEGORIES.map((category) => (
+                <MenuItem key={category} value={category}>
+                  {category}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         </Box>
       </Box>
 

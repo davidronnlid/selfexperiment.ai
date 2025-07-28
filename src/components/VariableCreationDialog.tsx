@@ -21,6 +21,7 @@ import {
   Popover,
   IconButton,
   Grid,
+  ListSubheader,
 } from "@mui/material";
 import { FaGlobe, FaLock, FaPlus, FaQuestion, FaSmile } from "react-icons/fa";
 import { supabase } from "@/utils/supaBase";
@@ -32,6 +33,12 @@ import { addVariableUnit, setVariableUnits } from "../utils/variableUnitsUtils";
 import { fetchUnits } from "../utils/unitsTableUtils";
 import { Unit } from "../types/variables";
 import { createPermissiveSlug } from "@/utils/slugUtils";
+import {
+  validateVariableName,
+  moderateContent,
+  checkRateLimit,
+  suggestVariableImprovements,
+} from "@/utils/contentModeration";
 
 interface VariableCreationDialogProps {
   open: boolean;
@@ -406,6 +413,28 @@ export default function VariableCreationDialog({
     }
   }, [constraints.type, selectedUnitIds, availableUnits]);
 
+  // Handle category selection - select all units in a category
+  const handleCategorySelect = (categoryName: string, categoryUnits: typeof availableUnits) => {
+    const categoryUnitIds = categoryUnits.map(unit => unit.id);
+    const allCategorySelected = categoryUnitIds.every(id => selectedUnitIds.includes(id));
+    
+    if (allCategorySelected) {
+      // If all units in category are selected, deselect them
+      setSelectedUnitIds(prev => prev.filter(id => !categoryUnitIds.includes(id)));
+    } else {
+      // If not all units are selected, select all units in the category
+      setSelectedUnitIds(prev => {
+        const newSelected = [...prev];
+        categoryUnitIds.forEach(id => {
+          if (!newSelected.includes(id)) {
+            newSelected.push(id);
+          }
+        });
+        return newSelected;
+      });
+    }
+  };
+
   const loadUnits = async () => {
     setUnitsLoading(true);
     try {
@@ -522,14 +551,6 @@ export default function VariableCreationDialog({
     setError("");
 
     try {
-      // Import content moderation
-      const {
-        validateVariableName,
-        moderateContent,
-        checkRateLimit,
-        suggestVariableImprovements,
-      } = await import("@/utils/contentModeration");
-
       // Check rate limiting
       const rateLimitResult = checkRateLimit(user.id);
       if (!rateLimitResult.isAllowed) {
@@ -802,7 +823,7 @@ export default function VariableCreationDialog({
                 gap: 2,
               }}
             >
-              <Box>
+              <Box sx={{ flex: 1 }}>
                 <FormControl fullWidth>
                   <InputLabel>Data Type</InputLabel>
                   <Select
@@ -816,48 +837,104 @@ export default function VariableCreationDialog({
                     }
                   >
                     <MenuItem value="continuous">
-                      📊 Continuous (Numbers)
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                        <span>📊</span>
+                        <Box>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                            Continuous (Numbers)
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Numeric values with units
+                          </Typography>
+                        </Box>
+                      </Box>
                     </MenuItem>
                     <MenuItem value="categorical">
-                      📋 Categorical (Options)
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                        <span>📋</span>
+                        <Box>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                            Categorical (Options)
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Select from predefined choices
+                          </Typography>
+                        </Box>
+                      </Box>
                     </MenuItem>
-                    <MenuItem value="boolean">🔘 Boolean (Yes/No)</MenuItem>
-                    <MenuItem value="text">📝 Text</MenuItem>
+                    <MenuItem value="boolean">
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                        <span>🔘</span>
+                        <Box>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                            Boolean (Yes/No)
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            True/False, Yes/No, or 0/1 values
+                          </Typography>
+                        </Box>
+                      </Box>
+                    </MenuItem>
+                    <MenuItem value="text">
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                        <span>📝</span>
+                        <Box>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                            Text
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Free-form text entries
+                          </Typography>
+                        </Box>
+                      </Box>
+                    </MenuItem>
                   </Select>
                 </FormControl>
 
-                {/* Data Type Info */}
-                <Box sx={{ mt: 1, p: 1, bgcolor: "grey.50", borderRadius: 1 }}>
+                {/* Enhanced Data Type Info */}
+                <Box sx={{ mt: 1, p: 1.5, bgcolor: "grey.50", borderRadius: 1, border: "1px solid", borderColor: "grey.200" }}>
                   <Typography variant="caption" color="text.secondary">
                     {constraints.type === "continuous" && (
                       <>
-                        📊 <strong>Continuous:</strong> Numeric values with
-                        units (weight, time, rating, etc.)
+                        📊 <strong>Continuous:</strong> Numeric values with units (weight, time, rating, etc.)
+                        <br />
+                        <span style={{ fontSize: "0.7rem", opacity: 0.8 }}>
+                          Examples: 75 kg, 8.5 hours, 7/10 rating
+                        </span>
                       </>
                     )}
                     {constraints.type === "categorical" && (
                       <>
-                        📋 <strong>Categorical:</strong> Select from predefined
-                        options (mood level, exercise type, etc.)
+                        📋 <strong>Categorical:</strong> Select from predefined options (mood level, exercise type, etc.)
+                        <br />
+                        <span style={{ fontSize: "0.7rem", opacity: 0.8 }}>
+                          Examples: Happy/Sad/Angry, Running/Swimming/Cycling
+                        </span>
                       </>
                     )}
                     {constraints.type === "boolean" && (
                       <>
-                        🔘 <strong>Boolean:</strong> Yes/No, True/False, or 0/1
-                        values
+                        🔘 <strong>Boolean:</strong> Yes/No, True/False, or 0/1 values
+                        <br />
+                        <span style={{ fontSize: "0.7rem", opacity: 0.8 }}>
+                          Examples: Did you exercise today? Yes/No
+                        </span>
                       </>
                     )}
                     {constraints.type === "text" && (
                       <>
-                        📝 <strong>Text:</strong> Free-form text entries (notes,
-                        descriptions, etc.)
+                        📝 <strong>Text:</strong> Free-form text entries (notes, descriptions, etc.)
+                        <br />
+                        <span style={{ fontSize: "0.7rem", opacity: 0.8 }}>
+                          Examples: "Felt great today", "Notes about workout"
+                        </span>
                       </>
                     )}
                   </Typography>
                 </Box>
               </Box>
 
-              <Box>
+              <Box sx={{ flex: 1 }}>
                 <FormControl fullWidth>
                   <InputLabel>Available Units for this Variable</InputLabel>
                   <Select
@@ -868,6 +945,14 @@ export default function VariableCreationDialog({
                     }
                     label="Available Units for this Variable"
                     disabled={unitsLoading}
+                    MenuProps={{
+                      PaperProps: {
+                        style: {
+                          maxHeight: 400,
+                          overflowY: 'auto',
+                        },
+                      },
+                    }}
                     renderValue={(selected) => (
                       <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
                         {(selected as string[]).map((unitId) => {
@@ -881,14 +966,16 @@ export default function VariableCreationDialog({
                                 unit ? `${unit.label} (${unit.symbol})` : unitId
                               }
                               size="small"
+                              color="primary"
+                              variant="filled"
                             />
                           );
                         })}
                       </Box>
                     )}
                   >
-                    {availableUnits
-                      .filter((unit) => {
+                    {(() => {
+                      const filteredUnits = availableUnits.filter((unit) => {
                         // Filter units based on data type compatibility
                         if (constraints.type === "boolean") {
                           return unit.unit_group === "boolean";
@@ -906,39 +993,104 @@ export default function VariableCreationDialog({
                           return unit.unit_group !== "boolean";
                         }
                         return true;
-                      })
-                      .map((unit) => (
-                        <MenuItem key={unit.id} value={unit.id}>
-                          <Box
-                            sx={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              width: "100%",
-                            }}
-                          >
-                            <span>
-                              {unit.label} ({unit.symbol})
-                            </span>
-                            <Chip
-                              label={unit.unit_group}
-                              size="small"
-                              variant="outlined"
-                            />
-                          </Box>
-                        </MenuItem>
-                      ))}
+                      });
+
+                      // Group units by unit_group for better organization
+                      const groupedUnits = filteredUnits.reduce((groups, unit) => {
+                        const group = unit.unit_group;
+                        if (!groups[group]) {
+                          groups[group] = [];
+                        }
+                        groups[group].push(unit);
+                        return groups;
+                      }, {} as Record<string, typeof filteredUnits>);
+
+                      return Object.entries(groupedUnits).map(([groupName, units]) => [
+                        <ListSubheader 
+                          key={`header-${groupName}`} 
+                          onClick={() => handleCategorySelect(groupName, units)}
+                          sx={{ 
+                            backgroundColor: "#ffd700", 
+                            color: "black",
+                            fontWeight: 600,
+                            textTransform: "uppercase",
+                            fontSize: "0.75rem",
+                            cursor: "pointer",
+                            userSelect: "none",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            "&:hover": {
+                              backgroundColor: "#ffed4e",
+                            },
+                            transition: "background-color 0.2s ease"
+                          }}
+                        >
+                          <span>{groupName} Units</span>
+                          <span style={{ fontSize: "0.65rem", opacity: 0.8 }}>
+                            {(() => {
+                              const categoryUnitIds = units.map(unit => unit.id);
+                              const selectedInCategory = categoryUnitIds.filter(id => selectedUnitIds.includes(id)).length;
+                              const totalInCategory = categoryUnitIds.length;
+                              
+                              if (selectedInCategory === 0) {
+                                return "Click to select all";
+                              } else if (selectedInCategory === totalInCategory) {
+                                return "✓ All selected";
+                              } else {
+                                return `${selectedInCategory}/${totalInCategory} selected`;
+                              }
+                            })()}
+                          </span>
+                        </ListSubheader>,
+                        ...units.map((unit) => (
+                          <MenuItem key={unit.id} value={unit.id}>
+                            <Box
+                              sx={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                width: "100%",
+                              }}
+                            >
+                              <Box>
+                                <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                  {unit.label}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  Symbol: {unit.symbol}
+                                </Typography>
+                              </Box>
+                              <Chip
+                                label={unit.unit_group}
+                                size="small"
+                                variant="outlined"
+                                color="primary"
+                              />
+                            </Box>
+                          </MenuItem>
+                        ))
+                      ]).flat();
+                    })()}
                   </Select>
                 </FormControl>
 
-                {/* Unit Compatibility Info */}
+                {/* Enhanced Unit Compatibility Info */}
                 {selectedUnitIds.length > 0 && (
                   <Box
-                    sx={{ mt: 1, p: 1, bgcolor: "grey.50", borderRadius: 1 }}
+                    sx={{ 
+                      mt: 1, 
+                      p: 1.5, 
+                      bgcolor: "grey.50", 
+                      borderRadius: 1,
+                      border: "1px solid",
+                      borderColor: "grey.200"
+                    }}
                   >
                     <Typography
                       variant="caption"
                       color="text.secondary"
-                      sx={{ display: "block", mb: 0.5 }}
+                      sx={{ display: "block", mb: 0.5, fontWeight: 600 }}
                     >
                       💡 <strong>Selected Units:</strong>{" "}
                       {selectedUnitIds.length} unit
@@ -958,7 +1110,7 @@ export default function VariableCreationDialog({
                           <Typography
                             variant="caption"
                             color="success.main"
-                            sx={{ display: "block", mb: 0.5 }}
+                            sx={{ display: "block", mb: 0.5, fontWeight: 500 }}
                           >
                             🔄 <strong>Convertible:</strong> All selected units
                             can convert between each other
@@ -969,7 +1121,7 @@ export default function VariableCreationDialog({
                           <Typography
                             variant="caption"
                             color="warning.main"
-                            sx={{ display: "block", mb: 0.5 }}
+                            sx={{ display: "block", mb: 0.5, fontWeight: 500 }}
                           >
                             ⚠️ <strong>Mixed Groups:</strong> Units from
                             different groups cannot convert between each other
@@ -980,7 +1132,7 @@ export default function VariableCreationDialog({
                           <Typography
                             variant="caption"
                             color="info.main"
-                            sx={{ display: "block", mb: 0.5 }}
+                            sx={{ display: "block", mb: 0.5, fontWeight: 500 }}
                           >
                             📊 <strong>Single Unit:</strong> This will be the
                             primary unit for the variable
@@ -999,11 +1151,42 @@ export default function VariableCreationDialog({
                     </Typography>
                   </Box>
                 )}
+
+                {/* Unit Selection Help */}
+                {selectedUnitIds.length === 0 && (
+                  <Box
+                    sx={{ 
+                      mt: 1, 
+                      p: 1.5, 
+                      bgcolor: "info.50", 
+                      borderRadius: 1,
+                      border: "1px solid",
+                      borderColor: "info.200"
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      color="info.main"
+                      sx={{ display: "block", fontWeight: 500 }}
+                    >
+                      💡 <strong>Tip:</strong> Select one or more units that users can choose from when logging data for this variable.
+                    </Typography>
+                  </Box>
+                )}
               </Box>
             </Box>
 
             {constraints.type === "continuous" && (
               <>
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="h6" gutterBottom>
+                    Value Range
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    Set the minimum and maximum allowed values for this variable. This helps validate user input and provides guidance.
+                  </Typography>
+                </Box>
+
                 <Box
                   sx={{
                     display: "flex",
@@ -1011,49 +1194,94 @@ export default function VariableCreationDialog({
                     gap: 2,
                   }}
                 >
-                  <TextField
-                    fullWidth
-                    label="Minimum Value"
-                    type="number"
-                    value={constraints.min}
-                    onChange={(e) =>
-                      setConstraints((prev) => ({
-                        ...prev,
-                        min: e.target.value,
-                      }))
-                    }
-                    helperText={
-                      selectedUnitIds.length > 0
-                        ? `Minimum allowed value (using selected units)`
-                        : "Minimum allowed value"
-                    }
-                  />
+                  <Box sx={{ flex: 1 }}>
+                    <TextField
+                      fullWidth
+                      label="Minimum Value"
+                      type="number"
+                      value={constraints.min}
+                      onChange={(e) =>
+                        setConstraints((prev) => ({
+                          ...prev,
+                          min: e.target.value,
+                        }))
+                      }
+                      helperText={
+                        selectedUnitIds.length > 0
+                          ? `Minimum allowed value (using selected units)`
+                          : "Minimum allowed value"
+                      }
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <Typography variant="body2" color="text.secondary">
+                              Min
+                            </Typography>
+                          </InputAdornment>
+                        ),
+                      }}
+                    />
+                  </Box>
 
-                  <TextField
-                    fullWidth
-                    label="Maximum Value"
-                    type="number"
-                    value={constraints.max}
-                    onChange={(e) =>
-                      setConstraints((prev) => ({
-                        ...prev,
-                        max: e.target.value,
-                      }))
-                    }
-                    helperText={
-                      selectedUnitIds.length > 0
-                        ? `Maximum allowed value (using selected units)`
-                        : "Maximum allowed value"
-                    }
-                  />
+                  <Box sx={{ flex: 1 }}>
+                    <TextField
+                      fullWidth
+                      label="Maximum Value"
+                      type="number"
+                      value={constraints.max}
+                      onChange={(e) =>
+                        setConstraints((prev) => ({
+                          ...prev,
+                          max: e.target.value,
+                        }))
+                      }
+                      helperText={
+                        selectedUnitIds.length > 0
+                          ? `Maximum allowed value (using selected units)`
+                          : "Maximum allowed value"
+                      }
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <Typography variant="body2" color="text.secondary">
+                              Max
+                            </Typography>
+                          </InputAdornment>
+                        ),
+                      }}
+                    />
+                  </Box>
+                </Box>
+
+                {/* Value Range Help */}
+                <Box
+                  sx={{ 
+                    mt: 1, 
+                    p: 1.5, 
+                    bgcolor: "warning.50", 
+                    borderRadius: 1,
+                    border: "1px solid",
+                    borderColor: "warning.200"
+                  }}
+                >
+                  <Typography
+                    variant="caption"
+                    color="warning.main"
+                    sx={{ display: "block", fontWeight: 500 }}
+                  >
+                    ⚠️ <strong>Optional:</strong> Leave empty to allow any value. Setting min/max helps validate user input and provides better data quality.
+                  </Typography>
                 </Box>
               </>
             )}
 
             {/* Source */}
-            <Box>
+            <Box sx={{ mt: 2 }}>
               <Typography variant="h6" gutterBottom>
                 Source
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                How data for this variable will be collected.
               </Typography>
             </Box>
 
@@ -1066,15 +1294,30 @@ export default function VariableCreationDialog({
                   onChange={(e) => setSource(e.target.value)}
                   disabled
                 >
-                  <MenuItem value="manual">Manual Entry</MenuItem>
+                  <MenuItem value="manual">
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                      <span>✏️</span>
+                      <Box>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          Manual Entry
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Users manually enter data
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </MenuItem>
                 </Select>
               </FormControl>
             </Box>
 
             {/* Sharing Settings */}
-            <Box>
+            <Box sx={{ mt: 2 }}>
               <Typography variant="h6" gutterBottom>
                 Privacy & Sharing
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Control who can see this variable and its data.
               </Typography>
             </Box>
 

@@ -6,15 +6,19 @@ import {
   Button,
   Box,
   Container,
+  LinearProgress,
+  Alert,
 } from "@mui/material";
 import { useUser } from "./_app";
 import { useRouter } from "next/router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import LandingPage from "./landing-page";
 
 export default function Home() {
   const { user, loading } = useUser();
   const router = useRouter();
+  const [loadingTimeout, setLoadingTimeout] = useState(false);
+  const [loadingStep, setLoadingStep] = useState("Initializing...");
 
   // If user is authenticated, redirect to log/now page
   useEffect(() => {
@@ -22,6 +26,39 @@ export default function Home() {
       router.push("/track/manual");
     }
   }, [user, loading, router]);
+
+  // Handle loading timeout
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+    
+    if (loading) {
+      // Set timeout for 10 seconds
+      timeoutId = setTimeout(() => {
+        setLoadingTimeout(true);
+      }, 10000);
+      
+      // Update loading step based on time elapsed
+      const stepTimeouts = [
+        { time: 2000, step: "Checking authentication..." },
+        { time: 4000, step: "Loading profile data..." },
+        { time: 6000, step: "Finalizing setup..." },
+        { time: 8000, step: "Almost ready..." },
+      ];
+      
+      stepTimeouts.forEach(({ time, step }) => {
+        setTimeout(() => {
+          if (loading) setLoadingStep(step);
+        }, time);
+      });
+    } else {
+      setLoadingTimeout(false);
+      setLoadingStep("Initializing...");
+    }
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [loading]);
 
   // Show loading state while checking authentication
   if (loading) {
@@ -32,14 +69,53 @@ export default function Home() {
       >
         <Card className="w-full shadow-2xl border border-border bg-surface/95 backdrop-blur-sm">
           <CardContent className="flex flex-col items-center p-6 lg:p-8">
-            <Box className="animate-pulse">
+            <Box className="w-full">
               <Typography
                 variant="h5"
                 className="font-bold text-white mb-4 tracking-tight text-center"
               >
-                Loading...
+                {loadingTimeout ? "Taking longer than expected..." : "Loading Modular Health"}
               </Typography>
+              
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                className="text-center mb-4"
+              >
+                {loadingStep}
+              </Typography>
+              
+              <LinearProgress 
+                sx={{ 
+                  mb: 3,
+                  '& .MuiLinearProgress-bar': {
+                    backgroundColor: '#ffd700',
+                  },
+                }}
+              />
+              
+              {loadingTimeout && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  <Typography variant="body2">
+                    The app is taking longer than usual to load. This might be due to a slow connection.
+                  </Typography>
+                </Alert>
+              )}
+              
               <Box className="w-8 h-8 border-4 border-gold border-t-transparent rounded-full animate-spin mx-auto"></Box>
+              
+              {loadingTimeout && (
+                <Box sx={{ mt: 3, textAlign: 'center' }}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => window.location.reload()}
+                    sx={{ color: '#ffd700', borderColor: '#ffd700' }}
+                  >
+                    Refresh Page
+                  </Button>
+                </Box>
+              )}
             </Box>
           </CardContent>
         </Card>

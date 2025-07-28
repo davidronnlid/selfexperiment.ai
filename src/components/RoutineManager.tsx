@@ -20,6 +20,9 @@ import {
   Snackbar,
   Alert,
   Divider,
+  RadioGroup,
+  FormControlLabel,
+  Radio,
 } from "@mui/material";
 import { Add, Delete, Edit, AccessTime, Sort } from "@mui/icons-material";
 import { useUser } from "@/pages/_app";
@@ -88,6 +91,12 @@ export default function RoutineManager() {
     open: false,
     message: "",
   });
+
+  // Delete confirmation modal state
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [routineToDelete, setRoutineToDelete] = useState<any>(null);
+  const [dataHandlingOption, setDataHandlingOption] = useState<'keep' | 'delete' | 'archive'>('keep');
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Validation state for individual variables in the form
   const [variableValidationErrors, setVariableValidationErrors] = useState<
@@ -587,16 +596,108 @@ export default function RoutineManager() {
   }
 
   async function handleDeleteRoutine(routineId: string) {
-    if (confirm("Are you sure you want to delete this routine?")) {
-      const { error } = await supabase.rpc("delete_routine", {
-        p_routine_id: routineId,
+    // Find the routine to delete
+    const routine = routines.find(r => r.id === routineId);
+    if (!routine) {
+      setSnackbar({ 
+        open: true, 
+        message: "Routine not found" 
       });
-      if (error) {
-        console.error("Error deleting routine:", error);
-      } else {
-        setSnackbar({ open: true, message: "Routine deleted successfully" });
-        await loadRoutines();
+      return;
+    }
+    
+    // Check how many data points are associated with this routine
+    const { data: routineDataPoints, error: dataError } = await supabase
+      .from("data_points")
+      .select("id")
+      .eq("routine_id", routineId);
+    
+    const dataPointCount = routineDataPoints?.length || 0;
+    
+    // Open the delete confirmation modal
+    setRoutineToDelete({ ...routine, dataPointCount });
+    setDataHandlingOption('keep'); // Default to keeping data
+    setDeleteModalOpen(true);
+  }
+
+  async function confirmDeleteRoutine() {
+    if (!routineToDelete) return;
+    
+    setDeleteLoading(true);
+    
+    try {
+      // Handle data based on user's choice
+      if (dataHandlingOption === 'delete') {
+        // Delete all data points that were created by this routine
+        const { error: dataError } = await supabase
+          .from("data_points")
+          .delete()
+          .eq("routine_id", routineToDelete.id);
+        
+        if (dataError) {
+          console.error("Error deleting routine data:", dataError);
+        }
+      } else if (dataHandlingOption === 'archive') {
+        // Update data points to mark them as archived (change source to 'archived_routine')
+        const { error: archiveError } = await supabase
+          .from("data_points")
+          .update({ source: "archived_routine" })
+          .eq("routine_id", routineToDelete.id);
+        
+        if (archiveError) {
+          console.error("Error archiving routine data:", archiveError);
+        }
       }
+      // If 'keep' option, do nothing with the data - it stays as is
+      
+      // Delete routine_variables first
+      const { error: variablesError } = await supabase
+        .from("routine_variables")
+        .delete()
+        .eq("routine_id", routineToDelete.id);
+      
+      if (variablesError) {
+        console.log("Warning: Could not delete routine variables:", variablesError.message);
+      }
+      
+      // Delete the routine itself
+      const { error: routineError } = await supabase
+        .from("routines")
+        .delete()
+        .eq("id", routineToDelete.id);
+      
+      if (routineError) {
+        throw new Error(`Failed to delete routine: ${routineError.message}`);
+      }
+      
+      // Show appropriate success message
+      let successMessage = "Routine deleted successfully!";
+      if (dataHandlingOption === 'keep') {
+        successMessage += " Your tracked data has been preserved.";
+      } else if (dataHandlingOption === 'archive') {
+        successMessage += " Your tracked data has been archived.";
+      } else if (dataHandlingOption === 'delete') {
+        successMessage += " All routine data has been removed.";
+      }
+      
+      setSnackbar({ 
+        open: true, 
+        message: successMessage
+      });
+      
+      // Close modal and refresh
+      setDeleteModalOpen(false);
+      setRoutineToDelete(null);
+      await loadRoutines();
+      
+    } catch (error) {
+      console.error("Error deleting routine:", error);
+      setSnackbar({ 
+        open: true, 
+        message: `Failed to delete routine: ${error instanceof Error ? error.message : 'Unknown error'}` 
+      });
+    } finally {
+      setDeleteLoading(false);
     }
   }
 
@@ -1804,6 +1905,108 @@ export default function RoutineManager() {
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* Delete Confirmation Modal */}
+      <Dialog 
+        open={deleteModalOpen} 
+        onClose={() => setDeleteModalOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Delete color="error" />
+            <Typography variant="h6">Delete Routine</Typography>
+          </Box>
+        </DialogTitle>
+        
+        <DialogContent>
+          <Typography variant="body1" sx={{ mb: 2 }}>
+            Are you sure you want to delete <strong>"{routineToDelete?.routine_name}"</strong>?
+          </Typography>
+          
+          {routineToDelete?.dataPointCount > 0 ? (
+            <>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                This routine has created <strong>{routineToDelete.dataPointCount} data points</strong>. 
+                What would you like to do with this tracked data?
+              </Typography>
+              
+              <FormControl component="fieldset" fullWidth>
+                <RadioGroup
+                  value={dataHandlingOption}
+                  onChange={(e) => setDataHandlingOption(e.target.value as 'keep' | 'delete' | 'archive')}
+                >
+                  <FormControlLabel 
+                    value="keep" 
+                    control={<Radio />} 
+                    label={
+                      <Box>
+                        <Typography variant="body2" fontWeight="medium">
+                          Keep all tracked data ({routineToDelete.dataPointCount} data points)
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Your historical data will remain unchanged and accessible
+                        </Typography>
+                      </Box>
+                    }
+                  />
+                  <FormControlLabel 
+                    value="archive" 
+                    control={<Radio />} 
+                    label={
+                      <Box>
+                        <Typography variant="body2" fontWeight="medium">
+                          Archive tracked data ({routineToDelete.dataPointCount} data points)
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Data will be marked as archived but still accessible
+                        </Typography>
+                      </Box>
+                    }
+                  />
+                  <FormControlLabel 
+                    value="delete" 
+                    control={<Radio />} 
+                    label={
+                      <Box>
+                        <Typography variant="body2" fontWeight="medium" color="error">
+                          Delete all tracked data ({routineToDelete.dataPointCount} data points)
+                        </Typography>
+                        <Typography variant="caption" color="error">
+                          This will permanently remove all data created by this routine
+                        </Typography>
+                      </Box>
+                    }
+                  />
+                </RadioGroup>
+              </FormControl>
+            </>
+          ) : (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              This routine hasn't created any data points yet, so only the routine configuration will be removed.
+            </Typography>
+          )}
+        </DialogContent>
+        
+        <DialogActions sx={{ p: 2, pt: 1 }}>
+          <Button 
+            onClick={() => setDeleteModalOpen(false)}
+            disabled={deleteLoading}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={confirmDeleteRoutine}
+            variant="contained" 
+            color="error"
+            disabled={deleteLoading}
+            startIcon={deleteLoading ? null : <Delete />}
+          >
+            {deleteLoading ? "Deleting..." : "Delete Routine"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

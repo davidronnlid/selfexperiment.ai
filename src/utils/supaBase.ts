@@ -13,7 +13,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   // Show user-friendly error on client-side
   if (typeof window !== 'undefined') {
     setTimeout(() => {
-      alert('Missing Supabase configuration. Check console for setup instructions.');
+      alert('Missing Supabase configuration. Please check the console for setup instructions.');
     }, 1000);
   }
 }
@@ -26,5 +26,10 @@ export const supabase = createClient(finalUrl, finalKey, {
   auth: {
     // This will help Supabase determine the correct redirect URL
     flowType: 'pkce'
+  },
+  global: {
+    headers: {
+      'apikey': finalKey
+    }
   }
 });

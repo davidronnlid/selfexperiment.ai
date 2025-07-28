@@ -241,6 +241,15 @@ export default function VariableUnitSelector({
           '& .MuiOutlinedInput-input': {
             color: 'white !important',
           },
+          '& .MuiOutlinedInput-root': {
+            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+            '&:hover': {
+              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            },
+            '&.Mui-focused': {
+              backgroundColor: 'rgba(255, 255, 255, 0.15)',
+            },
+          },
           '& .MuiOutlinedInput-notchedOutline': {
             borderColor: 'rgba(255, 255, 255, 0.23)',
           },

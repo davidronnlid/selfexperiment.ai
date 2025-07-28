@@ -2,6 +2,7 @@ import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/utils/supaBase";
 import { useUser } from "@/pages/_app";
+import Link from "next/link";
 import {
   Container,
   Typography,
@@ -15,6 +16,7 @@ import {
   IconButton,
   Collapse,
   Button,
+  Avatar,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
@@ -41,57 +43,132 @@ export default function CommunityProfilePage() {
   >({});
   const [followerCount, setFollowerCount] = useState<number>(0);
 
+  // Helper function to get profile picture URL
+  const getProfilePictureUrl = (avatarUrl: string | null) => {
+    if (!avatarUrl) return null;
+    
+    // If it's already a full URL (OAuth profile pics), return as is
+    if (avatarUrl.startsWith('http')) {
+      return avatarUrl;
+    }
+    
+    // Otherwise, it's a Supabase storage path
+    const { data } = supabase.storage
+      .from('avatars')
+      .getPublicUrl(avatarUrl);
+    return data.publicUrl;
+  };
+
   useEffect(() => {
     if (!username) return;
     const fetchProfile = async () => {
       setLoading(true);
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("id, username")
-        .eq("username", username)
-        .single();
-      setProfile(profileData);
-      if (profileData) {
-        // Fetch shared variables and their data using the new function
-        const { data: sharedVars, error: sharedError } = await supabase.rpc(
-          "get_user_shared_variables",
-          { target_user_id: profileData.id }
-        );
+      
+      try {
+        // Step 1: Get basic profile data first
+        const { data: profileData, error: profileError } = await supabase
+          .from("profiles")
+          .select("id, username, name, avatar_url")
+          .eq("username", username)
+          .single();
 
-        if (sharedError) {
-          console.error("Error fetching shared variables:", sharedError);
+        if (profileError || !profileData) {
+          console.error("Profile not found:", profileError);
+          setProfile(null);
+          setLoading(false);
+          return;
+        }
+
+        setProfile(profileData);
+
+        // Step 2: Run all other queries in parallel for better performance
+        const [
+          userVariablesResult,
+          followerCountResult,
+          followStatusResult
+        ] = await Promise.allSettled([
+          // Fetch shared variables using the proper RPC function
+          supabase.rpc("get_user_shared_variables", { 
+            target_user_id: profileData.id 
+          }),
+          
+          // Fetch follower count (with timeout to handle missing table)
+          Promise.race([
+            supabase
+              .from("user_follows")
+              .select("*", { count: "exact", head: true })
+              .eq("following_id", profileData.id),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Timeout')), 2000)
+            )
+          ]),
+          
+          // Check follow status (only if user is logged in and not viewing own profile)
+          user && user.id !== profileData.id 
+            ? Promise.race([
+                supabase
+                  .from("user_follows")
+                  .select("*")
+                  .eq("follower_id", user.id)
+                  .eq("following_id", profileData.id)
+                  .single(),
+                new Promise((_, reject) => 
+                  setTimeout(() => reject(new Error('Timeout')), 2000)
+                )
+              ])
+            : Promise.resolve({ data: null, error: null })
+        ]);
+
+        // Handle user variables result
+        if (userVariablesResult.status === 'fulfilled') {
+          const result = userVariablesResult.value;
+          if (result.error) {
+            console.warn("Failed to fetch user variables:", result.error);
+            setVariables([]);
+          } else {
+            setVariables(result.data || []);
+          }
         } else {
-          // Transform the data to match the expected format
-          const transformedVars = (sharedVars || []).map((v: any) => ({
-            variable_id: v.variable_id,
-            variable_name: v.variable_label,
-            variable_label: v.variable_label,
-            variable_slug: v.variable_slug,
-            data_point_count: v.data_point_count,
-            latest_value: v.latest_value,
-            latest_date: v.latest_date,
-          }));
-          setVariables(transformedVars);
+          console.warn("Failed to fetch user variables:", 
+            userVariablesResult.reason
+          );
+          setVariables([]);
         }
-        // Fetch follower count
-        const { count } = await supabase
-          .from("user_follows")
-          .select("*", { count: "exact", head: true })
-          .eq("followed_id", profileData.id);
-        setFollowerCount(count || 0);
-        // Check if current user is following this profile
+
+        // Handle follower count result
+        if (followerCountResult.status === 'fulfilled' && !(followerCountResult.value as any).error) {
+          setFollowerCount((followerCountResult.value as any).count || 0);
+        } else {
+          console.warn("Failed to fetch follower count (table might not exist):", 
+            followerCountResult.status === 'fulfilled' 
+              ? (followerCountResult.value as any).error 
+              : followerCountResult.reason
+          );
+          setFollowerCount(0);
+        }
+
+        // Handle follow status result
         if (user && user.id !== profileData.id) {
-          const { data: followData } = await supabase
-            .from("user_follows")
-            .select("*")
-            .eq("follower_id", user.id)
-            .eq("followed_id", profileData.id)
-            .single();
-          setIsFollowing(!!followData);
+          if (followStatusResult.status === 'fulfilled' && !(followStatusResult.value as any).error) {
+            setIsFollowing(!!(followStatusResult.value as any).data);
+          } else {
+            console.warn("Failed to fetch follow status (table might not exist):", 
+              followStatusResult.status === 'fulfilled' 
+                ? (followStatusResult.value as any).error 
+                : followStatusResult.reason
+            );
+            setIsFollowing(false);
+          }
         }
+
+      } catch (error) {
+        console.error("Unexpected error fetching profile:", error);
+        setProfile(null);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
+
     fetchProfile();
   }, [username, user]);
 
@@ -215,28 +292,55 @@ export default function CommunityProfilePage() {
   const handleFollow = async () => {
     if (!user || !profile) return;
     setFollowLoading(true);
+    
     try {
-      if (!isFollowing) {
-        const { error } = await supabase
+      // Add timeout protection for follow operations
+      const followOperation = async () => {
+        if (!isFollowing) {
+                  const { error } = await supabase
           .from("user_follows")
-          .insert({ follower_id: user.id, followed_id: profile.id });
-        if (!error) {
-          setIsFollowing(true);
-          setFollowerCount((prev) => prev + 1);
-        }
-      } else {
-        const { error } = await supabase
+          .insert({ follower_id: user.id, following_id: profile.id });
+          
+          if (!error) {
+            setIsFollowing(true);
+            setFollowerCount((prev) => prev + 1);
+            return true;
+          } else {
+            console.error("Follow error:", error);
+            return false;
+          }
+        } else {
+                  const { error } = await supabase
           .from("user_follows")
           .delete()
           .eq("follower_id", user.id)
-          .eq("followed_id", profile.id);
-        if (!error) {
-          setIsFollowing(false);
-          setFollowerCount((prev) => prev - 1);
+          .eq("following_id", profile.id);
+          
+          if (!error) {
+            setIsFollowing(false);
+            setFollowerCount((prev) => Math.max(0, prev - 1));
+            return true;
+          } else {
+            console.error("Unfollow error:", error);
+            return false;
+          }
         }
-      }
+      };
+
+      // Race against timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Follow operation timeout')), 3000)
+      );
+
+      await Promise.race([followOperation(), timeoutPromise]);
+
     } catch (error) {
-      console.error("Follow/unfollow error:", error);
+      console.error("Follow/unfollow operation failed:", error);
+      
+      // Show user-friendly message
+      if (error instanceof Error && error.message.includes('does not exist')) {
+        console.warn("Follow feature not yet available - database table missing");
+      }
     } finally {
       setFollowLoading(false);
     }
@@ -276,7 +380,24 @@ export default function CommunityProfilePage() {
         >
           Back to Community
         </Button>
-        <Typography variant="h4">{profile.username}</Typography>
+        
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+          <Avatar 
+            src={getProfilePictureUrl(profile.avatar_url) || undefined}
+            sx={{ width: 80, height: 80 }}
+          >
+            {profile.username?.[0]?.toUpperCase()}
+          </Avatar>
+          <Box>
+            <Typography variant="h4">{profile.username}</Typography>
+            {profile.name && (
+              <Typography variant="h6" color="textSecondary">
+                {profile.name}
+              </Typography>
+            )}
+          </Box>
+        </Box>
+        
         <Box sx={{ display: "flex", alignItems: "center", gap: 2, mt: 1 }}>
           <Typography variant="body2" color="textSecondary">
             {followerCount} followers
@@ -296,15 +417,15 @@ export default function CommunityProfilePage() {
 
       <Paper>
         <Typography variant="h6" sx={{ p: 2, pb: 1 }}>
-          Shared Variables ({variables.length})
+          Variables ({variables.length})
         </Typography>
 
         <List>
           {variables.length === 0 ? (
             <ListItem>
               <ListItemText
-                primary="No shared variables"
-                secondary="This user hasn't shared any variables yet."
+                primary="No variables tracked"
+                secondary="This user hasn't tracked any variables yet."
               />
             </ListItem>
           ) : (
@@ -322,12 +443,60 @@ export default function CommunityProfilePage() {
                         <Box
                           sx={{ display: "flex", alignItems: "center", gap: 1 }}
                         >
-                          <Typography variant="subtitle1">
-                            {v.variable_name}
-                          </Typography>
+                          <Link 
+                            href={`/variable/${encodeURIComponent(v.variable_slug || v.variable_name || v.variable_label)}`} 
+                            passHref
+                            style={{ textDecoration: 'none' }}
+                          >
+                            <Typography 
+                              variant="subtitle1" 
+                              sx={{ 
+                                cursor: 'pointer',
+                                color: 'primary.main',
+                                textDecoration: 'underline',
+                                fontWeight: 500,
+                                '&:hover': {
+                                  color: 'primary.dark',
+                                  textDecoration: 'underline',
+                                }
+                              }}
+                              title={`View ${v.variable_name} variable page`}
+                            >
+                              {v.variable_name}
+                            </Typography>
+                          </Link>
                           <Typography variant="caption" color="textSecondary">
                             ({v.data_point_count} data points)
                           </Typography>
+                          {v.is_shared ? (
+                            <Typography 
+                              variant="caption" 
+                              sx={{ 
+                                bgcolor: 'success.light', 
+                                color: 'success.contrastText',
+                                px: 1, 
+                                py: 0.25, 
+                                borderRadius: 1,
+                                fontSize: '0.7rem'
+                              }}
+                            >
+                              SHARED
+                            </Typography>
+                          ) : (
+                            <Typography 
+                              variant="caption" 
+                              sx={{ 
+                                bgcolor: 'grey.300', 
+                                color: 'grey.700',
+                                px: 1, 
+                                py: 0.25, 
+                                borderRadius: 1,
+                                fontSize: '0.7rem'
+                              }}
+                            >
+                              PRIVATE
+                            </Typography>
+                          )}
                         </Box>
                       }
                       secondary={
@@ -349,7 +518,11 @@ export default function CommunityProfilePage() {
                 </ListItem>
                 <Collapse in={expanded[v.variable_name]}>
                   <Box sx={{ bgcolor: "grey.50", p: 2 }}>
-                    {logsLoading[v.variable_name] ? (
+                    {!v.is_shared ? (
+                      <Typography variant="body2" color="textSecondary" sx={{ fontStyle: 'italic' }}>
+                        This variable is private and data cannot be viewed.
+                      </Typography>
+                    ) : logsLoading[v.variable_name] ? (
                       <CircularProgress size={20} />
                     ) : (
                       <List dense>

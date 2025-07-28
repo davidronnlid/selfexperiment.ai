@@ -19,6 +19,8 @@ import {
 } from "@mui/icons-material";
 import { supabase } from "@/utils/supaBase";
 import { useRouter } from "next/router";
+import AppleHealthConnectionDialog from "./AppleHealthConnectionDialog";
+import AppleHealthIntegration from "./AppleHealthIntegration";
 
 interface HealthIntegrationsSectionProps {
   userId: string;
@@ -37,6 +39,7 @@ export default function HealthIntegrationsSection({
   const [syncingOura, setSyncingOura] = useState(false);
   const [syncingWithings, setSyncingWithings] = useState(false);
   const [syncingAppleHealth, setSyncingAppleHealth] = useState(false);
+  const [appleHealthDialogOpen, setAppleHealthDialogOpen] = useState(false);
 
   // Show success messages if redirected from callbacks
   const showOuraSuccess = router.query.oura === "success";
@@ -167,26 +170,9 @@ export default function HealthIntegrationsSection({
 
   const syncAppleHealth = async () => {
     if (!userId) return;
-
-    try {
-      setSyncingAppleHealth(true);
-      const response = await fetch("/api/applehealth/fetch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
-      });
-
-      if (response.ok) {
-        // Refresh connection status after sync
-        setTimeout(() => {
-          checkConnectionStatus();
-        }, 1000);
-      }
-    } catch (error) {
-      console.error("Error syncing Apple Health data:", error);
-    } finally {
-      setSyncingAppleHealth(false);
-    }
+    
+    // Open the smart Apple Health connection dialog instead of direct sync
+    setAppleHealthDialogOpen(true);
   };
 
   useEffect(() => {
@@ -346,63 +332,23 @@ export default function HealthIntegrationsSection({
             </Box>
           </Box>
 
-          {/* Apple Health */}
-          <Box sx={{ flex: { xs: "1 1 100%", md: "1 1 calc(33.333% - 16px)" } }}>
-            <Box
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                p: 2,
-                border: "1px solid",
-                borderColor: "divider",
-                borderRadius: 1,
-              }}
-            >
-              <Box sx={{ display: "flex", alignItems: "center" }}>
-                <AppleIcon sx={{ mr: 1, color: "info.main" }} />
-                <Box>
-                  <Typography variant="subtitle1" fontWeight="bold">
-                    Apple Health
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Health and fitness data
-                  </Typography>
-                </Box>
-              </Box>
-              <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-                <Chip
-                  label={connectionStatus.appleHealthConnected ? "Connected" : "Disconnected"}
-                  color={connectionStatus.appleHealthConnected ? "success" : "default"}
-                  size="small"
-                />
-                {connectionStatus.appleHealthConnected ? (
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={syncAppleHealth}
-                    disabled={syncingAppleHealth}
-                    startIcon={
-                      syncingAppleHealth ? <CircularProgress size={16} /> : <SyncIcon />
-                    }
-                  >
-                    {syncingAppleHealth ? "Syncing..." : "Sync"}
-                  </Button>
-                ) : (
-                  <Button
-                    variant="contained"
-                    size="small"
-                    onClick={connectAppleHealth}
-                    startIcon={<LinkIcon />}
-                  >
-                    Connect
-                  </Button>
-                )}
-              </Box>
-            </Box>
+          {/* Apple Health - Full Integration Component */}
+          <Box sx={{ flex: { xs: "1 1 100%", md: "1 1 100%" }, mt: 2 }}>
+            <AppleHealthIntegration userId={userId} />
           </Box>
         </Box>
       </CardContent>
+      
+      {/* Apple Health Connection Dialog */}
+      <AppleHealthConnectionDialog
+        open={appleHealthDialogOpen}
+        onClose={() => setAppleHealthDialogOpen(false)}
+        userId={userId}
+        onConnectionSuccess={() => {
+          setAppleHealthDialogOpen(false);
+          checkConnectionStatus();
+        }}
+      />
     </Card>
   );
 } 

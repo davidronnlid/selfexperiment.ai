@@ -5,6 +5,8 @@ import { clearDisplayUnitCache } from "@/utils/variableUtils";
 import { useUserDisplayUnit } from "@/hooks/useUserDisplayUnit";
 import { useUser } from "../_app";
 import VariableUnitSelector from "@/components/VariableUnitSelector";
+import VariableAdminEditor from "@/components/VariableAdminEditor";
+import VariableMergeEditor from "@/components/VariableMergeEditor";
 import {
   Container,
   Typography,
@@ -43,6 +45,7 @@ import {
   FaTrash,
   FaCheck,
   FaTimes,
+  FaCog,
 } from "react-icons/fa";
 import {
   Chart as ChartJS,
@@ -67,10 +70,12 @@ ChartJS.register(
 interface DataPointEntry {
   id: number;
   date: string;
-  variable: string;
   value: string;
   notes?: string;
-  created_at?: string;
+  created_at: string;
+  variable?: string;
+  source?: string[];
+  routine_id?: number;
   user_id?: string;
   variable_id?: string;
   display_unit?: string;
@@ -96,7 +101,7 @@ interface VariableInfo {
   is_public: boolean;
   convertible_units?: string[]; // Added for unit conversion
   created_at: string;
-  updated_at: string;
+  updated_at?: string; // Add back the optional updated_at field
   is_active: boolean;
 }
 
@@ -104,7 +109,7 @@ export default function VariableDataPointsPage() {
   const router = useRouter();
   const { variableName } = router.query;
   const editDataPointId = router.query.edit as string; // Get edit parameter
-  const { user, loading: userLoading } = useUser();
+  const { user, loading: userLoading, username } = useUser();
   const [dataPoints, setDataPoints] = useState<DataPointEntry[]>([]);
   const [variableInfo, setVariableInfo] = useState<VariableInfo | null>(null);
 
@@ -128,6 +133,19 @@ export default function VariableDataPointsPage() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [showError, setShowError] = useState(false);
+  
+  // Admin edit state
+  const [adminEditOpen, setAdminEditOpen] = useState(false);
+  
+  // Merge editor state
+  const [mergeEditOpen, setMergeEditOpen] = useState(false);
+  
+  // Variable grouping state
+  const [childVariables, setChildVariables] = useState<VariableInfo[]>([]);
+  const [selectedVariableId, setSelectedVariableId] = useState<string>("");
+  const [showChildData, setShowChildData] = useState(false);
+  
+  const isAdmin = username === "davidronnlidmh";
 
   const fetchVariableInfo = useCallback(async () => {
     try {
@@ -177,58 +195,130 @@ export default function VariableDataPointsPage() {
     try {
       let mappedDataPoints: DataPointEntry[] = [];
 
-      // Check if this is an Oura variable
-      if (variableInfo.source_type === "oura") {
-        const { data: ouraLogs, error: ouraError } = await supabase
-          .from("oura_variable_data_points")
-          .select("id, date, variable_id, value, created_at")
-          .eq("user_id", user.id)
-          .eq("variable_id", variableInfo.id)
-          .order("date", { ascending: false })
-          .limit(20); // Reduced limit for better performance
+      // Get all variable IDs to fetch (current variable + any child variables)
+      const variableIdsToFetch = [variableInfo.id];
 
-        if (!ouraError && ouraLogs) {
-          mappedDataPoints = ouraLogs.map((log: any) => ({
-            id: log.id,
-            date: log.date,
-            variable: variableInfo.label,
-            value: log.value?.toString() || "0",
-            notes: "Oura Ring data",
-            created_at: log.created_at,
-            user_id: user.id,
-            variable_id: log.variable_id,
-          }));
+      // Check for child variables that have this variable as parent
+      const { data: childVariablesData, error: childError } = await supabase
+        .from("variables")
+        .select("id, label, source_type, slug, description, icon, data_type, category, canonical_unit, is_public, created_at, updated_at, is_active")
+        .eq("parent_variable_id", variableInfo.id)
+        .eq("is_active", true);
+
+      if (!childError && childVariablesData) {
+        setChildVariables(childVariablesData);
+        // Only include child variables in fetch if not showing child data specifically
+        if (!showChildData) {
+          childVariablesData.forEach(child => {
+            variableIdsToFetch.push(child.id);
+          });
         }
-      } else {
-        // Regular variable - fetch from data_points table
-        const { data: uuidLogs, error: uuidError } = await supabase
-          .from("data_points")
-          .select("id, created_at, date, variable_id, value, notes, user_id, display_unit")
-          .eq("user_id", user.id)
-          .eq("variable_id", variableInfo.id)
-          .order("created_at", { ascending: false })
-          .limit(20); // Reduced limit for better performance
+        console.log(`📊 [Variable Page] Found ${childVariablesData.length} child variables for ${variableInfo.label}`);
+      }
 
-        if (!uuidError && uuidLogs) {
-          mappedDataPoints = uuidLogs.map((log: any) => ({
-            id: log.id,
-            date: log.date || log.created_at,
-            variable: variableInfo.label,
-            value: log.value,
-            notes: log.notes,
-            created_at: log.created_at,
-            user_id: log.user_id,
-            variable_id: log.variable_id,
-            display_unit: log.display_unit,
-          }));
+      // Fetch data for all related variables
+      for (const variableId of variableIdsToFetch) {
+        // Get variable info for this ID
+        const { data: varInfo, error: varError } = await supabase
+          .from("variables")
+          .select("id, label, source_type")
+          .eq("id", variableId)
+          .single();
+
+        if (varError || !varInfo) continue;
+
+        // Check if this is an Oura variable
+        if (varInfo.source_type === "oura") {
+          const { data: ouraLogs, error: ouraError } = await supabase
+            .from("oura_variable_data_points")
+            .select("id, date, variable_id, value, created_at")
+            .eq("user_id", user.id)
+            .eq("variable_id", varInfo.id)
+            .order("date", { ascending: false })
+            .limit(20);
+
+          if (!ouraError && ouraLogs) {
+            const ouraDataPoints = ouraLogs.map((log: any) => ({
+              id: log.id,
+              date: log.date,
+              variable: varInfo.label,
+              value: log.value?.toString() || "0",
+              notes: `Oura Ring data (${varInfo.label})`,
+              created_at: log.created_at,
+              user_id: user.id,
+              variable_id: log.variable_id,
+              source: ["oura"],
+            }));
+            mappedDataPoints.push(...ouraDataPoints);
+          }
+        } else if (varInfo.source_type === "apple_health") {
+          // Fetch Apple Health data
+          const { data: appleHealthLogs, error: appleHealthError } = await supabase
+            .from("apple_health_variable_data_points")
+            .select("id, date, variable_id, value, created_at")
+            .eq("user_id", user.id)
+            .eq("variable_id", varInfo.id)
+            .order("date", { ascending: false })
+            .limit(20);
+
+          if (!appleHealthError && appleHealthLogs) {
+            const appleHealthDataPoints = appleHealthLogs.map((log: any) => ({
+              id: log.id,
+              date: log.date,
+              variable: varInfo.label,
+              value: log.value?.toString() || "0",
+              notes: `Apple Health data (${varInfo.label})`,
+              created_at: log.created_at,
+              user_id: user.id,
+              variable_id: log.variable_id,
+              source: ["apple_health"],
+            }));
+            mappedDataPoints.push(...appleHealthDataPoints);
+          }
+        } else {
+          // Regular variable - fetch from data_points table
+          const { data: uuidLogs, error: uuidError } = await supabase
+            .from("data_points")
+            .select("id, created_at, date, variable_id, value, notes, user_id, display_unit")
+            .eq("user_id", user.id)
+            .eq("variable_id", varInfo.id)
+            .order("created_at", { ascending: false })
+            .limit(20);
+
+          if (!uuidError && uuidLogs) {
+            const regularDataPoints = uuidLogs.map((log: any) => ({
+              id: log.id,
+              date: log.date || log.created_at,
+              variable: varInfo.label,
+              value: log.value,
+              notes: log.notes,
+              created_at: log.created_at,
+              user_id: log.user_id,
+              variable_id: log.variable_id,
+              display_unit: log.display_unit,
+              source: ["manual"],
+            }));
+            mappedDataPoints.push(...regularDataPoints);
+          }
         }
       }
 
+      // Filter data points based on selected variable if showing child data
+      if (showChildData && selectedVariableId) {
+        mappedDataPoints = mappedDataPoints.filter(dp => dp.variable_id === selectedVariableId);
+        console.log(`📊 [Variable Page] Filtered to ${mappedDataPoints.length} data points for selected variable`);
+      }
+
+      // Sort all data points by date (newest first)
+      mappedDataPoints.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      console.log(`📊 [Variable Page] Fetched ${mappedDataPoints.length} total data points for ${variableInfo.label} and its children`);
       setDataPoints(mappedDataPoints);
     } catch (error) {
+      console.error("Error fetching data points:", error);
       setDataPoints([]);
     }
-  }, [user, variableName, variableInfo]);
+  }, [user, variableName, variableInfo, showChildData, selectedVariableId]);
 
   const fetchSharingStatus = useCallback(async () => {
     if (!user || !variableInfo) return;
@@ -668,6 +758,12 @@ export default function VariableDataPointsPage() {
     }
   };
 
+  const handleAdminSave = (updatedVariable: VariableInfo) => {
+    setVariableInfo(updatedVariable);
+    setSuccessMessage("Variable updated successfully!");
+    setShowSuccess(true);
+  };
+
   if (loading || userLoading) {
     return (
       <Container maxWidth="lg" sx={{ py: 4 }}>
@@ -727,15 +823,40 @@ export default function VariableDataPointsPage() {
       {/* Variable Information Card */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Typography 
-            variant="h4" 
-            component="h1"
-            sx={{ display: "flex", alignItems: "center", gap: 1, mb: 3 }}
-            gutterBottom
-          >
-            <span>{variableInfo?.icon || "📊"}</span>
-            {variableInfo?.label || variableName}
-          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 3 }}>
+            <Typography 
+              variant="h4" 
+              component="h1"
+              sx={{ display: "flex", alignItems: "center", gap: 1 }}
+            >
+              <span>{variableInfo?.icon || "📊"}</span>
+              {variableInfo?.label || variableName}
+            </Typography>
+            
+            {isAdmin && (
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<FaCog />}
+                  onClick={() => setAdminEditOpen(true)}
+                  size="small"
+                >
+                  Edit Variable
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={() => setMergeEditOpen(true)}
+                  size="small"
+                  sx={{ 
+                    bgcolor: '#FF9800',
+                    '&:hover': { bgcolor: '#F57C00' }
+                  }}
+                >
+                  Merge Variables
+                </Button>
+              </Box>
+            )}
+          </Box>
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, sm: 6 }}>
               <Typography variant="body2" color="textSecondary">
@@ -793,6 +914,66 @@ export default function VariableDataPointsPage() {
                 {sharingUpdateLoading && <CircularProgress size={16} />}
               </Box>
             </Grid>
+            
+            {/* Variable Grouping Toggle */}
+            {childVariables.length > 0 && (
+              <Grid size={{ xs: 12 }}>
+                <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+                  Data Source:
+                </Typography>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={showChildData}
+                        onChange={(e) => {
+                          setShowChildData(e.target.checked);
+                          if (!e.target.checked) {
+                            setSelectedVariableId("");
+                          } else if (childVariables.length > 0) {
+                            setSelectedVariableId(childVariables[0].id);
+                          }
+                        }}
+                        color="secondary"
+                      />
+                    }
+                    label="Show child variable data"
+                  />
+                  
+                  {showChildData && childVariables.length > 0 && (
+                    <FormControl size="small" sx={{ minWidth: 200 }}>
+                      <InputLabel>Select Variable</InputLabel>
+                      <Select
+                        value={selectedVariableId}
+                        onChange={(e) => {
+                          setSelectedVariableId(e.target.value);
+                          fetchDataPoints(); // Refetch data with new filter
+                        }}
+                        label="Select Variable"
+                      >
+                        {childVariables.map((child) => (
+                          <MenuItem key={child.id} value={child.id}>
+                            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                              <Chip
+                                label={child.source_type || "manual"}
+                                size="small"
+                                sx={{ 
+                                  backgroundColor: child.source_type === "oura" ? "#9C27B0" :
+                                                child.source_type === "apple_health" ? "#FF9800" :
+                                                child.source_type === "withings" ? "#00BCD4" : "#4CAF50",
+                                  color: "white"
+                                }}
+                              />
+                              {child.label}
+                            </Box>
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  )}
+                </Box>
+              </Grid>
+            )}
           </Grid>
         </CardContent>
       </Card>
@@ -1018,6 +1199,30 @@ export default function VariableDataPointsPage() {
         onClose={() => setShowError(false)}
         message={errorMessage}
       />
+
+      {/* Admin Edit Dialog */}
+      {isAdmin && variableInfo && (
+        <VariableAdminEditor
+          variable={variableInfo}
+          open={adminEditOpen}
+          onClose={() => setAdminEditOpen(false)}
+          onSave={handleAdminSave}
+        />
+      )}
+
+      {/* Variable Merge Editor */}
+      {isAdmin && variableInfo && (
+        <VariableMergeEditor
+          open={mergeEditOpen}
+          onClose={() => setMergeEditOpen(false)}
+          currentVariable={variableInfo}
+          onMergeCreated={(mergeSlug) => {
+            console.log('Merge created:', mergeSlug);
+            // Optionally navigate to the merged variable view
+            // router.push(`/merged-variable/${mergeSlug}`);
+          }}
+        />
+      )}
     </Container>
   );
 }

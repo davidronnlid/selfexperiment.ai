@@ -273,7 +273,7 @@ export default function ExperimentDesigner() {
 
   // Group variables by category for better organization
   const groupedVariables = {
-    "Mental & Emotional": LOG_LABELS.filter((v) =>
+    "Mental Health": LOG_LABELS.filter((v) =>
       [
         "Stress",
         "Cognitive Control",
@@ -282,7 +282,7 @@ export default function ExperimentDesigner() {
         "Emotional Event",
       ].includes(v.label)
     ),
-    "Sleep & Recovery": LOG_LABELS.filter((v) =>
+    "Sleep": LOG_LABELS.filter((v) =>
       [
         "Sleep Time",
         "Fell Asleep Time",
@@ -291,7 +291,7 @@ export default function ExperimentDesigner() {
         "Naps",
       ].includes(v.label)
     ),
-    "Physical Health": LOG_LABELS.filter((v) =>
+    "Exercise": LOG_LABELS.filter((v) =>
       [
         "Exercise",
         "Illness/Symptoms",
@@ -299,7 +299,7 @@ export default function ExperimentDesigner() {
         "Menstrual Phase",
       ].includes(v.label)
     ),
-    "Substances & Diet": LOG_LABELS.filter((v) =>
+    "Nutrition": LOG_LABELS.filter((v) =>
       [
         "Caffeine",
         "Alcohol",

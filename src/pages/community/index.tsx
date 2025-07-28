@@ -53,6 +53,22 @@ export default function CommunityPage() {
     [dataPointId: string]: { liked: boolean; count: number };
   }>({});
 
+  // Helper function to get profile picture URL
+  const getProfilePictureUrl = (avatarUrl: string | null) => {
+    if (!avatarUrl) return null;
+    
+    // If it's already a full URL (OAuth profile pics), return as is
+    if (avatarUrl.startsWith('http')) {
+      return avatarUrl;
+    }
+    
+    // Otherwise, it's a Supabase storage path
+    const { data } = supabase.storage
+      .from('avatars')
+      .getPublicUrl(avatarUrl);
+    return data.publicUrl;
+  };
+
   const handleSearch = async (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(e.target.value);
     if (e.target.value.length < 2) {
@@ -62,7 +78,7 @@ export default function CommunityPage() {
     setLoading(true);
     const { data, error } = await supabase
       .from("profiles")
-      .select("username")
+      .select("username, avatar_url")
       .ilike("username", `%${e.target.value}%`)
       .limit(10);
     console.log("Search results:", data, error);
@@ -78,9 +94,9 @@ export default function CommunityPage() {
       // Get followed user ids
       const { data: follows } = await supabase
         .from("user_follows")
-        .select("followed_id")
+        .select("following_id")
         .eq("follower_id", user.id);
-      const followedIds = follows?.map((f: any) => f.followed_id) || [];
+      const followedIds = follows?.map((f: any) => f.following_id) || [];
       console.log("followedIds", followedIds); // DEBUG LOG
 
       if (followedIds.length === 0) {
@@ -196,9 +212,15 @@ export default function CommunityPage() {
           {results.map((user) => (
             <ListItem key={user.username} disablePadding>
               <ListItemButton
-                component={Link}
-                href={`/community/${user.username}`}
+                onClick={() => window.location.href = `/community/${user.username}`}
+                sx={{ cursor: 'pointer' }}
               >
+                <Avatar 
+                  src={getProfilePictureUrl(user.avatar_url) || undefined} 
+                  sx={{ mr: 2, width: 40, height: 40 }}
+                >
+                  {user.username?.[0]?.toUpperCase()}
+                </Avatar>
                 <ListItemText primary={user.username} />
               </ListItemButton>
             </ListItem>

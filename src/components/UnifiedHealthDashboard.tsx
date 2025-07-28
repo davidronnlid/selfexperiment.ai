@@ -62,6 +62,7 @@ import {
   getOuraVariableInterpretation,
   OURA_VARIABLES,
 } from "@/utils/ouraVariableUtils";
+import Link from "next/link";
 
 // Register Chart.js components
 ChartJS.register(
@@ -209,6 +210,12 @@ export default function UnifiedHealthDashboard({
 
   const getVariableIcon = (variable: string) => {
     return VARIABLE_ICONS[variable] || <TrendingUpIcon />;
+  };
+
+  const getVariableSlug = (variable: string) => {
+    const info = getOuraVariableInfo(variable);
+    // Use the id if available, otherwise convert variable name to slug format
+    return info?.id || variable.toLowerCase().replace(/\s+/g, "-");
   };
 
   // Memoize unique variables
@@ -593,30 +600,7 @@ export default function UnifiedHealthDashboard({
             dataPoint.source === "routine" ||
             dataPoint.source === "auto"
           ) {
-            // Improved click sensitivity - check if click is close to data point
-            const chart = elements[0].chart;
-            const canvasPosition = chart.canvas.getBoundingClientRect();
-            const clickX = event.x || event.clientX;
-            const clickY = event.y || event.clientY;
-
-            // Get the data point position on canvas
-            const meta = chart.getDatasetMeta(0);
-            const pointElement = meta.data[elementIndex];
-
-            if (pointElement) {
-              const pointX = pointElement.x + canvasPosition.left;
-              const pointY = pointElement.y + canvasPosition.top;
-
-              // Calculate distance from click to data point
-              const distance = Math.sqrt(
-                Math.pow(clickX - pointX, 2) + Math.pow(clickY - pointY, 2)
-              );
-
-              // Only proceed if click is within reasonable distance (25px) of the data point
-              if (distance <= 25) {
-                handleEditDataPoint(dataPoint);
-              }
-            }
+            handleEditDataPoint(dataPoint);
           }
         }
       }
@@ -829,9 +813,28 @@ export default function UnifiedHealthDashboard({
                         <Box sx={{ display: "flex", alignItems: "center" }}>
                           {getVariableIcon(variable)}
                           <Box sx={{ ml: 1 }}>
-                            <Typography variant="subtitle1">
-                              {getVariableLabel(variable)}
-                            </Typography>
+                            <Link
+                              href={`/variable/${encodeURIComponent(
+                                getVariableSlug(variable) || variable
+                              )}`}
+                              style={{
+                                color: "inherit",
+                                textDecoration: "none",
+                                cursor: "pointer",
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.textDecoration = "underline";
+                                e.currentTarget.style.color = "#1976d2";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.textDecoration = "none";
+                                e.currentTarget.style.color = "inherit";
+                              }}
+                            >
+                              <Typography variant="subtitle1">
+                                {getVariableLabel(variable)}
+                              </Typography>
+                            </Link>
                             <Typography variant="body2" color="textSecondary">
                               Latest: {formatValue(variable, stats.latest)}
                             </Typography>
@@ -1101,9 +1104,28 @@ export default function UnifiedHealthDashboard({
               {chartData && (
                 <Card>
                   <CardContent>
-                    <Typography variant="h6" component="h4" sx={{ mb: 1 }}>
-                      {getVariableLabel(selectedVariable)}
-                    </Typography>
+                    <Link
+                      href={`/variable/${encodeURIComponent(
+                        getVariableSlug(selectedVariable) || selectedVariable
+                      )}`}
+                      style={{
+                        color: "inherit",
+                        textDecoration: "none",
+                        cursor: "pointer",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.textDecoration = "underline";
+                        e.currentTarget.style.color = "#1976d2";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.textDecoration = "none";
+                        e.currentTarget.style.color = "inherit";
+                      }}
+                    >
+                      <Typography variant="h6" component="h4" sx={{ mb: 1 }}>
+                        {getVariableLabel(selectedVariable)}
+                      </Typography>
+                    </Link>
                     <Box
                       sx={{ display: "flex", gap: 1, mb: 2, flexWrap: "wrap" }}
                     >
@@ -1175,7 +1197,28 @@ export default function UnifiedHealthDashboard({
                         color={item.source === "oura" ? "primary" : "secondary"}
                       />
                     </TableCell>
-                    <TableCell>{getVariableLabel(item.variable)}</TableCell>
+                    <TableCell>
+                      <Link
+                        href={`/variable/${encodeURIComponent(
+                          getVariableSlug(item.variable) || item.variable
+                        )}`}
+                        style={{
+                          color: "inherit",
+                          textDecoration: "none",
+                          cursor: "pointer",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.textDecoration = "underline";
+                          e.currentTarget.style.color = "#1976d2";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.textDecoration = "none";
+                          e.currentTarget.style.color = "inherit";
+                        }}
+                      >
+                        {getVariableLabel(item.variable)}
+                      </Link>
+                    </TableCell>
                     <TableCell align="right">
                       {formatValue(item.variable, item.value)}
                     </TableCell>

@@ -41,7 +41,7 @@ function TabPanel(props: TabPanelProps) {
 }
 
 export default function Analyze() {
-  const { user } = useUser();
+  const { user, loading } = useUser();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState(0);
 
@@ -50,6 +50,16 @@ export default function Analyze() {
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue);
   };
+
+  if (loading) {
+    return (
+      <Container maxWidth="lg" sx={{ py: 4 }}>
+        <Typography variant="h4" align="center">
+          📊 Loading Analytics...
+        </Typography>
+      </Container>
+    );
+  }
 
   if (!user) {
     return (

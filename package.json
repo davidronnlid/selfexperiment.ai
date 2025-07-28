@@ -17,7 +17,8 @@
     "test:mood": "npx ts-node src/test/mood-variable-page.test.ts",
     "test:validation": "npx ts-node src/test/validationTest.ts",
     "test:integration": "npx ts-node src/test/variable-page-integration.test.ts",
-    "deploy:withings": "node scripts/deploy-withings-functions.js"
+    "deploy:withings": "node scripts/deploy-withings-functions.js",
+    "sync-xcode": "./sync-xcode-files.sh"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -67,7 +68,7 @@
     "eslint-config-next": "15.3.4",
     "jest": "^30.0.4",
     "jest-environment-jsdom": "^30.0.4",
-    "supabase": "^2.30.4",
+    "supabase": "^2.31.8",
     "tailwindcss": "^4",
     "ts-jest": "^29.4.0",
     "ts-node": "^10.9.2",
