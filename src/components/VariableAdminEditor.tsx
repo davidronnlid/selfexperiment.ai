@@ -21,6 +21,7 @@ import {
   CircularProgress,
 } from "@mui/material";
 import { supabase } from "@/utils/supaBase";
+import VariableUnitsManager from "./VariableUnitsManager";
 
 interface VariableInfo {
   id: string;
@@ -32,7 +33,6 @@ interface VariableInfo {
   source_type: "manual" | "oura" | "withings" | "apple_health" | "formula" | "calculated";
   category?: string;
   validation_rules?: any;
-  canonical_unit?: string;
   is_public: boolean;
   is_active: boolean;
   display_order?: number;
@@ -59,6 +59,7 @@ export default function VariableAdminEditor({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [availableUnits, setAvailableUnits] = useState<any[]>([]);
+  const [unitsManagerOpen, setUnitsManagerOpen] = useState(false);
 
   // Reset form when variable changes
   useEffect(() => {
@@ -117,7 +118,6 @@ export default function VariableAdminEditor({
           data_type: editedVariable.data_type,
           source_type: editedVariable.source_type,
           category: editedVariable.category,
-          canonical_unit: editedVariable.canonical_unit,
           is_public: editedVariable.is_public,
           is_active: editedVariable.is_active,
           display_order: editedVariable.display_order,
@@ -310,20 +310,6 @@ export default function VariableAdminEditor({
                 )}
                 freeSolo
               />
-
-              <Autocomplete
-                options={availableUnits}
-                getOptionLabel={(option) => `${option.symbol} (${option.name})`}
-                value={availableUnits.find(u => u.id === editedVariable.canonical_unit) || null}
-                onChange={(_, value) => handleInputChange("canonical_unit", value?.id || null)}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Canonical Unit"
-                    helperText="Default unit for this variable"
-                  />
-                )}
-              />
             </Box>
           </Box>
 
@@ -373,6 +359,13 @@ export default function VariableAdminEditor({
           Cancel
         </Button>
         <Button
+          onClick={() => setUnitsManagerOpen(true)}
+          variant="outlined"
+          disabled={loading}
+        >
+          Manage Units
+        </Button>
+        <Button
           onClick={handleSave}
           variant="contained"
           disabled={loading}
@@ -381,6 +374,14 @@ export default function VariableAdminEditor({
           {loading ? "Saving..." : "Save Changes"}
         </Button>
       </DialogActions>
+      
+      {/* Units Manager Dialog */}
+      <VariableUnitsManager
+        open={unitsManagerOpen}
+        onClose={() => setUnitsManagerOpen(false)}
+        variableId={variable.id}
+        variableName={variable.label}
+      />
     </Dialog>
   );
 } 

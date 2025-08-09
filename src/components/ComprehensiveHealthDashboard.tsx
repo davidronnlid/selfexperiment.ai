@@ -603,10 +603,10 @@ export default function ComprehensiveHealthDashboard({
 
       setOuraConnected(!!ouraTokens && ouraTokens.length > 0);
 
-      // Check Withings connection
+      // Check Withings connection. The table has no `id` column; query by `user_id`.
       const { data: withingsTokens } = await supabase
         .from("withings_tokens")
-        .select("access_token")
+        .select("user_id")
         .eq("user_id", userId)
         .limit(1);
 
@@ -1427,7 +1427,17 @@ export default function ComprehensiveHealthDashboard({
               }}
               sx={{
                 "& .MuiOutlinedInput-root": {
-                  backgroundColor: "background.paper",
+                  backgroundColor: "black",
+                  color: "white",
+                  "& .MuiOutlinedInput-notchedOutline": {
+                    borderColor: "grey.700",
+                  },
+                  "&:hover .MuiOutlinedInput-notchedOutline": {
+                    borderColor: "grey.500",
+                  },
+                  "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+                    borderColor: "primary.main",
+                  },
                 },
               }}
             />
@@ -1439,7 +1449,26 @@ export default function ComprehensiveHealthDashboard({
                 onChange={(e) => setTimeRange(e.target.value)}
                 sx={{
                   "& .MuiOutlinedInput-root": {
-                    backgroundColor: "background.paper",
+                    backgroundColor: "black",
+                    color: "white",
+                    "& .MuiOutlinedInput-notchedOutline": {
+                      borderColor: "grey.700",
+                    },
+                    "&:hover .MuiOutlinedInput-notchedOutline": {
+                      borderColor: "grey.500",
+                    },
+                    "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+                      borderColor: "primary.main",
+                    },
+                  },
+                  "& .MuiInputLabel-root": {
+                    color: "grey.300",
+                    "&.Mui-focused": {
+                      color: "primary.main",
+                    },
+                  },
+                  "& .MuiSelect-icon": {
+                    color: "grey.300",
                   },
                 }}
               >
@@ -1510,7 +1539,7 @@ export default function ComprehensiveHealthDashboard({
 
             return (
               <Grid size={{ xs: 12, md: 6 }} key={variable}>
-                <Card variant="outlined">
+                <Card variant="outlined" sx={{ backgroundColor: "black", color: "white" }}>
                   <CardContent>
                     <Box
                       sx={{
@@ -1771,7 +1800,7 @@ export default function ComprehensiveHealthDashboard({
       {/* Correlation Chart for Pinned Variables */}
       {showCorrelation && pinnedVariables.length === 2 && (
         <Box sx={{ mt: 4, mb: 4 }}>
-          <Card>
+          <Card sx={{ backgroundColor: "black", color: "white" }}>
             <CardContent>
               <Typography variant="h6" sx={{ mb: 2, display: "flex", alignItems: "center", gap: 1 }}>
                 📊 Analysis: {getVariableLabel(pinnedVariables[0])} vs {getVariableLabel(pinnedVariables[1])}
@@ -2052,8 +2081,11 @@ export default function ComprehensiveHealthDashboard({
         </Box>
       )}
 
+      {/* Spacing between sections */}
+      <Box sx={{ my: 4 }} />
+
       {/* Connection Management - moved below Overview tab */}
-      <Card sx={{ mb: 3 }}>
+      <Card sx={{ mb: 3, backgroundColor: "black", color: "white" }}>
         <CardContent>
           <Typography variant="h6" sx={{ mb: 2 }}>
             🔗 Data Source Connections

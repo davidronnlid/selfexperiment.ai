@@ -9,7 +9,6 @@ import {
   Typography,
   Chip,
   SelectChangeEvent,
-  Tooltip,
 } from "@mui/material";
 import { supabase } from "@/utils/supaBase";
 
@@ -20,6 +19,7 @@ interface Unit {
   unit_group: string;
   is_base: boolean;
   is_default_group: boolean;
+  priority: number;
 }
 
 interface VariableUnitSelectorProps {
@@ -63,7 +63,13 @@ export default function VariableUnitSelector({
 
         setAvailableUnits(units || []);
 
-        // If no current unit is set, get user's preferred unit or default
+        // Always prioritize the currentUnit prop if provided (from parent)
+        if (currentUnit && units && units.some(u => u.unit_id === currentUnit)) {
+          setSelectedUnit(currentUnit);
+          return; // Exit early if currentUnit is valid
+        }
+        
+        // Only fetch user preference if no currentUnit is provided
         if (!currentUnit && units && units.length > 0) {
           const { data: preferredUnit, error: prefError } = await supabase.rpc(
             "get_user_preferred_unit",
@@ -75,18 +81,14 @@ export default function VariableUnitSelector({
 
           if (prefError) {
             console.warn("Could not get user preferred unit:", prefError);
-            // Fall back to first base unit of default group
-            const defaultUnit =
-              units.find((u: any) => u.is_default_group && u.is_base) ||
-              units[0];
+            // Fall back to highest priority unit (lowest priority number)
+            const defaultUnit = units.sort((a: any, b: any) => a.priority - b.priority)[0];
             setSelectedUnit(defaultUnit.unit_id);
           } else if (preferredUnit && preferredUnit.length > 0) {
             setSelectedUnit(preferredUnit[0].unit_id);
           } else {
-            // Fall back to first base unit of default group
-            const defaultUnit =
-              units.find((u: any) => u.is_default_group && u.is_base) ||
-              units[0];
+            // Fall back to highest priority unit (lowest priority number)
+            const defaultUnit = units.sort((a: any, b: any) => a.priority - b.priority)[0];
             setSelectedUnit(defaultUnit.unit_id);
           }
         }
@@ -103,12 +105,12 @@ export default function VariableUnitSelector({
     }
   }, [variableId, userId, currentUnit]);
 
-  // Update selected unit when currentUnit prop changes
+  // Sync selectedUnit when currentUnit prop changes
   useEffect(() => {
-    if (currentUnit) {
+    if (currentUnit && currentUnit !== selectedUnit) {
       setSelectedUnit(currentUnit);
     }
-  }, [currentUnit]);
+  }, [currentUnit, selectedUnit]);
 
   const handleUnitChange = async (event: SelectChangeEvent) => {
     const newUnitId = event.target.value;
@@ -116,31 +118,20 @@ export default function VariableUnitSelector({
       (u) => u.unit_id === newUnitId
     );
 
+    console.log('🔄 VariableUnitSelector: Unit change detected', {
+      newUnitId,
+      selectedUnitData
+    });
+
     if (!selectedUnitData) return;
 
     setSelectedUnit(newUnitId);
 
-    // Save user preference
-    try {
-      const { error } = await supabase.rpc("set_user_unit_preference", {
-        user_id_param: userId,
-        variable_id_param: variableId,
-        unit_id_param: newUnitId,
-        unit_group_param: selectedUnitData.unit_group,
-      });
-
-      if (error) {
-        console.warn("Could not save unit preference:", error);
-      }
-    } catch (err) {
-      console.warn("Error saving unit preference:", err);
-    }
-
-    // Notify parent component
+    // Notify parent component immediately (parent will handle saving preference)
     onUnitChange(newUnitId, selectedUnitData.unit_group);
   };
 
-  // Group units by unit group
+  // Group units by unit group and sort by priority within each group
   const groupedUnits = availableUnits.reduce((groups, unit) => {
     if (!groups[unit.unit_group]) {
       groups[unit.unit_group] = [];
@@ -149,7 +140,12 @@ export default function VariableUnitSelector({
     return groups;
   }, {} as Record<string, Unit[]>);
 
-  // Get unit groups in order (default group first)
+  // Sort units within each group by priority (lower numbers = higher priority)
+  Object.keys(groupedUnits).forEach(groupName => {
+    groupedUnits[groupName].sort((a, b) => a.priority - b.priority);
+  });
+
+  // Get unit groups in order (default group first, then by name)
   const unitGroups = Object.keys(groupedUnits).sort((a, b) => {
     const aHasDefault = groupedUnits[a].some((u) => u.is_default_group);
     const bHasDefault = groupedUnits[b].some((u) => u.is_default_group);
@@ -172,6 +168,7 @@ export default function VariableUnitSelector({
       parts.push("Base unit for this measurement type");
     }
     parts.push(`Unit group: ${formatUnitGroupName(unit.unit_group)}`);
+    parts.push(`Priority: ${unit.priority} (lower = higher priority)`);
     return parts.join(" • ");
   };
 
@@ -205,6 +202,11 @@ export default function VariableUnitSelector({
         value={selectedUnit} 
         label={label} 
         onChange={handleUnitChange}
+        renderValue={(value) => {
+          if (!value) return "";
+          const selectedUnitData = availableUnits.find(u => u.unit_id === value);
+          return selectedUnitData ? getUnitDisplayText(selectedUnitData) : value;
+        }}
         MenuProps={{
           PaperProps: {
             sx: {
@@ -290,11 +292,14 @@ export default function VariableUnitSelector({
             </MenuItem>,
             // Units in this group
             ...units.map((unit) => (
-              <Tooltip key={unit.unit_id} title={getUnitTooltip(unit)} placement="right">
-                <MenuItem value={unit.unit_id} sx={{ pl: 3 }}>
-                  {getUnitDisplayText(unit)}
-                </MenuItem>
-              </Tooltip>
+              <MenuItem 
+                key={unit.unit_id} 
+                value={unit.unit_id} 
+                sx={{ pl: 3 }}
+                title={getUnitTooltip(unit)} // Use native HTML title instead of MUI Tooltip
+              >
+                {getUnitDisplayText(unit)}
+              </MenuItem>
             )),
           ];
         })}

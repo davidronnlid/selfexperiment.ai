@@ -671,13 +671,31 @@ export async function getUserDisplayUnit(
       variable_id_param: variableId
     });
     
+    // console.log('🔍 getUserDisplayUnit debug:', {
+    //   userId,
+    //   variableId,
+    //   variableLabel: variable?.label,
+    //   rpcData: data,
+    //   rpcError: error
+    // });
+    
     let displayUnit = "";
     if (!error && data && data.length > 0) {
       // RPC function returns an array, get the first result
       displayUnit = data[0].unit_id || data[0].symbol || "";
+      // console.log('✅ Found user preference:', {
+      //   unit_id: data[0].unit_id,
+      //   symbol: data[0].symbol,
+      //   selectedDisplayUnit: displayUnit
+      // });
     } else {
       // Fallback to variable's canonical unit
       displayUnit = variable?.canonical_unit || "";
+      // console.log('⚠️ Using fallback unit:', {
+      //   canonical_unit: variable?.canonical_unit,
+      //   selectedDisplayUnit: displayUnit,
+      //   reason: error ? 'RPC error' : 'No user preference found'
+      // });
     }
     
     // Cache the result
@@ -714,9 +732,14 @@ export async function formatVariableWithUserUnit(
  */
 export function clearDisplayUnitCache(userId?: string, variableId?: string) {
   if (userId && variableId) {
-    displayUnitCache.delete(`${userId}-${variableId}`);
+    const cacheKey = `${userId}-${variableId}`;
+    const hadCache = displayUnitCache.has(cacheKey);
+    displayUnitCache.delete(cacheKey);
+    console.log('🗑️ Cleared display unit cache:', { cacheKey, hadCache });
   } else {
+    const cacheSize = displayUnitCache.size;
     displayUnitCache.clear();
+    console.log('🗑️ Cleared all display unit cache:', { cacheSize });
   }
 }
 

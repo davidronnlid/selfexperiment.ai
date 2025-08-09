@@ -269,7 +269,23 @@ export default function ValidatedVariableInput({
 
   // Validate the current value
   useEffect(() => {
+    // Debug logging for Broccoli variable
+    if (variable.label === 'Broccoli') {
+      console.log('🥦 Debug: Broccoli variable validation:', {
+        label: variable.label,
+        value,
+        validation_rules: variable.validation_rules,
+        data_type: variable.data_type
+      });
+    }
+    
     const result = validateVariableValue(value, variable);
+    
+    // More debug logging for Broccoli
+    if (variable.label === 'Broccoli') {
+      console.log('🥦 Debug: Validation result:', result);
+    }
+    
     setValidation(result);
     onValidationChange?.(result.isValid, result.error);
   }, [value, variable, onValidationChange]);

@@ -65,10 +65,10 @@ export default function DataSourcesAnalysis({
         .eq("user_id", userId)
         .limit(1);
 
-      // Check Withings connection
+      // Check Withings connection (table uses user_id rather than id)
       const { data: withingsTokens } = await supabase
         .from("withings_tokens")
-        .select("id")
+        .select("user_id")
         .eq("user_id", userId)
         .limit(1);
 

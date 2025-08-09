@@ -13,7 +13,7 @@ export default function LegacyAutoPage() {
   return (
     <Container sx={{ py: 4, textAlign: "center" }}>
       <CircularProgress sx={{ mb: 2 }} />
-      <Typography variant="h6">Redirecting to Auto Tracking...</Typography>
+              <Typography variant="h6">Redirecting to Auto-tracking...</Typography>
     </Container>
   );
 }

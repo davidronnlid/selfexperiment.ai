@@ -30,7 +30,7 @@ export default function AutoTrackPage() {
   return (
     <>
       <Head>
-        <title>Auto Tracking - Modular Health</title>
+        <title>Auto-tracking - Modular Health</title>
         <meta
           name="description"
           content="Set up automated tracking routines for your daily variables"
@@ -39,7 +39,7 @@ export default function AutoTrackPage() {
       <Container maxWidth="lg" sx={{ py: 4, minHeight: "100vh" }}>
         <Box sx={{ mb: 4 }}>
           <Typography variant="h3" component="h1" gutterBottom>
-            🤖 Auto Tracking
+            🤖 Auto-tracking
           </Typography>
           <Typography variant="h6" className="text-gray-300 mb-6">
             Automate your daily tracking with custom routines

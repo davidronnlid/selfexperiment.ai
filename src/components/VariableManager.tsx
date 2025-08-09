@@ -27,6 +27,11 @@ import {
   Grid,
   Snackbar,
   Tooltip,
+  InputAdornment,
+  Collapse,
+  ListSubheader,
+  Checkbox,
+  ListItemText,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -36,6 +41,10 @@ import {
   Settings as SettingsIcon,
   Refresh as RefreshIcon,
   Close as CloseIcon,
+  Search as SearchIcon,
+  ExpandMore as ExpandMoreIcon,
+  ExpandLess as ExpandLessIcon,
+  SelectAll as SelectAllIcon,
 } from "@mui/icons-material";
 import { FaEdit } from "react-icons/fa";
 import {
@@ -161,13 +170,80 @@ export default function VariableManager({
     text: string;
   } | null>(null);
 
+  // Unit selector enhancements
+  const [unitSearchQuery, setUnitSearchQuery] = useState("");
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+
+  // Filter and group units
+  const filteredAndGroupedUnits = useMemo(() => {
+    // Filter units based on search query
+    const filtered = units.filter(unit => 
+      unit.label.toLowerCase().includes(unitSearchQuery.toLowerCase()) ||
+      unit.symbol.toLowerCase().includes(unitSearchQuery.toLowerCase()) ||
+      unit.unit_group.toLowerCase().includes(unitSearchQuery.toLowerCase())
+    );
+
+    // Group by unit_group
+    const grouped = filtered.reduce((acc, unit) => {
+      const group = unit.unit_group || "Other";
+      if (!acc[group]) {
+        acc[group] = [];
+      }
+      acc[group].push(unit);
+      return acc;
+    }, {} as Record<string, Unit[]>);
+
+    // Sort groups alphabetically and units within groups
+    const sortedGroups = Object.keys(grouped).sort();
+    const result: { group: string; units: Unit[] }[] = [];
+    
+    sortedGroups.forEach(group => {
+      const sortedUnits = grouped[group].sort((a, b) => a.label.localeCompare(b.label));
+      result.push({ group, units: sortedUnits });
+    });
+
+    return result;
+  }, [units, unitSearchQuery]);
+
+  // Functions for category management
+  const toggleCategory = (categoryName: string) => {
+    const newExpanded = new Set(expandedCategories);
+    if (newExpanded.has(categoryName)) {
+      newExpanded.delete(categoryName);
+    } else {
+      newExpanded.add(categoryName);
+    }
+    setExpandedCategories(newExpanded);
+  };
+
+  const selectAllInCategory = (categoryUnits: Unit[]) => {
+    const categoryUnitIds = categoryUnits.map(u => u.id);
+    const newSelected = [...selectedUnits];
+    
+    // Check if all units in this category are already selected
+    const allSelected = categoryUnitIds.every(id => selectedUnits.includes(id));
+    
+    if (allSelected) {
+      // Remove all from selection
+      setSelectedUnits(newSelected.filter(id => !categoryUnitIds.includes(id)));
+    } else {
+      // Add all to selection (avoid duplicates)
+      categoryUnitIds.forEach(id => {
+        if (!newSelected.includes(id)) {
+          newSelected.push(id);
+        }
+      });
+      setSelectedUnits(newSelected);
+    }
+  };
+
   // Form states
   const [createForm, setCreateForm] = useState<CreateVariableRequest>({
     slug: "",
     label: "",
     description: "",
     data_type: "continuous",
-    source_type: "manual",
+    source_type: ["manual"],
     category: "",
     validation_rules: {},
   });
@@ -241,11 +317,13 @@ export default function VariableManager({
           label: "",
           description: "",
           data_type: "continuous",
-          source_type: "manual",
+          source_type: ["manual"],
           category: "",
           validation_rules: {},
         });
         setSelectedUnits([]);
+        setUnitSearchQuery("");
+        setExpandedCategories(new Set());
       }
     } catch (error) {
       console.error("Failed to create variable:", error);
@@ -280,6 +358,8 @@ export default function VariableManager({
         onVariableUpdate?.(updatedVariable);
         setEditingVariable(null);
         setSelectedUnits([]);
+        setUnitSearchQuery("");
+        setExpandedCategories(new Set());
       }
     } catch (error) {
       console.error("Failed to update variable:", error);
@@ -328,7 +408,7 @@ export default function VariableManager({
       label: variable.label,
       description: variable.description || "",
       data_type: variable.data_type,
-      source_type: variable.source_type,
+      source_type: Array.isArray(variable.source_type) ? variable.source_type : [variable.source_type],
       category: variable.category || "",
       validation_rules: variable.validation_rules || {},
     });
@@ -353,11 +433,13 @@ export default function VariableManager({
       label: "",
       description: "",
       data_type: "continuous",
-      source_type: "manual",
+      source_type: ["manual"],
       category: "",
       validation_rules: {},
     });
     setSelectedUnits([]);
+    setUnitSearchQuery("");
+    setExpandedCategories(new Set());
   };
 
   const renderCreateForm = () => (
@@ -422,60 +504,234 @@ export default function VariableManager({
             </Select>
           </FormControl>
           <FormControl fullWidth>
-            <InputLabel>Source Type</InputLabel>
+            <InputLabel>Source Types</InputLabel>
             <Select
-              value={createForm.source_type}
+              multiple
+              value={Array.isArray(createForm.source_type) ? createForm.source_type : [createForm.source_type]}
               onChange={(e) =>
                 setCreateForm((prev) => ({
                   ...prev,
-                  source_type: e.target.value as any,
+                  source_type: e.target.value as string[],
                 }))
               }
-              label="Source Type"
-            >
-              <MenuItem value="manual">Manual</MenuItem>
-              <MenuItem value="withings">Withings</MenuItem>
-              <MenuItem value="oura">Oura</MenuItem>
-              <MenuItem value="apple_health">Apple Health</MenuItem>
-              <MenuItem value="formula">Formula</MenuItem>
-              <MenuItem value="calculated">Calculated</MenuItem>
-            </Select>
-          </FormControl>
-        </Box>
-        {/* Unit Selection */}
-        <Box sx={{ mt: 2 }}>
-          <Typography variant="subtitle2" gutterBottom>
-            Available Units
-          </Typography>
-          <FormControl fullWidth>
-            <InputLabel>Select Units for this Variable</InputLabel>
-            <Select
-              multiple
-              value={selectedUnits}
-              onChange={(e) => setSelectedUnits(e.target.value as string[])}
-              label="Select Units for this Variable"
+              label="Source Types"
               renderValue={(selected) => (
                 <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                  {(selected as string[]).map((unitId) => {
-                    const unit = units.find((u) => u.id === unitId);
-                    return (
-                      <Chip
-                        key={unitId}
-                        label={unit ? `${unit.label} (${unit.symbol})` : unitId}
-                        size="small"
-                      />
-                    );
-                  })}
+                  {(selected as string[]).map((value) => (
+                    <Chip
+                      key={value}
+                      label={value === "apple_health" ? "Apple Health" : 
+                            value.charAt(0).toUpperCase() + value.slice(1)}
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                    />
+                  ))}
                 </Box>
               )}
             >
-              {units.map((unit) => (
-                <MenuItem key={unit.id} value={unit.id}>
-                  {unit.label} ({unit.symbol}) - {unit.unit_group}
-                </MenuItem>
-              ))}
+              <MenuItem value="manual">
+                <Checkbox checked={(Array.isArray(createForm.source_type) ? createForm.source_type : [createForm.source_type]).indexOf("manual") > -1} />
+                <ListItemText primary="Manual" />
+              </MenuItem>
+              <MenuItem value="withings">
+                <Checkbox checked={(Array.isArray(createForm.source_type) ? createForm.source_type : [createForm.source_type]).indexOf("withings") > -1} />
+                <ListItemText primary="Withings" />
+              </MenuItem>
+              <MenuItem value="oura">
+                <Checkbox checked={(Array.isArray(createForm.source_type) ? createForm.source_type : [createForm.source_type]).indexOf("oura") > -1} />
+                <ListItemText primary="Oura" />
+              </MenuItem>
+              <MenuItem value="apple_health">
+                <Checkbox checked={(Array.isArray(createForm.source_type) ? createForm.source_type : [createForm.source_type]).indexOf("apple_health") > -1} />
+                <ListItemText primary="Apple Health" />
+              </MenuItem>
+              <MenuItem value="formula">
+                <Checkbox checked={(Array.isArray(createForm.source_type) ? createForm.source_type : [createForm.source_type]).indexOf("formula") > -1} />
+                <ListItemText primary="Formula" />
+              </MenuItem>
+              <MenuItem value="calculated">
+                <Checkbox checked={(Array.isArray(createForm.source_type) ? createForm.source_type : [createForm.source_type]).indexOf("calculated") > -1} />
+                <ListItemText primary="Calculated" />
+              </MenuItem>
             </Select>
           </FormControl>
+        </Box>
+        {/* Enhanced Unit Selection */}
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="subtitle2" gutterBottom>
+            Available Units for this Variable
+          </Typography>
+          
+          {/* Search Field and Controls */}
+          <Box sx={{ display: "flex", gap: 1, mb: 1 }}>
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="Search units..."
+              value={unitSearchQuery}
+              onChange={(e) => setUnitSearchQuery(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon />
+                  </InputAdornment>
+                ),
+              }}
+            />
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => {
+                const allGroups = filteredAndGroupedUnits.map(g => g.group);
+                if (expandedCategories.size === allGroups.length) {
+                  setExpandedCategories(new Set());
+                } else {
+                  setExpandedCategories(new Set(allGroups));
+                }
+              }}
+              sx={{ minWidth: "auto", px: 1 }}
+            >
+              {expandedCategories.size === filteredAndGroupedUnits.length ? 
+                <ExpandLessIcon /> : <ExpandMoreIcon />
+              }
+            </Button>
+          </Box>
+
+          {/* Selected Units Display */}
+          {selectedUnits.length > 0 && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="caption" color="text.secondary">
+                Selected Units ({selectedUnits.length}):
+              </Typography>
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.5 }}>
+                {selectedUnits.map((unitId) => {
+                  const unit = units.find((u) => u.id === unitId);
+                  return (
+                    <Chip
+                      key={unitId}
+                      label={unit ? `${unit.label} (${unit.symbol})` : unitId}
+                      size="small"
+                      onDelete={() => {
+                        setSelectedUnits(selectedUnits.filter(id => id !== unitId));
+                      }}
+                      color="primary"
+                      variant="outlined"
+                    />
+                  );
+                })}
+              </Box>
+            </Box>
+          )}
+
+          {/* Unit Categories */}
+          <Card variant="outlined" sx={{ maxHeight: 300, overflow: "auto" }}>
+            <CardContent sx={{ p: 1 }}>
+              {filteredAndGroupedUnits.map(({ group, units: groupUnits }) => {
+                const isExpanded = expandedCategories.has(group);
+                const categoryUnitIds = groupUnits.map(u => u.id);
+                const selectedInCategory = categoryUnitIds.filter(id => selectedUnits.includes(id)).length;
+                const allSelectedInCategory = selectedInCategory === categoryUnitIds.length;
+                const someSelectedInCategory = selectedInCategory > 0 && selectedInCategory < categoryUnitIds.length;
+
+                return (
+                  <Box key={group}>
+                    {/* Category Header */}
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        p: 1,
+                        bgcolor: "grey.50",
+                        borderRadius: 1,
+                        mb: 1,
+                        cursor: "pointer",
+                      }}
+                      onClick={() => toggleCategory(group)}
+                    >
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                          {group} ({groupUnits.length})
+                        </Typography>
+                        {selectedInCategory > 0 && (
+                          <Chip
+                            size="small"
+                            label={`${selectedInCategory} selected`}
+                            color="primary"
+                            variant="outlined"
+                          />
+                        )}
+                      </Box>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            selectAllInCategory(groupUnits);
+                          }}
+                          title={allSelectedInCategory ? "Deselect all" : "Select all"}
+                        >
+                          <Checkbox
+                            size="small"
+                            checked={allSelectedInCategory}
+                            indeterminate={someSelectedInCategory}
+                          />
+                        </IconButton>
+                        {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                      </Box>
+                    </Box>
+
+                    {/* Category Units */}
+                    <Collapse in={isExpanded}>
+                      <Box sx={{ pl: 2, pb: 1 }}>
+                        {groupUnits.map((unit) => {
+                          const isSelected = selectedUnits.includes(unit.id);
+                          return (
+                            <Box
+                              key={unit.id}
+                              sx={{
+                                display: "flex",
+                                alignItems: "center",
+                                py: 0.5,
+                                cursor: "pointer",
+                                "&:hover": { bgcolor: "grey.50" },
+                                borderRadius: 1,
+                                px: 1,
+                              }}
+                              onClick={() => {
+                                if (isSelected) {
+                                  setSelectedUnits(selectedUnits.filter(id => id !== unit.id));
+                                } else {
+                                  setSelectedUnits([...selectedUnits, unit.id]);
+                                }
+                              }}
+                            >
+                              <Checkbox size="small" checked={isSelected} />
+                              <Box sx={{ ml: 1, flex: 1 }}>
+                                <Typography variant="body2">
+                                  {unit.label} ({unit.symbol})
+                                </Typography>
+                                {unit.is_base && (
+                                  <Chip size="small" label="Base Unit" variant="outlined" sx={{ ml: 1 }} />
+                                )}
+                              </Box>
+                            </Box>
+                          );
+                        })}
+                      </Box>
+                    </Collapse>
+                  </Box>
+                );
+              })}
+
+              {filteredAndGroupedUnits.length === 0 && (
+                <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", py: 2 }}>
+                  No units found matching "{unitSearchQuery}"
+                </Typography>
+              )}
+            </CardContent>
+          </Card>
         </Box>
         <Box sx={{ display: "flex", gap: 2 }}>
           <FormControl fullWidth>

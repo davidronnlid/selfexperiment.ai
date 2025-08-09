@@ -101,7 +101,7 @@ interface VariableInfo {
   is_public: boolean;
   convertible_units?: string[]; // Added for unit conversion
   created_at: string;
-  updated_at?: string; // Add back the optional updated_at field
+  updated_at: string; // Make required to match Variable type
   is_active: boolean;
 }
 
@@ -142,8 +142,15 @@ export default function VariableDataPointsPage() {
   
   // Variable grouping state
   const [childVariables, setChildVariables] = useState<VariableInfo[]>([]);
-  const [selectedVariableId, setSelectedVariableId] = useState<string>("");
-  const [showChildData, setShowChildData] = useState(false);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalDataPoints, setTotalDataPoints] = useState(0);
+  const [pageSize] = useState(50); // Show 50 data points per page
+  
+  // Source filtering state
+  const [selectedSourceFilter, setSelectedSourceFilter] = useState<string>("all");
   
   const isAdmin = username === "davidronnlidmh";
 
@@ -151,16 +158,30 @@ export default function VariableDataPointsPage() {
     try {
       if (typeof variableName !== "string") return;
 
-      // Regular variable lookup by slug
-      const slug = variableName.toLowerCase();
-      const { data: variableData, error } = await supabase
+      // Normalize and try multiple slug variants (hyphen/underscore)
+      const rawSlug = variableName.toLowerCase();
+      const candidates = Array.from(
+        new Set([
+          rawSlug,
+          rawSlug.replace(/-/g, "_"),
+          rawSlug.replace(/_/g, "-"),
+        ])
+      );
+
+      // Try IN query to find any matching slug
+      const { data: candidateVars, error: inError } = await supabase
         .from("variables")
         .select("*")
-        .eq("slug", slug)
-        .single();
+        .in("slug", candidates)
+        .limit(1);
 
-      if (!error && variableData) {
+      if (!inError && candidateVars && candidateVars.length > 0) {
+        const variableData = candidateVars[0];
         setVariableInfo(variableData);
+        // Redirect to canonical slug if URL differs
+        if (variableData.slug && variableData.slug !== rawSlug) {
+          router.replace(`/variable/${encodeURIComponent(variableData.slug)}`, undefined, { shallow: true });
+        }
         return;
       }
 
@@ -189,11 +210,13 @@ export default function VariableDataPointsPage() {
     }
   }, [variableName]);
 
-  const fetchDataPoints = useCallback(async () => {
+  const fetchDataPoints = useCallback(async (page: number = currentPage) => {
     if (!user || !variableName || !variableInfo) return;
 
     try {
+      setLoading(true);
       let mappedDataPoints: DataPointEntry[] = [];
+      let totalCount = 0;
 
       // Get all variable IDs to fetch (current variable + any child variables)
       const variableIdsToFetch = [variableInfo.id];
@@ -201,22 +224,22 @@ export default function VariableDataPointsPage() {
       // Check for child variables that have this variable as parent
       const { data: childVariablesData, error: childError } = await supabase
         .from("variables")
-        .select("id, label, source_type, slug, description, icon, data_type, category, canonical_unit, is_public, created_at, updated_at, is_active")
+        .select("id, label, source_type, slug, description, icon, data_type, category, is_public, created_at, updated_at, is_active")
         .eq("parent_variable_id", variableInfo.id)
         .eq("is_active", true);
 
       if (!childError && childVariablesData) {
         setChildVariables(childVariablesData);
-        // Only include child variables in fetch if not showing child data specifically
-        if (!showChildData) {
-          childVariablesData.forEach(child => {
-            variableIdsToFetch.push(child.id);
-          });
-        }
+        // Always include child variables in fetch
+        childVariablesData.forEach(child => {
+          variableIdsToFetch.push(child.id);
+        });
         console.log(`📊 [Variable Page] Found ${childVariablesData.length} child variables for ${variableInfo.label}`);
       }
 
-      // Fetch data for all related variables
+      // First, get total counts and fetch ALL data for all variables
+      let allDataPoints: DataPointEntry[] = [];
+
       for (const variableId of variableIdsToFetch) {
         // Get variable info for this ID
         const { data: varInfo, error: varError } = await supabase
@@ -227,15 +250,29 @@ export default function VariableDataPointsPage() {
 
         if (varError || !varInfo) continue;
 
+        // Apply source filter
+        if (selectedSourceFilter !== "all" && varInfo.source_type !== selectedSourceFilter) {
+          continue;
+        }
+
         // Check if this is an Oura variable
         if (varInfo.source_type === "oura") {
+          // Get total count for this variable
+          const { count: ouraCount } = await supabase
+            .from("oura_variable_data_points")
+            .select("*", { count: "exact", head: true })
+            .eq("user_id", user.id)
+            .eq("variable_id", varInfo.id);
+
+          totalCount += ouraCount || 0;
+
+          // Fetch ALL Oura data (no pagination here)
           const { data: ouraLogs, error: ouraError } = await supabase
             .from("oura_variable_data_points")
             .select("id, date, variable_id, value, created_at")
             .eq("user_id", user.id)
             .eq("variable_id", varInfo.id)
-            .order("date", { ascending: false })
-            .limit(20);
+            .order("date", { ascending: false });
 
           if (!ouraError && ouraLogs) {
             const ouraDataPoints = ouraLogs.map((log: any) => ({
@@ -249,17 +286,25 @@ export default function VariableDataPointsPage() {
               variable_id: log.variable_id,
               source: ["oura"],
             }));
-            mappedDataPoints.push(...ouraDataPoints);
+            allDataPoints.push(...ouraDataPoints);
           }
         } else if (varInfo.source_type === "apple_health") {
-          // Fetch Apple Health data
+          // Get total count for this variable
+          const { count: appleHealthCount } = await supabase
+            .from("apple_health_variable_data_points")
+            .select("*", { count: "exact", head: true })
+            .eq("user_id", user.id)
+            .eq("variable_id", varInfo.id);
+
+          totalCount += appleHealthCount || 0;
+
+          // Fetch ALL Apple Health data (no pagination here)
           const { data: appleHealthLogs, error: appleHealthError } = await supabase
             .from("apple_health_variable_data_points")
             .select("id, date, variable_id, value, created_at")
             .eq("user_id", user.id)
             .eq("variable_id", varInfo.id)
-            .order("date", { ascending: false })
-            .limit(20);
+            .order("date", { ascending: false });
 
           if (!appleHealthError && appleHealthLogs) {
             const appleHealthDataPoints = appleHealthLogs.map((log: any) => ({
@@ -273,17 +318,25 @@ export default function VariableDataPointsPage() {
               variable_id: log.variable_id,
               source: ["apple_health"],
             }));
-            mappedDataPoints.push(...appleHealthDataPoints);
+            allDataPoints.push(...appleHealthDataPoints);
           }
         } else {
-          // Regular variable - fetch from data_points table
+          // Get total count for this variable
+          const { count: manualCount } = await supabase
+            .from("data_points")
+            .select("*", { count: "exact", head: true })
+            .eq("user_id", user.id)
+            .eq("variable_id", varInfo.id);
+
+          totalCount += manualCount || 0;
+
+          // Regular variable - fetch ALL data from data_points table
           const { data: uuidLogs, error: uuidError } = await supabase
             .from("data_points")
             .select("id, created_at, date, variable_id, value, notes, user_id, display_unit")
             .eq("user_id", user.id)
             .eq("variable_id", varInfo.id)
-            .order("created_at", { ascending: false })
-            .limit(20);
+            .order("created_at", { ascending: false });
 
           if (!uuidError && uuidLogs) {
             const regularDataPoints = uuidLogs.map((log: any) => ({
@@ -298,27 +351,51 @@ export default function VariableDataPointsPage() {
               display_unit: log.display_unit,
               source: ["manual"],
             }));
-            mappedDataPoints.push(...regularDataPoints);
+            allDataPoints.push(...regularDataPoints);
           }
         }
       }
 
-      // Filter data points based on selected variable if showing child data
-      if (showChildData && selectedVariableId) {
-        mappedDataPoints = mappedDataPoints.filter(dp => dp.variable_id === selectedVariableId);
-        console.log(`📊 [Variable Page] Filtered to ${mappedDataPoints.length} data points for selected variable`);
-      }
-
       // Sort all data points by date (newest first)
-      mappedDataPoints.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      allDataPoints.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-      console.log(`📊 [Variable Page] Fetched ${mappedDataPoints.length} total data points for ${variableInfo.label} and its children`);
+      // Apply pagination to the combined dataset
+      const offset = (page - 1) * pageSize;
+      mappedDataPoints = allDataPoints.slice(offset, offset + pageSize);
+
+      // Note: Data points are now filtered by source type via selectedSourceFilter
+
+      console.log(`📊 [Variable Page] Fetched ${mappedDataPoints.length} data points (page ${page}) out of ${totalCount} total for ${variableInfo.label} and its children`);
       setDataPoints(mappedDataPoints);
+      setTotalDataPoints(totalCount);
+      setTotalPages(Math.ceil(totalCount / pageSize));
+      setCurrentPage(page);
+      setLoading(false);
     } catch (error) {
       console.error("Error fetching data points:", error);
       setDataPoints([]);
+      setLoading(false);
     }
-  }, [user, variableName, variableInfo, showChildData, selectedVariableId]);
+  }, [user, variableName, variableInfo, currentPage, pageSize, selectedSourceFilter]);
+
+  // Pagination functions
+  const handlePageChange = useCallback((newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages && newPage !== currentPage) {
+      fetchDataPoints(newPage);
+    }
+  }, [fetchDataPoints, totalPages, currentPage]);
+
+  const handlePreviousPage = useCallback(() => {
+    if (currentPage > 1) {
+      handlePageChange(currentPage - 1);
+    }
+  }, [currentPage, handlePageChange]);
+
+  const handleNextPage = useCallback(() => {
+    if (currentPage < totalPages) {
+      handlePageChange(currentPage + 1);
+    }
+  }, [currentPage, totalPages, handlePageChange]);
 
   const fetchSharingStatus = useCallback(async () => {
     if (!user || !variableInfo) return;
@@ -363,10 +440,16 @@ export default function VariableDataPointsPage() {
   // Separate useEffect for fetching data points after variableInfo is available
   useEffect(() => {
     if (variableInfo && user) {
-      fetchDataPoints();
+      fetchDataPoints(1); // Always start from page 1 when data changes
       fetchSharingStatus();
     }
-  }, [variableInfo, user, fetchDataPoints, fetchSharingStatus]);
+  }, [variableInfo, user, fetchSharingStatus]); // Remove fetchDataPoints from deps to avoid infinite loop
+
+  useEffect(() => {
+    if (variableInfo && user) {
+      fetchDataPoints(1); // Fetch page 1 when source filter changes
+    }
+  }, [selectedSourceFilter]);
 
   // Handle edit query parameter - auto-start editing when data point is loaded
   useEffect(() => {
@@ -718,7 +801,7 @@ export default function VariableDataPointsPage() {
     }
   };
 
-  const updateDisplayUnit = async (unit: string) => {
+  const updateDisplayUnit = async (unit: string, unitGroup?: string) => {
     if (!user || !variableInfo) return;
 
     setDisplayUnitLoading(true);
@@ -730,6 +813,7 @@ export default function VariableDataPointsPage() {
           user_id_param: user.id,
           variable_id_param: variableInfo.id,
           unit_id_param: unit,
+          unit_group_param: unitGroup,
         }
       );
 
@@ -739,9 +823,10 @@ export default function VariableDataPointsPage() {
         setShowError(true);
       } else if (!success) {
         console.error(
-          "Function returned false - unit may not be available for this variable"
+          "Function returned false - unit may not be available for this variable",
+          { unit, unitGroup, variableId: variableInfo.id }
         );
-        setErrorMessage("Selected unit is not available for this variable");
+        setErrorMessage(`Unit "${unit}" may not be configured for this variable. Please check the variable units configuration.`);
         setShowError(true);
       } else {
         setSuccessMessage("Display unit preference updated successfully");
@@ -882,12 +967,12 @@ export default function VariableDataPointsPage() {
                   currentUnit={displayUnit}
                   onUnitChange={async (unitId, unitGroup) => {
                     // Update the user's display unit preference
-                    await updateDisplayUnit(unitId);
+                    await updateDisplayUnit(unitId, unitGroup);
                     // Refresh the display unit
                     await refetchDisplayUnit();
                   }}
                   disabled={displayUnitLoading}
-                  label="Default Unit"
+                  label="Your Default Unit"
                   size="small"
                 />
               </Box>
@@ -922,55 +1007,65 @@ export default function VariableDataPointsPage() {
                   Data Source:
                 </Typography>
                 <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={showChildData}
-                        onChange={(e) => {
-                          setShowChildData(e.target.checked);
-                          if (!e.target.checked) {
-                            setSelectedVariableId("");
-                          } else if (childVariables.length > 0) {
-                            setSelectedVariableId(childVariables[0].id);
+                  {/* Source Filter Dropdown */}
+                  <FormControl size="small" sx={{ minWidth: 180 }}>
+                    <InputLabel>Filter by Source</InputLabel>
+                    <Select
+                      value={selectedSourceFilter}
+                      onChange={(e) => {
+                        setSelectedSourceFilter(e.target.value);
+                        setCurrentPage(1); // Reset to page 1 when filter changes
+                      }}
+                      label="Filter by Source"
+                    >
+                      <MenuItem value="all">
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                          <Chip
+                            label="all"
+                            size="small"
+                            sx={{ 
+                              backgroundColor: "#666",
+                              color: "white"
+                            }}
+                          />
+                          All Sources
+                        </Box>
+                      </MenuItem>
+                      {(() => {
+                        // Get unique source types from main variable and child variables
+                        const allSources: string[] = [];
+                        if (variableInfo?.source_type) {
+                          allSources.push(variableInfo.source_type);
+                        }
+                        childVariables.forEach(child => {
+                          if (child.source_type && !allSources.includes(child.source_type)) {
+                            allSources.push(child.source_type);
                           }
-                        }}
-                        color="secondary"
-                      />
-                    }
-                    label="Show child variable data"
-                  />
-                  
-                  {showChildData && childVariables.length > 0 && (
-                    <FormControl size="small" sx={{ minWidth: 200 }}>
-                      <InputLabel>Select Variable</InputLabel>
-                      <Select
-                        value={selectedVariableId}
-                        onChange={(e) => {
-                          setSelectedVariableId(e.target.value);
-                          fetchDataPoints(); // Refetch data with new filter
-                        }}
-                        label="Select Variable"
-                      >
-                        {childVariables.map((child) => (
-                          <MenuItem key={child.id} value={child.id}>
+                        });
+                        
+                        return allSources.map((sourceType) => (
+                          <MenuItem key={sourceType} value={sourceType}>
                             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                               <Chip
-                                label={child.source_type || "manual"}
+                                label={sourceType}
                                 size="small"
                                 sx={{ 
-                                  backgroundColor: child.source_type === "oura" ? "#9C27B0" :
-                                                child.source_type === "apple_health" ? "#FF9800" :
-                                                child.source_type === "withings" ? "#00BCD4" : "#4CAF50",
+                                  backgroundColor: sourceType === "oura" ? "#9C27B0" :
+                                                sourceType === "apple_health" ? "#FF9800" :
+                                                sourceType === "withings" ? "#00BCD4" : "#4CAF50",
                                   color: "white"
                                 }}
                               />
-                              {child.label}
+                              {sourceType === "apple_health" ? "Apple Health" :
+                               sourceType === "oura" ? "Oura Ring" :
+                               sourceType === "withings" ? "Withings" :
+                               sourceType.charAt(0).toUpperCase() + sourceType.slice(1)}
                             </Box>
                           </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  )}
+                        ));
+                      })()}
+                    </Select>
+                  </FormControl>
                 </Box>
               </Grid>
             )}
@@ -996,12 +1091,43 @@ export default function VariableDataPointsPage() {
                 color="textSecondary"
                 sx={{ mt: 0.5 }}
               >
-                Total Data Points: {dataPoints.length}
+                Total Data Points: {totalDataPoints} (Showing {dataPoints.length} on page {currentPage} of {totalPages})
               </Typography>
             </Box>
-            <Alert severity="info" sx={{ py: 0, px: 2 }}>
-              💡 Click the edit/delete icons to modify your data points. Both value and unit can be edited.
-            </Alert>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Alert severity="info" sx={{ py: 0, px: 2, flexGrow: 1 }}>
+                💡 Click the edit/delete icons to modify your data points. Both value and unit can be edited.
+              </Alert>
+              
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={handlePreviousPage}
+                    disabled={currentPage === 1}
+                    sx={{ minWidth: 'auto', px: 2 }}
+                  >
+                    ← Prev
+                  </Button>
+                  
+                  <Typography variant="body2" sx={{ mx: 1, minWidth: 'auto' }}>
+                    {currentPage}/{totalPages}
+                  </Typography>
+                  
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={handleNextPage}
+                    disabled={currentPage === totalPages}
+                    sx={{ minWidth: 'auto', px: 2 }}
+                  >
+                    Next →
+                  </Button>
+                </Box>
+              )}
+            </Box>
           </Box>
           {dataPoints.length === 0 ? (
             <Alert severity="info">

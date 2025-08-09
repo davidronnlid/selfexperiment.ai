@@ -31,6 +31,7 @@ import ValidatedVariableInput from "@/components/ValidatedVariableInput";
 import VariableCreationDialog from "@/components/VariableCreationDialog";
 import VariableLabel from "@/components/VariableLabel";
 import VariableUnitSelector from "@/components/VariableUnitSelector";
+import ManualUnitSelector from "@/components/ManualUnitSelector";
 import { useUserDisplayUnit } from "@/hooks/useUserDisplayUnit";
 import Link from "next/link";
 import {
@@ -41,6 +42,9 @@ import {
   Chip,
   FormControlLabel,
   Checkbox,
+  Dialog,
+  DialogContent,
+  DialogActions,
 } from "@mui/material";
 import { useUser } from "../_app";
 import SearchIcon from "@mui/icons-material/Search";
@@ -142,6 +146,9 @@ export default function ManualTrackPage() {
   );
   const [value, setValue] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
+  const [notesEverFocused, setNotesEverFocused] = useState(false); // Track if notes was ever focused
+  const [imageModalOpen, setImageModalOpen] = useState(false);
+  const [selectedModalImage, setSelectedModalImage] = useState<{url: string, name: string} | null>(null);
   const [date, setDate] = useState<Date>(new Date());
   const [selectedViewDate, setSelectedViewDate] = useState<Date>(new Date());
   const [activeExperiments, setActiveExperiments] = useState<any[]>([]);
@@ -327,41 +334,85 @@ export default function ManualTrackPage() {
   }, [allLogs, routineNames]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      console.log("No user found, skipping data fetch");
+      return;
+    }
+    
+    console.log("User authenticated, starting data fetch for user:", user.id);
     setLoading(true);
     setVariablesLoading(true);
     (async () => {
       try {
         console.log("Starting data fetch for log page...");
 
-        // Parallelize all database calls
-        const [variablesRes, logsRes, experimentsRes, routinesRes] =
-          await Promise.all([
-            supabase.from("variables").select("*").eq("is_active", true),
-            supabase.from("data_points").select("*").eq("user_id", user.id),
-            supabase
-              .from("experiments")
-              .select("*")
-              .eq("user_id", user.id)
-              .gte("end_date", new Date().toISOString().split("T")[0]),
-            supabase
-              .from("routines")
-              .select("id, routine_name")
-              .eq("user_id", user.id),
+        // Test database connection first
+        try {
+          const { data: testData, error: testError } = await supabase
+            .from("variables")
+            .select("count")
+            .limit(1);
+          
+          if (testError) {
+            console.error("Database connection test failed:", testError);
+          } else {
+            console.log("Database connection test successful");
+          }
+        } catch (testError) {
+          console.error("Database connection test failed:", testError);
+        }
+
+        // Parallelize all database calls with timeout handling
+        const timeoutMs = 5000; // 5 second timeout for each call
+        
+        const variablesPromise = supabase.from("variables").select("*").eq("is_active", true);
+        const logsPromise = supabase.from("data_points").select("*").eq("user_id", user.id);
+        const experimentsPromise = supabase
+          .from("experiments")
+          .select("*")
+          .eq("user_id", user.id)
+          .gte("end_date", new Date().toISOString().split("T")[0]);
+        const routinesPromise = supabase
+          .from("routines")
+          .select("id, routine_name")
+          .eq("user_id", user.id);
+
+        // Add timeout to each promise
+        const withTimeout = <T>(promise: Promise<T>, ms: number, name: string): Promise<T> => {
+          return Promise.race([
+            promise,
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error(`${name} timed out after ${ms}ms`)), ms)
+            )
           ]);
+        };
+
+        const [variablesRes, logsRes, experimentsRes, routinesRes] =
+          await Promise.allSettled([
+            withTimeout(variablesPromise, timeoutMs, "Variables fetch"),
+            withTimeout(logsPromise, timeoutMs, "Logs fetch"),
+            withTimeout(experimentsPromise, timeoutMs, "Experiments fetch"),
+            withTimeout(routinesPromise, timeoutMs, "Routines fetch"),
+          ]);
+
+        // Handle results with fallbacks
+        const variablesRes_processed = variablesRes.status === 'fulfilled' ? variablesRes.value : { data: [], error: new Error('Variables fetch failed') };
+        const logsRes_processed = logsRes.status === 'fulfilled' ? logsRes.value : { data: [], error: new Error('Logs fetch failed') };
+        const experimentsRes_processed = experimentsRes.status === 'fulfilled' ? experimentsRes.value : { data: [], error: new Error('Experiments fetch failed') };
+        const routinesRes_processed = routinesRes.status === 'fulfilled' ? routinesRes.value : { data: [], error: new Error('Routines fetch failed') };
 
         console.log("Data fetch completed, processing results...");
 
         // Debug: Log the variables response
-        console.log("Variables response:", variablesRes);
-        console.log("Variables data:", variablesRes.data);
-        console.log("Variables error:", variablesRes.error);
-        console.log("Variables count:", variablesRes.data?.length || 0);
+        console.log("Variables response:", variablesRes_processed);
+        console.log("Variables data:", variablesRes_processed.data);
+        console.log("Variables error:", variablesRes_processed.error);
+        console.log("Variables count:", variablesRes_processed.data?.length || 0);
 
         // Debug: Log each variable
-        if (variablesRes.data && variablesRes.data.length > 0) {
+        if (variablesRes_processed.data && variablesRes_processed.data.length > 0) {
           console.log("First 3 variables:");
-          variablesRes.data.slice(0, 3).forEach((variable, index) => {
+          variablesRes_processed.data.slice(0, 3).forEach((variable, index) => {
             console.log(
               `${index + 1}. ${variable.icon} ${variable.label} (${
                 variable.id
@@ -373,14 +424,28 @@ export default function ManualTrackPage() {
         }
 
         // Set basic data
-        setVariables(variablesRes.data || []);
+        const loadedVariables = variablesRes_processed.data || [];
+        
+        // Debug logging for Broccoli variable
+        const broccoliVar = loadedVariables.find(v => v.label === 'Broccoli');
+        if (broccoliVar) {
+          console.log('🥦 Debug: Broccoli variable loaded:', {
+            id: broccoliVar.id,
+            label: broccoliVar.label,
+            validation_rules: broccoliVar.validation_rules,
+            data_type: broccoliVar.data_type,
+            created_at: broccoliVar.created_at
+          });
+        }
+        
+        setVariables(loadedVariables);
         setRoutines([]); // Empty for now since we removed the RPC call
-        setActiveExperiments(experimentsRes.data || []);
-        setLabelOptions(variablesRes.data || []);
+        setActiveExperiments(experimentsRes_processed.data || []);
+        setLabelOptions(loadedVariables);
 
         // Process routine names
         const routineNameMap: Record<string, string> = {};
-        (routinesRes.data || []).forEach((routine: any) => {
+        (routinesRes_processed.data || []).forEach((routine: any) => {
           routineNameMap[routine.id] = routine.routine_name;
         });
 
@@ -388,20 +453,20 @@ export default function ManualTrackPage() {
 
         console.log(
           "Variables state set, count:",
-          (variablesRes.data || []).length
+          (variablesRes_processed.data || []).length
         );
 
         // Set empty planned logs for now
         setTodaysPlannedLogs([]);
 
         // Process experiments filtering using existing logs data
-        if (experimentsRes.data && logsRes.data) {
+        if (experimentsRes_processed.data && logsRes_processed.data) {
           const now = new Date();
           const pad = (n: number) => n.toString().padStart(2, "0");
           const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(
             now.getDate()
           )}`; // Get YYYY-MM-DD format in local time
-          const todaysLogs = logsRes.data.filter(
+          const todaysLogs = logsRes_processed.data.filter(
             (log: any) => log.date && log.date.startsWith(today)
           );
 
@@ -418,13 +483,26 @@ export default function ManualTrackPage() {
           setLogs([]);
         }
 
+        // Additional debugging for variables
+        if (variablesRes_processed.error) {
+          console.error("Variables error details:", variablesRes_processed.error);
+        }
+        if (variablesRes_processed.data && variablesRes_processed.data.length === 0) {
+          console.warn("No variables found - this might indicate a database connection issue");
+        }
+
         console.log("Data processing completed");
         setVariablesLoading(false);
         setLoading(false);
       } catch (error) {
-        console.error("Error loading data:", error);
+        console.error("Error in main data fetch:", error);
         setVariablesLoading(false);
         setLoading(false);
+        // Set fallback data to prevent complete failure
+        setVariables([]);
+        setAllLogs([]);
+        setActiveExperiments([]);
+        setExperimentsNeedingLogs([]);
       }
     })();
   }, [user]);
@@ -797,28 +875,45 @@ export default function ManualTrackPage() {
       dateToUse.getMonth() + 1
     )}-${pad(dateToUse.getDate())}`; // Get YYYY-MM-DD format in local time
 
-    // Fetch more logs since we'll filter in JavaScript
-    const { data } = await supabase
-      .from("data_points")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("date", { ascending: false })
-      .limit(200);
+    // Helper function for timeout handling
+    const withTimeout = <T>(promise: Promise<T>, ms: number, name: string): Promise<T> => {
+      return Promise.race([
+        promise,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`${name} timed out after ${ms}ms`)), ms)
+        )
+      ]);
+    };
 
-    // Filter logs to the selected date using JavaScript since date is stored as text
-    const selectedDateLogs = (data || []).filter(
-      (log) => log.date && log.date.startsWith(dateString)
-    );
+    try {
+      // Fetch more logs since we'll filter in JavaScript with timeout
+      const logsPromise = supabase
+        .from("data_points")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("date", { ascending: false })
+        .limit(200);
 
-    setLogs(selectedDateLogs);
+      const { data } = await withTimeout(logsPromise, 5000, "Logs fetch");
 
-    // Also refresh experiments filtering
-    if (selectedDateLogs && activeExperiments.length > 0) {
-      const filtered = filterExperimentsNeedingLogs(
-        activeExperiments,
-        selectedDateLogs
+      // Filter logs to the selected date using JavaScript since date is stored as text
+      const selectedDateLogs = (data || []).filter(
+        (log) => log.date && log.date.startsWith(dateString)
       );
-      setExperimentsNeedingLogs(filtered);
+
+      setLogs(selectedDateLogs);
+
+      // Also refresh experiments filtering
+      if (selectedDateLogs && activeExperiments.length > 0) {
+        const filtered = filterExperimentsNeedingLogs(
+          activeExperiments,
+          selectedDateLogs
+        );
+        setExperimentsNeedingLogs(filtered);
+      }
+    } catch (error) {
+      console.error("Error fetching logs:", error);
+      setLogs([]);
     }
   };
 
@@ -920,6 +1015,9 @@ export default function ManualTrackPage() {
       setValue("");
       setNotes("");
       setNotesImages([]);
+      setNotesEverFocused(false); // Reset notes focus state
+      setImageModalOpen(false); // Close any open image modal
+      setSelectedModalImage(null);
       setSelectedUnit("");
 
       // Auto-select next variable if we have one from correlation intent
@@ -1322,20 +1420,25 @@ export default function ManualTrackPage() {
 
   // Handle autocomplete change to detect new variables
   const handleVariableChange = (event: any, value: any) => {
+    console.log("Variable change event:", { value, type: typeof value, variablesCount: variables.length });
+    
     if (typeof value === "string") {
       // User typed a new variable name
       const capitalizedName = capitalizeVariableName(value);
+      console.log("Creating new variable:", capitalizedName);
       setNewVariableName(capitalizedName);
       setPendingVariableSelection(capitalizedName);
       setShowVariableCreationDialog(true);
       setSelectedVariable(null);
     } else if (value) {
       // User selected an existing variable
+      console.log("Selected existing variable:", value.label);
       setSelectedVariable(value);
       setPendingVariableSelection(null);
       setNewVariableName("");
     } else {
       // User cleared the selection
+      console.log("Cleared variable selection");
       setSelectedVariable(null);
       setPendingVariableSelection(null);
       setNewVariableName("");
@@ -2263,27 +2366,36 @@ export default function ManualTrackPage() {
 
               {/* Unit Selector - Compact */}
               <Box sx={{ width: { xs: "100%", sm: "160px" } }}>
-                <VariableUnitSelector
+                <ManualUnitSelector
                   variableId={selectedVariable.id}
                   userId={user?.id || ""}
-                  currentUnit={selectedUnit}
-                  onUnitChange={async (unitId, unitGroup) => {
+                  currentDisplayUnit={displayUnit}
+                  selectedUnit={selectedUnit}
+                  onUnitChange={(unitId) => {
                     setSelectedUnit(unitId);
-                    await refetchDisplayUnit();
+                  }}
+                  onDefaultUnitChange={async (unitId, unitGroup) => {
+                    // Save as new default unit preference
+                    try {
+                      const { error } = await supabase.rpc("set_user_unit_preference", {
+                        user_id_param: user?.id,
+                        variable_id_param: selectedVariable.id,
+                        unit_id_param: unitId,
+                        unit_group_param: unitGroup,
+                      });
+                      
+                      if (!error) {
+                        // Refresh the display unit to reflect the new preference
+                        await refetchDisplayUnit();
+                      }
+                    } catch (err) {
+                      console.error("Error setting default unit:", err);
+                    }
                   }}
                   disabled={displayUnitLoading}
                   label="Unit"
                   size={isMobile ? "small" : "medium"}
                 />
-                {selectedUnit && (
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ mt: 0.25, display: "block", fontSize: "0.7rem" }}
-                  >
-                    Saved for future use
-                  </Typography>
-                )}
               </Box>
 
 
@@ -2311,6 +2423,82 @@ export default function ManualTrackPage() {
 
         {/* Notes */}
         <Box sx={{ mb: 2 }}>
+          {/* Inline images preview above notes field */}
+          {notesImages.length > 0 && (
+            <Box sx={{ mb: 1, p: 1, border: "1px solid", borderColor: "divider", borderRadius: 1, bgcolor: "background.paper" }}>
+              <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
+                📎 Attached Images ({notesImages.length})
+              </Typography>
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                {notesImages.map((image, index) => (
+                  <Box
+                    key={image.id || index}
+                    sx={{
+                      position: "relative",
+                      width: 40,
+                      height: 40,
+                      borderRadius: 1,
+                      overflow: "hidden",
+                      border: "1px solid",
+                      borderColor: image.error ? "error.main" : "divider",
+                      cursor: image.uploading || image.error ? "default" : "pointer",
+                    }}
+                    onClick={() => {
+                      if (!image.uploading && !image.error) {
+                        setSelectedModalImage({
+                          url: image.url,
+                          name: image.name
+                        });
+                        setImageModalOpen(true);
+                      }
+                    }}
+                  >
+                    <img
+                      src={image.url}
+                      alt={`Thumbnail ${index + 1}`}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                        opacity: image.uploading ? 0.5 : 1,
+                      }}
+                    />
+                    {image.uploading && (
+                      <Box
+                        sx={{
+                          position: "absolute",
+                          inset: 0,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: "rgba(0,0,0,0.3)",
+                        }}
+                      >
+                        <CircularProgress size={12} sx={{ color: "white" }} />
+                      </Box>
+                    )}
+                    {image.error && (
+                      <Box
+                        sx={{
+                          position: "absolute",
+                          inset: 0,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: "rgba(255,0,0,0.3)",
+                        }}
+                      >
+                        <Typography variant="caption" sx={{ color: "white", fontSize: "8px" }}>
+                          !
+                        </Typography>
+                      </Box>
+                    )}
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          )}
+
           <TextField
             label="Notes (Optional)"
             fullWidth
@@ -2325,7 +2513,10 @@ export default function ManualTrackPage() {
                 setNotesCharCount(newValue.length);
               }
             }}
-            onFocus={() => setNotesFocused(true)}
+            onFocus={() => {
+              setNotesFocused(true);
+              setNotesEverFocused(true); // Mark that notes has been focused at least once
+            }}
             onBlur={() => {
               // Keep focused state if there are images or text
               if (notes.trim() === "" && notesImages.length === 0) {
@@ -2337,7 +2528,7 @@ export default function ManualTrackPage() {
             inputProps={{
               maxLength: 1000,
             }}
-            helperText={`${notesCharCount}/1000 characters`}
+            helperText={`${notesCharCount}/1000 characters${notesImages.length > 0 ? ` • ${notesImages.length} image${notesImages.length !== 1 ? 's' : ''} attached` : ''}`}
             sx={{
               "& .MuiFormHelperText-root": {
                 color: notesCharCount > 900 ? "warning.main" : "text.secondary",
@@ -2345,8 +2536,8 @@ export default function ManualTrackPage() {
             }}
           />
           
-          {/* Image Upload - Only show when notes is focused or has content/images */}
-          {(notesFocused || notes.trim() !== "" || notesImages.length > 0) && (
+          {/* Image Upload - Show when notes has been focused, has content, or has images */}
+          {(notesFocused || notesEverFocused || notes.trim() !== "" || notesImages.length > 0) && (
             <Box sx={{ mt: 1 }}>
               <input
                 accept="image/*"
@@ -2419,104 +2610,7 @@ export default function ManualTrackPage() {
                   Add Images
                 </Button>
               </label>
-              
-              {/* Display uploaded images */}
-              {notesImages.length > 0 && (
-                <Box sx={{ mt: 1, display: "flex", flexWrap: "wrap", gap: 1 }}>
-                  {notesImages.map((image, index) => (
-                    <Box
-                      key={image.id || index}
-                      sx={{
-                        position: "relative",
-                        width: 80,
-                        height: 80,
-                        borderRadius: 1,
-                        overflow: "hidden",
-                        border: "1px solid",
-                        borderColor: image.error ? "error.main" : "divider",
-                      }}
-                    >
-                      <img
-                        src={image.url}
-                        alt={`Upload ${index + 1}`}
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover",
-                          opacity: image.uploading ? 0.5 : 1,
-                        }}
-                      />
-                      
-                      {/* Upload progress overlay */}
-                      {image.uploading && (
-                        <Box
-                          sx={{
-                            position: "absolute",
-                            inset: 0,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            backgroundColor: "rgba(0,0,0,0.3)",
-                          }}
-                        >
-                          <CircularProgress size={16} sx={{ color: "white" }} />
-                        </Box>
-                      )}
 
-                      {/* Error overlay */}
-                      {image.error && (
-                        <Box
-                          sx={{
-                            position: "absolute",
-                            inset: 0,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            backgroundColor: "rgba(255,0,0,0.2)",
-                          }}
-                        >
-                          <Typography variant="caption" sx={{ color: "white", fontSize: "10px" }}>
-                            Error
-                          </Typography>
-                        </Box>
-                      )}
-                      
-                      {/* Delete button */}
-                      {!image.uploading && (
-                        <IconButton
-                          size="small"
-                          onClick={async () => {
-                            if (image.id && user) {
-                              try {
-                                await deleteNotesImage(image.id, user.id);
-                              } catch (error) {
-                                console.error('Delete failed:', error);
-                              }
-                            }
-                            // Remove from UI
-                            setNotesImages(prev => prev.filter((_, i) => i !== index));
-                          }}
-                          sx={{
-                            position: "absolute",
-                            top: 2,
-                            right: 2,
-                            backgroundColor: "rgba(0,0,0,0.5)",
-                            color: "white",
-                            width: 20,
-                            height: 20,
-                            fontSize: "12px",
-                            "&:hover": {
-                              backgroundColor: "rgba(0,0,0,0.7)",
-                            },
-                          }}
-                        >
-                          ×
-                        </IconButton>
-                      )}
-                    </Box>
-                  ))}
-                </Box>
-              )}
             </Box>
           )}
         </Box>
@@ -2530,12 +2624,42 @@ export default function ManualTrackPage() {
             timeFormat="HH:mm"
             timeIntervals={15}
             dateFormat="yyyy-MM-dd HH:mm"
+            className="manual-track-datepicker"
             customInput={
               <TextField
                 label="Date & Time"
                 fullWidth
                 variant="outlined"
-                InputProps={{ readOnly: true }}
+                InputProps={{ 
+                  readOnly: true,
+                  sx: {
+                    color: 'white',
+                    '& input': {
+                      color: 'white !important',
+                      fontSize: '1rem',
+                      fontWeight: 500
+                    }
+                  }
+                }}
+                sx={{
+                  '& .MuiInputLabel-root': {
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    '&.Mui-focused': {
+                      color: '#FFD700'
+                    }
+                  },
+                  '& .MuiOutlinedInput-root': {
+                    '& fieldset': {
+                      borderColor: 'rgba(255, 255, 255, 0.3)',
+                    },
+                    '&:hover fieldset': {
+                      borderColor: '#FFD700',
+                    },
+                    '&.Mui-focused fieldset': {
+                      borderColor: '#FFD700',
+                    },
+                  },
+                }}
               />
             }
           />
@@ -3846,6 +3970,97 @@ export default function ManualTrackPage() {
           {routineSnackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* Image Modal */}
+      <Dialog
+        open={imageModalOpen}
+        onClose={() => {
+          setImageModalOpen(false);
+          setSelectedModalImage(null);
+        }}
+        maxWidth="lg"
+        fullWidth
+        sx={{
+          "& .MuiDialog-paper": {
+            backgroundColor: "transparent",
+            boxShadow: "none",
+            overflow: "visible",
+          },
+        }}
+      >
+        <DialogContent
+          sx={{
+            padding: 0,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            minHeight: "60vh",
+            backgroundColor: "transparent",
+          }}
+        >
+          {selectedModalImage && (
+            <Box
+              sx={{
+                position: "relative",
+                maxWidth: "90vw",
+                maxHeight: "80vh",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+              }}
+            >
+              <img
+                src={selectedModalImage.url}
+                alt={selectedModalImage.name}
+                style={{
+                  maxWidth: "100%",
+                  maxHeight: "100%",
+                  objectFit: "contain",
+                  borderRadius: "8px",
+                  boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+                }}
+              />
+              <Typography
+                variant="caption"
+                sx={{
+                  mt: 1,
+                  color: "white",
+                  backgroundColor: "rgba(0,0,0,0.7)",
+                  padding: "4px 8px",
+                  borderRadius: "4px",
+                  textAlign: "center",
+                }}
+              >
+                {selectedModalImage.name}
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions
+          sx={{
+            justifyContent: "center",
+            backgroundColor: "transparent",
+            pt: 0,
+          }}
+        >
+          <Button
+            onClick={() => {
+              setImageModalOpen(false);
+              setSelectedModalImage(null);
+            }}
+            variant="contained"
+            sx={{
+              backgroundColor: "rgba(0,0,0,0.8)",
+              color: "white",
+              "&:hover": {
+                backgroundColor: "rgba(0,0,0,0.9)",
+              },
+            }}
+          >
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 }

@@ -399,31 +399,95 @@ export default function App({ Component, pageProps }: AppProps) {
     try {
       console.log("Fetching profile for user:", userId);
       
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("avatar_url, username")
-        .eq("id", userId)
-        .single();
+              // Add AbortController for better timeout handling
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000); // Increased to 8 seconds
+      
+      try {
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("avatar_url, username")
+          .eq("id", userId)
+          .abortSignal(controller.signal)
+          .single();
 
-      if (profileError) {
-        console.error("Error fetching profile:", profileError);
-        // Check if it's just a missing profile (not critical)
-        if (profileError.code === 'PGRST116') {
-          console.log("Profile not found - user might need to complete setup");
-        } else if (profileError.code === 'PGRST301') {
-          console.log("Profile query timed out - continuing without profile data");
+        clearTimeout(timeoutId);
+
+        if (profileError) {
+          console.error("Error fetching profile:", profileError);
+          // Check if it's just a missing profile (not critical)
+          if (profileError.code === 'PGRST116') {
+            console.log("Profile not found - user might need to complete setup");
+            // Try to create missing profile
+            try {
+              await createMissingProfile(userId);
+              // Try fetching again after creation
+              const { data: newProfile, error: newProfileError } = await supabase
+                .from("profiles")
+                .select("avatar_url, username")
+                .eq("id", userId)
+                .single();
+              
+              if (!newProfileError && newProfile) {
+                console.log("Profile created and fetched successfully:", newProfile?.username);
+                return {
+                  avatar_url: newProfile?.avatar_url || null,
+                  username: newProfile?.username || null,
+                };
+              }
+            } catch (createError) {
+              console.error("Failed to create missing profile:", createError);
+            }
+            return { avatar_url: null, username: null };
+          } else if (profileError.code === 'PGRST301') {
+            console.log("Profile query timed out - continuing without profile data");
+          }
+          return { avatar_url: null, username: null };
+        }
+
+        console.log("Profile fetched successfully:", profile?.username);
+        return {
+          avatar_url: profile?.avatar_url || null,
+          username: profile?.username || null,
+        };
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          console.warn("Profile fetch aborted due to timeout");
+        } else {
+          console.error("Profile fetch failed:", fetchError);
         }
         return { avatar_url: null, username: null };
       }
-
-      console.log("Profile fetched successfully:", profile?.username);
-      return {
-        avatar_url: profile?.avatar_url || null,
-        username: profile?.username || null,
-      };
     } catch (error) {
       console.error("Error in fetchUserProfile:", error);
       return { avatar_url: null, username: null };
+    }
+  }, []);
+
+  // Function to create missing profile
+  const createMissingProfile = useCallback(async (userId: string) => {
+    try {
+      console.log("Creating missing profile for user:", userId);
+      
+      const { error } = await supabase
+        .from("profiles")
+        .insert({
+          id: userId,
+          username: null,
+          name: null,
+          avatar_url: null
+        });
+
+      if (error) {
+        console.error("Failed to create profile:", error);
+        throw error;
+      }
+      
+      console.log("Profile created successfully for user:", userId);
+    } catch (error) {
+      console.error("Error creating profile:", error);
+      throw error;
     }
   }, []);
 
@@ -491,19 +555,24 @@ export default function App({ Component, pageProps }: AppProps) {
           console.log("Found stored user data:", parsedUser.id);
           setUser(parsedUser);
 
-          // Fetch profile for stored user with timeout
-          try {
-            const { avatar_url, username } = await withTimeout(
-              fetchUserProfile(parsedUser.id),
-              10000, // Increased to 10 seconds for better reliability
-              "Profile fetch"
-            );
+          // Skip profile fetch during initial load to speed up the process
+          // Profile will be fetched later asynchronously
+          console.log("Skipping profile fetch during initialization for faster load");
+          
+          // Mark as ready to proceed
+          setLoading(false);
+          setInitialized(true);
+          
+          // Fetch profile asynchronously in the background
+          fetchUserProfile(parsedUser.id).then(({ avatar_url, username }) => {
             setAvatarUrl(avatar_url);
             setUsername(username);
-          } catch (profileError) {
-            console.warn("Profile fetch failed or timed out:", profileError);
-            // Continue without profile data - not critical
-          }
+            console.log("Profile loaded asynchronously");
+          }).catch((profileError) => {
+            console.warn("Background profile fetch failed:", profileError);
+          });
+          
+          return; // Early return to avoid slow auth check
         } catch (parseError) {
           console.error("Error parsing stored user data:", parseError);
           localStorage.removeItem("sb-user-data");
@@ -514,7 +583,7 @@ export default function App({ Component, pageProps }: AppProps) {
       try {
         const { data, error } = await withTimeout(
           supabase.auth.getUser(),
-          5000, // Reduced to 5 seconds for faster loading
+          3000, // Reduced to 3 seconds to prevent hanging
           "Auth verification"
         );
 
@@ -523,6 +592,18 @@ export default function App({ Component, pageProps }: AppProps) {
           // Don't clear user data immediately on auth error - might be temporary
           if (storedUser) {
             console.log("Keeping stored user data despite auth error");
+            // Try to parse and use stored user data as fallback
+            try {
+              const fallbackUser = JSON.parse(storedUser);
+              setUser(fallbackUser);
+              console.log("Using stored user as fallback due to auth error");
+            } catch (parseError) {
+              console.error("Error parsing fallback user data:", parseError);
+              localStorage.removeItem("sb-user-data");
+              setUser(null);
+              setAvatarUrl(null);
+              setUsername(null);
+            }
           } else {
             setUser(null);
             setAvatarUrl(null);
@@ -540,18 +621,18 @@ export default function App({ Component, pageProps }: AppProps) {
           // Update stored user data
           localStorage.setItem("sb-user-data", JSON.stringify(currentUser));
 
-          // Fetch profile with timeout
+          // Fetch profile with built-in timeout
           try {
             const { avatar_url, username } = await withTimeout(
               fetchUserProfile(currentUser.id),
-              15000, // Increased from 5000ms to 15000ms
-              "Fresh profile fetch"
+              6000, // Increased to 6 seconds for more reliable profile fetch
+              "Profile fetch"
             );
             setAvatarUrl(avatar_url);
             setUsername(username);
           } catch (profileError) {
             console.warn("Fresh profile fetch failed or timed out:", profileError);
-            // Continue without profile data - not critical
+            // Continue without profile data - not critical for app functionality
           }
         } else {
           console.log("No user found");
@@ -564,12 +645,27 @@ export default function App({ Component, pageProps }: AppProps) {
         // If auth times out and we have stored user, continue with stored user
         if (storedUser) {
           console.log("Using stored user data due to auth timeout");
+          try {
+            const fallbackUser = JSON.parse(storedUser);
+            setUser(fallbackUser);
+            console.log("Successfully set fallback user from stored data");
+          } catch (parseError) {
+            console.error("Error parsing stored user on auth timeout:", parseError);
+            localStorage.removeItem("sb-user-data");
+            setUser(null);
+            setAvatarUrl(null);
+            setUsername(null);
+          }
         } else {
+          console.log("No stored user, continuing with anonymous access");
           setUser(null);
           setAvatarUrl(null);
           setUsername(null);
-          localStorage.removeItem("sb-user-data");
         }
+        
+        // Always complete initialization even if auth fails
+        setLoading(false);
+        setInitialized(true);
       }
     } catch (err) {
       console.error("Error initializing user:", err);
@@ -577,39 +673,49 @@ export default function App({ Component, pageProps }: AppProps) {
       setAvatarUrl(null);
       setUsername(null);
       localStorage.removeItem("sb-user-data");
+      // Always complete initialization even on errors
+      setLoading(false);
+      setInitialized(true);
     } finally {
-      console.log("Setting loading to false");
+      console.log("Ensuring initialization is marked complete");
       setLoading(false);
       setInitialized(true);
     }
-  }, [fetchUserProfile]);
+  }, [fetchUserProfile, createMissingProfile]);
 
   // Initialize user on mount with maximum timeout
   useEffect(() => {
     if (!initialized) {
-      // Set a maximum initialization timeout (10 seconds)
+      // Set a maximum initialization timeout (5 seconds - be more aggressive)
       const maxTimeoutId = setTimeout(() => {
-        if (loading) {
-          console.error("Initialization taking too long, forcing completion");
-          setLoading(false);
-          setInitialized(true);
-          // If we have stored user data, use it
-          const storedUser = localStorage.getItem("sb-user-data");
-          if (storedUser) {
-            try {
-              const parsedUser = JSON.parse(storedUser);
-              setUser(parsedUser);
-              console.log("Using stored user due to timeout");
-            } catch (error) {
-              console.error("Error parsing stored user on timeout:", error);
-              localStorage.removeItem("sb-user-data");
-            }
+        console.error("Initialization taking too long, forcing completion");
+        setLoading(false);
+        setInitialized(true);
+        // If we have stored user data, use it
+        const storedUser = localStorage.getItem("sb-user-data");
+        if (storedUser) {
+          try {
+            const parsedUser = JSON.parse(storedUser);
+            setUser(parsedUser);
+            console.log("Using stored user due to timeout");
+          } catch (error) {
+            console.error("Error parsing stored user on timeout:", error);
+            localStorage.removeItem("sb-user-data");
           }
+        } else {
+          // Even without stored user, continue to allow app to load
+          console.log("No stored user found, continuing with anonymous access");
         }
-              }, 10000);
+      }, 5000); // Reduced to 5 seconds to be more aggressive
 
       initializeUser().then(() => {
         clearTimeout(maxTimeoutId);
+      }).catch((error) => {
+        console.error("initializeUser failed:", error);
+        clearTimeout(maxTimeoutId);
+        // Force completion even if initialization fails
+        setLoading(false);
+        setInitialized(true);
       });
 
       return () => {

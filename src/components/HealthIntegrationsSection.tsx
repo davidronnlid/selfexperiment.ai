@@ -59,9 +59,11 @@ export default function HealthIntegrationsSection({
         .limit(1);
 
       // Check Withings connection
+      // Note: `withings_tokens` does not have an `id` column in this project.
+      // Query a safe, non-sensitive column to determine existence.
       const { data: withingsTokens } = await supabase
         .from("withings_tokens")
-        .select("id")
+        .select("user_id")
         .eq("user_id", userId)
         .limit(1);
 

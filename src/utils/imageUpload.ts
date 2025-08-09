@@ -47,13 +47,55 @@ export async function uploadNotesImage(
 
     onProgress?.({ progress: 30, status: 'uploading' });
 
-    // Upload to Supabase storage
-    const { error: uploadError } = await supabase.storage
-      .from('notes-images')
+    // Upload to Supabase storage - try multiple bucket names
+    let uploadError: any = null;
+    let bucketName = 'notes-images';
+    
+    // First try to create the bucket if it doesn't exist
+    try {
+      const { data: buckets } = await supabase.storage.listBuckets();
+      const bucketExists = buckets?.find(bucket => bucket.name === 'notes-images');
+      
+      if (!bucketExists) {
+        console.log('Creating notes-images bucket...');
+        const { error: createError } = await supabase.storage.createBucket('notes-images', {
+          public: true,
+          allowedMimeTypes: ['image/*'],
+          fileSizeLimit: 10 * 1024 * 1024 // 10MB
+        });
+        
+        if (createError) {
+          console.warn('Could not create notes-images bucket:', createError);
+          // Fall back to trying other common bucket names
+          bucketName = 'images';
+        }
+      }
+    } catch (error) {
+      console.warn('Error checking/creating bucket:', error);
+      bucketName = 'images';
+    }
+    
+    // Try uploading to the bucket
+    const { error: firstUploadError } = await supabase.storage
+      .from(bucketName)
       .upload(filePath, file, {
         cacheControl: '3600',
         upsert: false
       });
+      
+    if (firstUploadError && bucketName === 'notes-images') {
+      // Try fallback bucket
+      bucketName = 'images';
+      const { error: secondUploadError } = await supabase.storage
+        .from(bucketName)
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+      uploadError = secondUploadError;
+    } else {
+      uploadError = firstUploadError;
+    }
 
     if (uploadError) {
       console.error('Upload error:', uploadError);
@@ -64,7 +106,7 @@ export async function uploadNotesImage(
 
     // Get public URL
     const { data: urlData } = supabase.storage
-      .from('notes-images')
+      .from(bucketName)
       .getPublicUrl(filePath);
 
     if (!urlData?.publicUrl) {
@@ -90,7 +132,7 @@ export async function uploadNotesImage(
 
     if (dbError) {
       // Clean up uploaded file if database save fails
-      await supabase.storage.from('notes-images').remove([filePath]);
+      await supabase.storage.from(bucketName).remove([filePath]);
       throw new Error(`Database error: ${dbError.message}`);
     }
 

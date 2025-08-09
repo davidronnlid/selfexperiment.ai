@@ -48,7 +48,8 @@ export interface Variable {
     | "oura"
     | "apple_health"
     | "formula"
-    | "calculated";
+    | "calculated"
+    | ("manual" | "withings" | "oura" | "apple_health" | "formula" | "calculated")[];
 
   // Categorization
   category?: string;
@@ -176,7 +177,8 @@ export interface CreateVariableRequest {
     | "oura"
     | "apple_health"
     | "formula"
-    | "calculated";
+    | "calculated"
+    | ("manual" | "withings" | "oura" | "apple_health" | "formula" | "calculated")[];
   category?: string;
 }
 
@@ -196,7 +198,8 @@ export interface UpdateVariableRequest {
     | "oura"
     | "apple_health"
     | "formula"
-    | "calculated";
+    | "calculated"
+    | ("manual" | "withings" | "oura" | "apple_health" | "formula" | "calculated")[];
   category?: string;
   is_active?: boolean;
 }

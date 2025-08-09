@@ -23,13 +23,32 @@ import {
   Grid,
   ListSubheader,
 } from "@mui/material";
-import { FaGlobe, FaLock, FaPlus, FaQuestion, FaSmile } from "react-icons/fa";
+import { FaGlobe, FaLock, FaPlus, FaQuestion, FaSmile, FaGripVertical } from "react-icons/fa";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import {
+  CSS,
+} from '@dnd-kit/utilities';
 import { supabase } from "@/utils/supaBase";
 import {
   generateVariableUnitConfig,
   getUnitDisplayInfo,
 } from "../utils/unitGroupUtils";
-import { addVariableUnit, setVariableUnits } from "../utils/variableUnitsUtils";
+import { addVariableUnit, setVariableUnits, reorderVariableUnits } from "../utils/variableUnitsUtils";
 import { fetchUnits } from "../utils/unitsTableUtils";
 import { Unit } from "../types/variables";
 import { createPermissiveSlug } from "@/utils/slugUtils";
@@ -48,229 +67,85 @@ interface VariableCreationDialogProps {
   user: any;
 }
 
-// Predefined unit options with default min/max values
-const UNIT_OPTIONS = [
-  // Continuous/Numeric Units
-  {
-    value: "kg",
-    label: "Kilograms (kg)",
-    category: "Weight",
-    dataTypes: ["continuous"],
-    defaultMin: 0,
-    defaultMax: 300,
-  },
-  {
-    value: "lbs",
-    label: "Pounds (lbs)",
-    category: "Weight",
-    dataTypes: ["continuous"],
-    defaultMin: 0,
-    defaultMax: 660,
-  },
-  {
-    value: "mg",
-    label: "Milligrams (mg)",
-    category: "Medication/Supplement",
-    dataTypes: ["continuous"],
-    defaultMin: 0,
-    defaultMax: 1000,
-  },
-  {
-    value: "ml",
-    label: "Milliliters (ml)",
-    category: "Volume",
-    dataTypes: ["continuous"],
-    defaultMin: 0,
-    defaultMax: 5000,
-  },
-  {
-    value: "L",
-    label: "Liters (L)",
-    category: "Volume",
-    dataTypes: ["continuous"],
-    defaultMin: 0,
-    defaultMax: 10,
-  },
-  {
-    value: "hours",
-    label: "Hours",
-    category: "Time",
-    dataTypes: ["continuous"],
-    defaultMin: 0,
-    defaultMax: 24,
-  },
-  {
-    value: "minutes",
-    label: "Minutes",
-    category: "Time",
-    dataTypes: ["continuous"],
-    defaultMin: 0,
-    defaultMax: 1440,
-  },
-  {
-    value: "bpm",
-    label: "Beats per minute (bpm)",
-    category: "Health",
-    dataTypes: ["continuous"],
-    defaultMin: 30,
-    defaultMax: 220,
-  },
-  {
-    value: "°C",
-    label: "Degrees Celsius (°C)",
-    category: "Temperature",
-    dataTypes: ["continuous"],
-    defaultMin: 35,
-    defaultMax: 42,
-  },
-  {
-    value: "°F",
-    label: "Degrees Fahrenheit (°F)",
-    category: "Temperature",
-    dataTypes: ["continuous"],
-    defaultMin: 95,
-    defaultMax: 108,
-  },
-  {
-    value: "steps",
-    label: "Steps",
-    category: "Activity",
-    dataTypes: ["continuous"],
-    defaultMin: 0,
-    defaultMax: 50000,
-  },
-  {
-    value: "calories",
-    label: "Calories",
-    category: "Food/Exercise",
-    dataTypes: ["continuous"],
-    defaultMin: 0,
-    defaultMax: 5000,
-  },
-  {
-    value: "mmHg",
-    label: "mmHg (Blood Pressure)",
-    category: "Health",
-    dataTypes: ["continuous"],
-    defaultMin: 60,
-    defaultMax: 200,
-  },
-  {
-    value: "rating",
-    label: "Rating/Score",
-    category: "Subjective",
-    dataTypes: ["continuous"],
-    defaultMin: 1,
-    defaultMax: 10,
-  },
-  {
-    value: "percentage",
-    label: "Percentage (%)",
-    category: "General",
-    dataTypes: ["continuous"],
-    defaultMin: 0,
-    defaultMax: 100,
-  },
-  {
-    value: "units",
-    label: "Units (generic)",
-    category: "General",
-    dataTypes: ["continuous"],
-    defaultMin: 0,
-    defaultMax: 100,
-  },
-  // Boolean Units
-  {
-    value: "true/false",
-    label: "True/False",
-    category: "Boolean",
-    dataTypes: ["boolean"],
-    defaultMin: 0,
-    defaultMax: 1,
-  },
-  {
-    value: "yes/no",
-    label: "Yes/No",
-    category: "Boolean",
-    dataTypes: ["boolean"],
-    defaultMin: 0,
-    defaultMax: 1,
-  },
-  {
-    value: "0/1",
-    label: "0/1",
-    category: "Boolean",
-    dataTypes: ["boolean"],
-    defaultMin: 0,
-    defaultMax: 1,
-  },
-  // Categorical Units
-  {
-    value: "option",
-    label: "Option",
-    category: "Categorical",
-    dataTypes: ["categorical"],
-    defaultMin: 0,
-    defaultMax: 0,
-  },
-  {
-    value: "choice",
-    label: "Choice",
-    category: "Categorical",
-    dataTypes: ["categorical"],
-    defaultMin: 0,
-    defaultMax: 0,
-  },
-  {
-    value: "level",
-    label: "Level",
-    category: "Categorical",
-    dataTypes: ["categorical"],
-    defaultMin: 0,
-    defaultMax: 0,
-  },
-  {
-    value: "type",
-    label: "Type",
-    category: "Categorical",
-    dataTypes: ["categorical"],
-    defaultMin: 0,
-    defaultMax: 0,
-  },
-  {
-    value: "category",
-    label: "Category",
-    category: "Categorical",
-    dataTypes: ["categorical"],
-    defaultMin: 0,
-    defaultMax: 0,
-  },
-  // Text Units
-  {
-    value: "characters",
-    label: "Characters",
-    category: "Text",
-    dataTypes: ["text"],
-    defaultMin: 1,
-    defaultMax: 500,
-  },
-  {
-    value: "words",
-    label: "Words",
-    category: "Text",
-    dataTypes: ["text"],
-    defaultMin: 1,
-    defaultMax: 100,
-  },
-];
 
-// Function to filter unit options based on data type
-const getAvailableUnits = (dataType: string) => {
-  return UNIT_OPTIONS.filter(
-    (unit) =>
-      unit.dataTypes.includes(dataType) || unit.dataTypes.includes("all")
+
+// Sortable Unit Chip Component
+interface SortableUnitChipProps {
+  unitId: string;
+  unit: Unit | undefined;
+  onRemove: (unitId: string) => void;
+  isPrimary: boolean;
+}
+
+function SortableUnitChip({ unitId, unit, onRemove, isPrimary }: SortableUnitChipProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: unitId });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <Box
+      ref={setNodeRef}
+      style={style}
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        gap: 1,
+        p: 1,
+        borderRadius: 1,
+        border: "1px solid",
+        borderColor: isPrimary ? "primary.main" : "grey.300",
+        backgroundColor: isPrimary ? "primary.50" : "background.paper",
+        cursor: isDragging ? "grabbing" : "grab",
+        "&:hover": {
+          borderColor: "primary.main",
+          backgroundColor: "primary.50",
+        },
+      }}
+    >
+      <Box
+        {...attributes}
+        {...listeners}
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          cursor: "grab",
+          color: "text.secondary",
+          "&:hover": { color: "primary.main" },
+        }}
+      >
+        <FaGripVertical />
+      </Box>
+      
+      <Chip
+        label={unit ? `${unit.label} (${unit.symbol})` : unitId}
+        size="small"
+        color={isPrimary ? "primary" : "default"}
+        variant={isPrimary ? "filled" : "outlined"}
+        onDelete={() => onRemove(unitId)}
+        sx={{ flex: 1 }}
+      />
+      
+      {isPrimary && (
+        <Typography variant="caption" color="primary.main" sx={{ fontWeight: 600, fontSize: "0.65rem" }}>
+          PRIMARY
+        </Typography>
+      )}
+    </Box>
   );
-};
+}
+
+
 
 // Common emojis for variable icons
 const EMOJI_OPTIONS = [
@@ -335,7 +210,7 @@ export default function VariableCreationDialog({
   const [loading, setLoading] = useState(false);
   const [variableName, setVariableName] = useState(initialVariableName);
   const [description, setDescription] = useState("");
-  const [unit, setUnit] = useState("");
+
   const [source, setSource] = useState("manual");
   const [isShared, setIsShared] = useState(false);
   const [constraints, setConstraints] = useState({
@@ -352,6 +227,33 @@ export default function VariableCreationDialog({
   const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>([]);
   const [unitsLoading, setUnitsLoading] = useState(false);
 
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // Handle drag end for reordering units
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (active.id !== over?.id) {
+      setSelectedUnitIds((items) => {
+        const oldIndex = items.indexOf(active.id as string);
+        const newIndex = items.indexOf(over?.id as string);
+
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
+  };
+
+  // Remove unit from selection
+  const handleRemoveUnit = (unitId: string) => {
+    setSelectedUnitIds(prev => prev.filter(id => id !== unitId));
+  };
+
   // Load units from database
   useEffect(() => {
     if (open) {
@@ -364,9 +266,9 @@ export default function VariableCreationDialog({
     if (open) {
       setVariableName(initialVariableName || "");
       setDescription("");
-      setUnit("");
+
       setSource("manual");
-      setIsShared(false);
+      setIsShared(true);
       setConstraints({
         min: "",
         max: "",
@@ -379,12 +281,15 @@ export default function VariableCreationDialog({
     }
   }, [open, initialVariableName]);
 
-  // Clear invalid units when data type changes to prevent invalid unit-datatype combinations
+  // Clear invalid units when data type changes or when availableUnits loads
   useEffect(() => {
     if (selectedUnitIds.length > 0 && availableUnits.length > 0) {
       const validUnitIds = selectedUnitIds.filter((unitId) => {
         const unit = availableUnits.find((u) => u.id === unitId);
-        if (!unit) return false;
+        if (!unit) {
+          console.log(`🚨 Removing invalid unit ID "${unitId}" from selectedUnitIds`);
+          return false;
+        }
 
         // Filter based on data type compatibility
         if (constraints.type === "boolean") {
@@ -402,6 +307,7 @@ export default function VariableCreationDialog({
       });
 
       if (validUnitIds.length !== selectedUnitIds.length) {
+        console.log(`🔧 Cleaning selectedUnitIds: ${selectedUnitIds.length} → ${validUnitIds.length}`);
         setSelectedUnitIds(validUnitIds);
         // Clear constraints if units changed
         setConstraints((prev) => ({
@@ -413,8 +319,25 @@ export default function VariableCreationDialog({
     }
   }, [constraints.type, selectedUnitIds, availableUnits]);
 
+  // Clean up selectedUnitIds when availableUnits first loads
+  useEffect(() => {
+    if (availableUnits.length > 0 && selectedUnitIds.length > 0) {
+      const existingUnitIds = selectedUnitIds.filter(unitId => 
+        availableUnits.some(unit => unit.id === unitId)
+      );
+      
+      if (existingUnitIds.length !== selectedUnitIds.length) {
+        console.log(`🧹 Initial cleanup of selectedUnitIds after units loaded`);
+        setSelectedUnitIds(existingUnitIds);
+      }
+    }
+  }, [availableUnits]);
+
   // Handle category selection - select all units in a category
-  const handleCategorySelect = (categoryName: string, categoryUnits: typeof availableUnits) => {
+  const handleCategorySelect = (e: React.MouseEvent, categoryName: string, categoryUnits: typeof availableUnits) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
     const categoryUnitIds = categoryUnits.map(unit => unit.id);
     const allCategorySelected = categoryUnitIds.every(id => selectedUnitIds.includes(id));
     
@@ -447,36 +370,7 @@ export default function VariableCreationDialog({
     }
   };
 
-  const handleUnitChange = (selectedUnit: string) => {
-    const unitValue = selectedUnit || "";
-    setUnit(unitValue);
 
-    // Find the unit option and set default min/max values
-    const availableUnits = getAvailableUnits(constraints.type);
-    const unitOption = availableUnits.find((opt) => opt.value === unitValue);
-    if (unitOption) {
-      // Predefined unit - use numeric defaults
-      setConstraints((prev) => ({
-        ...prev,
-        min: unitOption.defaultMin.toString(),
-        max: unitOption.defaultMax.toString(),
-      }));
-    } else if (unitValue && !unitOption) {
-      // Free text unit - set character limits
-      setConstraints((prev) => ({
-        ...prev,
-        min: "1", // minimum characters
-        max: "100", // maximum characters
-      }));
-    } else {
-      // No unit - clear constraints
-      setConstraints((prev) => ({
-        ...prev,
-        min: "",
-        max: "",
-      }));
-    }
-  };
 
   const handleEmojiSelect = (emoji: string) => {
     setIcon(emoji);
@@ -487,11 +381,10 @@ export default function VariableCreationDialog({
   const getUnitCategory = (unitValue: string): string | null => {
     if (!unitValue) return null;
 
-    // Check predefined units first
-    const availableUnits = getAvailableUnits(constraints.type);
-    const unitOption = availableUnits.find((opt) => opt.value === unitValue);
+    // Check database units first
+    const unitOption = availableUnits.find((unit) => unit.id === unitValue);
     if (unitOption) {
-      return unitOption.category;
+      return unitOption.unit_group;
     }
 
     // Check custom units from localStorage
@@ -500,7 +393,7 @@ export default function VariableCreationDialog({
       try {
         const parsedCustomUnits = JSON.parse(customUnits);
         const customUnit = parsedCustomUnits.find(
-          (u: any) => u.value === unitValue
+          (u: any) => u.id === unitValue
         );
         if (customUnit) {
           return customUnit.category;
@@ -593,7 +486,7 @@ export default function VariableCreationDialog({
 
       // Generate unit configuration using the new utility
       const unitConfig = generateVariableUnitConfig(
-        unit || "units",
+        "units",
         constraints.type
       );
 
@@ -635,25 +528,8 @@ export default function VariableCreationDialog({
           console.error("Failed to create variable units:", unitError);
           // Don't fail the whole operation for this
         }
-      } else if (unit) {
-        // Fallback: if old unit system was used, try to find matching unit in units table
-        const matchingUnit = availableUnits.find(
-          (u) =>
-            u.id === unit ||
-            u.label.toLowerCase() === unit.toLowerCase() ||
-            u.symbol === unit
-        );
-        if (matchingUnit) {
-          try {
-            await addVariableUnit(newVariable.id, matchingUnit.id, 1);
-          } catch (unitError) {
-            console.error(
-              "Failed to create fallback variable unit:",
-              unitError
-            );
-          }
-        }
       }
+
 
       // Create user preference for this variable
       const preferenceData = {
@@ -893,12 +769,12 @@ export default function VariableCreationDialog({
 
                 {/* Enhanced Data Type Info */}
                 <Box sx={{ mt: 1, p: 1.5, bgcolor: "grey.50", borderRadius: 1, border: "1px solid", borderColor: "grey.200" }}>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="caption" color="black">
                     {constraints.type === "continuous" && (
                       <>
                         📊 <strong>Continuous:</strong> Numeric values with units (weight, time, rating, etc.)
                         <br />
-                        <span style={{ fontSize: "0.7rem", opacity: 0.8 }}>
+                        <span style={{ fontSize: "0.7rem", color: "black" }}>
                           Examples: 75 kg, 8.5 hours, 7/10 rating
                         </span>
                       </>
@@ -907,7 +783,7 @@ export default function VariableCreationDialog({
                       <>
                         📋 <strong>Categorical:</strong> Select from predefined options (mood level, exercise type, etc.)
                         <br />
-                        <span style={{ fontSize: "0.7rem", opacity: 0.8 }}>
+                        <span style={{ fontSize: "0.7rem", color: "black" }}>
                           Examples: Happy/Sad/Angry, Running/Swimming/Cycling
                         </span>
                       </>
@@ -916,7 +792,7 @@ export default function VariableCreationDialog({
                       <>
                         🔘 <strong>Boolean:</strong> Yes/No, True/False, or 0/1 values
                         <br />
-                        <span style={{ fontSize: "0.7rem", opacity: 0.8 }}>
+                        <span style={{ fontSize: "0.7rem", color: "black" }}>
                           Examples: Did you exercise today? Yes/No
                         </span>
                       </>
@@ -925,7 +801,7 @@ export default function VariableCreationDialog({
                       <>
                         📝 <strong>Text:</strong> Free-form text entries (notes, descriptions, etc.)
                         <br />
-                        <span style={{ fontSize: "0.7rem", opacity: 0.8 }}>
+                        <span style={{ fontSize: "0.7rem", color: "black" }}>
                           Examples: "Felt great today", "Notes about workout"
                         </span>
                       </>
@@ -939,7 +815,22 @@ export default function VariableCreationDialog({
                   <InputLabel>Available Units for this Variable</InputLabel>
                   <Select
                     multiple
-                    value={selectedUnitIds}
+                    value={selectedUnitIds.filter(unitId => {
+                      // Only include unit IDs that exist in the currently filtered units
+                      const filteredUnits = availableUnits.filter((unit) => {
+                        if (constraints.type === "boolean") {
+                          return unit.unit_group === "boolean";
+                        } else if (constraints.type === "categorical") {
+                          return ["option", "choice", "level", "type", "category"].includes(unit.id);
+                        } else if (constraints.type === "text") {
+                          return ["characters", "words"].includes(unit.id);
+                        } else if (constraints.type === "continuous") {
+                          return unit.unit_group !== "boolean";
+                        }
+                        return true;
+                      });
+                      return filteredUnits.some(unit => unit.id === unitId);
+                    })}
                     onChange={(e) =>
                       setSelectedUnitIds(e.target.value as string[])
                     }
@@ -949,32 +840,66 @@ export default function VariableCreationDialog({
                       PaperProps: {
                         style: {
                           maxHeight: 400,
+                          overflow: 'auto',
+                        },
+                      },
+                      MenuListProps: {
+                        style: {
+                          maxHeight: 380,
                           overflowY: 'auto',
                         },
                       },
                     }}
-                    renderValue={(selected) => (
-                      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                        {(selected as string[]).map((unitId) => {
-                          const unit = availableUnits.find(
-                            (u) => u.id === unitId
-                          );
-                          return (
-                            <Chip
-                              key={unitId}
-                              label={
-                                unit ? `${unit.label} (${unit.symbol})` : unitId
-                              }
-                              size="small"
-                              color="primary"
-                              variant="filled"
-                            />
-                          );
-                        })}
-                      </Box>
-                    )}
+                    renderValue={(selected) => {
+                      if (unitsLoading) {
+                        return (
+                          <Typography variant="body2" color="text.secondary">
+                            Loading units...
+                          </Typography>
+                        );
+                      }
+                      
+                      const validSelected = (selected as string[]).filter(unitId =>
+                        availableUnits.some(unit => unit.id === unitId)
+                      );
+                      
+                      return (
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                          <Typography variant="body2" color="text.secondary">
+                            {validSelected.length} unit{validSelected.length !== 1 ? 's' : ''} selected
+                          </Typography>
+                          {validSelected.length > 0 && (
+                            <Typography variant="caption" color="primary.main" sx={{ fontWeight: 600 }}>
+                              (Drag to reorder below)
+                            </Typography>
+                          )}
+                        </Box>
+                      );
+                    }}
                   >
                     {(() => {
+                      // Show loading state when units are being fetched
+                      if (unitsLoading) {
+                        return [
+                          <MenuItem key="loading" disabled>
+                            <Typography variant="body2" color="text.secondary">
+                              Loading units...
+                            </Typography>
+                          </MenuItem>
+                        ];
+                      }
+
+                      // Show message when no units are available
+                      if (availableUnits.length === 0) {
+                        return [
+                          <MenuItem key="no-units" disabled>
+                            <Typography variant="body2" color="text.secondary">
+                              No units available. Please try refreshing the page.
+                            </Typography>
+                          </MenuItem>
+                        ];
+                      }
+
                       const filteredUnits = availableUnits.filter((unit) => {
                         // Filter units based on data type compatibility
                         if (constraints.type === "boolean") {
@@ -995,6 +920,17 @@ export default function VariableCreationDialog({
                         return true;
                       });
 
+                      // Show message when no units match the current data type
+                      if (filteredUnits.length === 0) {
+                        return [
+                          <MenuItem key="no-compatible-units" disabled>
+                            <Typography variant="body2" color="text.secondary">
+                              No units available for {constraints.type} data type.
+                            </Typography>
+                          </MenuItem>
+                        ];
+                      }
+
                       // Group units by unit_group for better organization
                       const groupedUnits = filteredUnits.reduce((groups, unit) => {
                         const group = unit.unit_group;
@@ -1008,7 +944,7 @@ export default function VariableCreationDialog({
                       return Object.entries(groupedUnits).map(([groupName, units]) => [
                         <ListSubheader 
                           key={`header-${groupName}`} 
-                          onClick={() => handleCategorySelect(groupName, units)}
+                          onClick={(e) => handleCategorySelect(e, groupName, units)}
                           sx={{ 
                             backgroundColor: "#ffd700", 
                             color: "black",
@@ -1023,8 +959,13 @@ export default function VariableCreationDialog({
                             "&:hover": {
                               backgroundColor: "#ffed4e",
                             },
-                            transition: "background-color 0.2s ease"
+                            transition: "background-color 0.2s ease",
+                            position: "sticky",
+                            top: 0,
+                            zIndex: 1,
+                            borderBottom: "1px solid rgba(0,0,0,0.1)"
                           }}
+                          title="Click to select/deselect all units in this category"
                         >
                           <span>{groupName} Units</span>
                           <span style={{ fontSize: "0.65rem", opacity: 0.8 }}>
@@ -1075,6 +1016,40 @@ export default function VariableCreationDialog({
                   </Select>
                 </FormControl>
 
+                {/* Sortable Selected Units */}
+                {selectedUnitIds.length > 0 && (
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, color: "text.primary" }}>
+                      Selected Units (Drag to reorder, first = primary):
+                    </Typography>
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={handleDragEnd}
+                    >
+                      <SortableContext
+                        items={selectedUnitIds}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                          {selectedUnitIds.map((unitId, index) => {
+                            const unit = availableUnits.find(u => u.id === unitId);
+                            return (
+                              <SortableUnitChip
+                                key={unitId}
+                                unitId={unitId}
+                                unit={unit}
+                                onRemove={handleRemoveUnit}
+                                isPrimary={index === 0}
+                              />
+                            );
+                          })}
+                        </Box>
+                      </SortableContext>
+                    </DndContext>
+                  </Box>
+                )}
+
                 {/* Enhanced Unit Compatibility Info */}
                 {selectedUnitIds.length > 0 && (
                   <Box
@@ -1089,7 +1064,7 @@ export default function VariableCreationDialog({
                   >
                     <Typography
                       variant="caption"
-                      color="text.secondary"
+                      color="text.primary"
                       sx={{ display: "block", mb: 0.5, fontWeight: 600 }}
                     >
                       💡 <strong>Selected Units:</strong>{" "}
@@ -1143,8 +1118,8 @@ export default function VariableCreationDialog({
 
                     <Typography
                       variant="caption"
-                      color="text.secondary"
-                      sx={{ display: "block", fontSize: "0.65rem" }}
+                      color="text.primary"
+                      sx={{ display: "block", fontSize: "0.75rem", opacity: 0.8 }}
                     >
                       ℹ️ The first selected unit will be the primary unit. Users
                       can switch between selected units when logging data.
@@ -1181,9 +1156,27 @@ export default function VariableCreationDialog({
                 <Box sx={{ mt: 2 }}>
                   <Typography variant="h6" gutterBottom>
                     Value Range
+                    {(() => {
+                      const primaryUnit = availableUnits.find(unit => unit.id === selectedUnitIds[0]);
+                      return primaryUnit ? (
+                        <Chip 
+                          label={`${primaryUnit.label} (${primaryUnit.symbol})`}
+                          size="small" 
+                          color="primary" 
+                          variant="outlined"
+                          sx={{ ml: 2, fontSize: "0.7rem" }}
+                        />
+                      ) : null;
+                    })()}
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Set the minimum and maximum allowed values for this variable. This helps validate user input and provides guidance.
+                    {(() => {
+                      const primaryUnit = availableUnits.find(unit => unit.id === selectedUnitIds[0]);
+                      if (primaryUnit) {
+                        return `Set the minimum and maximum allowed values in ${primaryUnit.label} (${primaryUnit.symbol}). This helps validate user input and provides guidance.`;
+                      }
+                      return "Set the minimum and maximum allowed values for this variable. Please select units first to specify the range.";
+                    })()}
                   </Typography>
                 </Box>
 
@@ -1197,7 +1190,10 @@ export default function VariableCreationDialog({
                   <Box sx={{ flex: 1 }}>
                     <TextField
                       fullWidth
-                      label="Minimum Value"
+                      label={(() => {
+                        const primaryUnit = availableUnits.find(unit => unit.id === selectedUnitIds[0]);
+                        return primaryUnit ? `Minimum Value (${primaryUnit.symbol})` : "Minimum Value";
+                      })()}
                       type="number"
                       value={constraints.min}
                       onChange={(e) =>
@@ -1206,11 +1202,16 @@ export default function VariableCreationDialog({
                           min: e.target.value,
                         }))
                       }
-                      helperText={
-                        selectedUnitIds.length > 0
-                          ? `Minimum allowed value (using selected units)`
-                          : "Minimum allowed value"
-                      }
+                      helperText={(() => {
+                        const primaryUnit = availableUnits.find(unit => unit.id === selectedUnitIds[0]);
+                        if (primaryUnit) {
+                          return `Minimum allowed value in ${primaryUnit.label}`;
+                        } else if (selectedUnitIds.length > 0) {
+                          return "Minimum allowed value (select primary unit first)";
+                        }
+                        return "Minimum allowed value";
+                      })()}
+                      disabled={selectedUnitIds.length === 0}
                       InputProps={{
                         startAdornment: (
                           <InputAdornment position="start">
@@ -1219,6 +1220,16 @@ export default function VariableCreationDialog({
                             </Typography>
                           </InputAdornment>
                         ),
+                        endAdornment: (() => {
+                          const primaryUnit = availableUnits.find(unit => unit.id === selectedUnitIds[0]);
+                          return primaryUnit ? (
+                            <InputAdornment position="end">
+                              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                                {primaryUnit.symbol}
+                              </Typography>
+                            </InputAdornment>
+                          ) : null;
+                        })(),
                       }}
                     />
                   </Box>
@@ -1226,7 +1237,10 @@ export default function VariableCreationDialog({
                   <Box sx={{ flex: 1 }}>
                     <TextField
                       fullWidth
-                      label="Maximum Value"
+                      label={(() => {
+                        const primaryUnit = availableUnits.find(unit => unit.id === selectedUnitIds[0]);
+                        return primaryUnit ? `Maximum Value (${primaryUnit.symbol})` : "Maximum Value";
+                      })()}
                       type="number"
                       value={constraints.max}
                       onChange={(e) =>
@@ -1235,11 +1249,16 @@ export default function VariableCreationDialog({
                           max: e.target.value,
                         }))
                       }
-                      helperText={
-                        selectedUnitIds.length > 0
-                          ? `Maximum allowed value (using selected units)`
-                          : "Maximum allowed value"
-                      }
+                      helperText={(() => {
+                        const primaryUnit = availableUnits.find(unit => unit.id === selectedUnitIds[0]);
+                        if (primaryUnit) {
+                          return `Maximum allowed value in ${primaryUnit.label}`;
+                        } else if (selectedUnitIds.length > 0) {
+                          return "Maximum allowed value (select primary unit first)";
+                        }
+                        return "Maximum allowed value";
+                      })()}
+                      disabled={selectedUnitIds.length === 0}
                       InputProps={{
                         startAdornment: (
                           <InputAdornment position="start">
@@ -1248,30 +1267,71 @@ export default function VariableCreationDialog({
                             </Typography>
                           </InputAdornment>
                         ),
+                        endAdornment: (() => {
+                          const primaryUnit = availableUnits.find(unit => unit.id === selectedUnitIds[0]);
+                          return primaryUnit ? (
+                            <InputAdornment position="end">
+                              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                                {primaryUnit.symbol}
+                              </Typography>
+                            </InputAdornment>
+                          ) : null;
+                        })(),
                       }}
                     />
                   </Box>
                 </Box>
 
                 {/* Value Range Help */}
-                <Box
-                  sx={{ 
-                    mt: 1, 
-                    p: 1.5, 
-                    bgcolor: "warning.50", 
-                    borderRadius: 1,
-                    border: "1px solid",
-                    borderColor: "warning.200"
-                  }}
-                >
-                  <Typography
-                    variant="caption"
-                    color="warning.main"
-                    sx={{ display: "block", fontWeight: 500 }}
+                {selectedUnitIds.length > 0 ? (
+                  <Box
+                    sx={{ 
+                      mt: 1, 
+                      p: 1.5, 
+                      bgcolor: "info.50", 
+                      borderRadius: 1,
+                      border: "1px solid",
+                      borderColor: "info.200"
+                    }}
                   >
-                    ⚠️ <strong>Optional:</strong> Leave empty to allow any value. Setting min/max helps validate user input and provides better data quality.
-                  </Typography>
-                </Box>
+                    <Typography
+                      variant="caption"
+                      color="info.main"
+                      sx={{ display: "block", fontWeight: 500, mb: 0.5 }}
+                    >
+                      🎯 <strong>Primary Unit:</strong> {(() => {
+                        const primaryUnit = availableUnits.find(unit => unit.id === selectedUnitIds[0]);
+                        return primaryUnit ? `${primaryUnit.label} (${primaryUnit.symbol})` : "First selected unit";
+                      })()} will be used for range validation.
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: "block", fontSize: "0.65rem" }}
+                    >
+                      💡 Leave empty to allow any value. Setting min/max helps validate user input and provides better data quality.
+                    </Typography>
+                  </Box>
+                ) : (
+                  <Box
+                    sx={{ 
+                      mt: 1, 
+                      p: 1.5, 
+                      bgcolor: "warning.50", 
+                      borderRadius: 1,
+                      border: "1px solid",
+                      borderColor: "warning.200"
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      color="warning.main"
+                      sx={{ display: "block", fontWeight: 500 }}
+                    >
+                      ⚠️ <strong>Select units first:</strong> Choose units for this variable to set appropriate min/max value ranges.
+                    </Typography>
+                  </Box>
+                )}
               </>
             )}
 
@@ -1296,13 +1356,13 @@ export default function VariableCreationDialog({
                 >
                   <MenuItem value="manual">
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                      <span>✏️</span>
+                      <span>🏥</span>
                       <Box>
                         <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          Manual Entry
+                          Modular Health
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
-                          Users manually enter data
+                          Users can track this variable manually or automate their tracking of it
                         </Typography>
                       </Box>
                     </Box>

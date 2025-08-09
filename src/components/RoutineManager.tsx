@@ -77,6 +77,16 @@ const getCurrentTimeString = (): string => {
   return `${hours}:${minutes}`;
 };
 
+const sortTimesCronologically = (times: any[]): any[] => {
+  return [...times].sort((a, b) => {
+    // Handle empty times
+    if (!a.time || !b.time) return 0;
+    
+    // Compare time strings (HH:MM format)
+    return a.time.localeCompare(b.time);
+  });
+};
+
 export default function RoutineManager() {
   const { user } = useUser();
   const [routines, setRoutines] = useState<any[]>([]);
@@ -1249,7 +1259,7 @@ export default function RoutineManager() {
                             ⏰ Tracking Times:
                           </Typography>
                           <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-                            {variable.times.map((timeObj: any, timeIndex: number) => {
+                            {sortTimesCronologically(variable.times).map((timeObj: any, timeIndex: number) => {
                               const timeValue = typeof timeObj === 'string' ? timeObj : timeObj?.time;
                               return (
                                 <Chip
@@ -1323,7 +1333,8 @@ export default function RoutineManager() {
           </Paper>
         ))}
 
-      {/* Batch Log Routines Section */}
+      {/* Batch Log Routines Section - COMMENTED OUT */}
+      {/*
       <Paper sx={{ p: 3, mt: 4, background: "#1e1e1e" }}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
           <AccessTime />
@@ -1339,7 +1350,7 @@ export default function RoutineManager() {
           Filters (leave empty to include all):
         </Typography>
 
-        {/* Debug Section - Show current state */}
+        {/* Debug Section - Show current state *//*}
         <Box sx={{ mb: 2, p: 2, backgroundColor: "rgba(33, 150, 243, 0.1)", borderRadius: 1 }}>
           <Typography variant="subtitle2" sx={{ mb: 1 }}>Current State:</Typography>
           <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
@@ -1356,7 +1367,7 @@ export default function RoutineManager() {
         </Box>
 
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, mb: 3 }}>
-          {/* Routine Filter */}
+          {/* Routine Filter *//*}
           <Box sx={{ flex: "1 1 300px", minWidth: "250px" }}>
             <FormControl fullWidth size="small">
               <InputLabel>Select Routines</InputLabel>
@@ -1394,7 +1405,7 @@ export default function RoutineManager() {
             </FormControl>
           </Box>
 
-          {/* Variable Filter */}
+          {/* Variable Filter *//*}
           <Box sx={{ flex: "1 1 300px", minWidth: "250px" }}>
             <FormControl fullWidth size="small">
               <InputLabel>Select Variables</InputLabel>
@@ -1434,7 +1445,7 @@ export default function RoutineManager() {
             </FormControl>
           </Box>
 
-          {/* Time Filter */}
+          {/* Time Filter *//*}
           <Box sx={{ flex: "1 1 300px", minWidth: "250px" }}>
             <FormControl fullWidth size="small">
               <InputLabel>Select Times</InputLabel>
@@ -1475,7 +1486,7 @@ export default function RoutineManager() {
             </FormControl>
           </Box>
 
-          {/* Day of Week Filter */}
+          {/* Day of Week Filter *//*}
           <Box sx={{ flex: "1 1 300px", minWidth: "250px" }}>
             <FormControl fullWidth size="small">
               <InputLabel>Select Days</InputLabel>
@@ -1510,7 +1521,7 @@ export default function RoutineManager() {
           </Box>
         </Box>
 
-        {/* Clear Filters */}
+        {/* Clear Filters *//*}
         <Box sx={{ mb: 3 }}>
           <Button
             variant="outlined"
@@ -1526,7 +1537,7 @@ export default function RoutineManager() {
           </Button>
         </Box>
 
-        {/* Date Range */}
+        {/* Date Range *//*}
         <Box sx={{ display: "flex", gap: 2, alignItems: "center", mb: 3 }}>
           <TextField
             label="From"
@@ -1553,7 +1564,7 @@ export default function RoutineManager() {
             Preview & Generate Data Points
           </Button>
           
-          {/* Test button for debugging */}
+          {/* Test button for debugging *//*}
           <Button
             variant="outlined"
             size="small"
@@ -1588,8 +1599,10 @@ export default function RoutineManager() {
           </Button>
         </Box>
       </Paper>
+      */}
 
-      {/* Batch Success Message */}
+      {/* Batch Success Message - COMMENTED OUT */}
+      {/*
       {batchSuccessMessage && (
         <Alert
           severity={batchSuccessMessage.includes("Successfully") ? "success" : batchSuccessMessage.includes("Error") ? "error" : "info"}
@@ -1599,6 +1612,7 @@ export default function RoutineManager() {
           {batchSuccessMessage}
         </Alert>
       )}
+      */}
 
       {/* Dialogs */}
       <Dialog
@@ -1790,10 +1804,9 @@ export default function RoutineManager() {
                       variant="outlined"
                       onClick={() => {
                         const newTime = { time: getCurrentTimeString() };
-                        handleVariableChange(idx, "times", [
-                          ...(variable.times || []),
-                          newTime,
-                        ]);
+                        const newTimes = [...(variable.times || []), newTime];
+                        const sortedTimes = sortTimesCronologically(newTimes);
+                        handleVariableChange(idx, "times", sortedTimes);
                       }}
                       startIcon={<Add />}
                     >
@@ -1804,7 +1817,7 @@ export default function RoutineManager() {
                   {(variable.times || []).map(
                     (timeObj: any, timeIdx: number) => (
                       <Box
-                        key={timeIdx}
+                        key={`${timeObj.time}-${timeIdx}`}
                         display="flex"
                         alignItems="center"
                         gap={2}
@@ -1812,14 +1825,24 @@ export default function RoutineManager() {
                       >
                         <TextField
                           type="time"
+                          label="Time"
                           value={timeObj.time || ""}
                           onChange={(e) => {
-                            const newTimes = [...(variable.times || [])];
-                            newTimes[timeIdx] = {
-                              ...newTimes[timeIdx],
-                              time: e.target.value,
-                            };
-                            handleVariableChange(idx, "times", newTimes);
+                            try {
+                              const newTimes = [...(variable.times || [])];
+                              // Safely update the time at the correct index
+                              if (timeIdx >= 0 && timeIdx < newTimes.length) {
+                                newTimes[timeIdx] = {
+                                  ...newTimes[timeIdx],
+                                  time: e.target.value,
+                                };
+                                // Sort times after update for better UX
+                                const sortedTimes = sortTimesCronologically(newTimes);
+                                handleVariableChange(idx, "times", sortedTimes);
+                              }
+                            } catch (error) {
+                              console.error("Error updating time:", error);
+                            }
                           }}
                           sx={{ width: 140 }}
                           InputLabelProps={{
@@ -1832,10 +1855,14 @@ export default function RoutineManager() {
                         <IconButton
                           size="small"
                           onClick={() => {
-                            const newTimes = variable.times.filter(
-                              (_: any, i: number) => i !== timeIdx
-                            );
-                            handleVariableChange(idx, "times", newTimes);
+                            try {
+                              const newTimes = variable.times.filter(
+                                (_: any, i: number) => i !== timeIdx
+                              );
+                              handleVariableChange(idx, "times", newTimes);
+                            } catch (error) {
+                              console.error("Error deleting time:", error);
+                            }
                           }}
                           color="error"
                         >
@@ -1874,6 +1901,8 @@ export default function RoutineManager() {
         </DialogActions>
       </Dialog>
 
+      {/* BatchRoutineLoggingModal - COMMENTED OUT */}
+      {/*
       <BatchRoutineLoggingModal
         open={batchLoggingOpen}
         onClose={() => setBatchLoggingOpen(false)}
@@ -1881,6 +1910,7 @@ export default function RoutineManager() {
         onConfirm={handleBatchLogConfirm}
         loading={batchLoading}
       />
+      */}
 
       <Snackbar
         open={!!message}

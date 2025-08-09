@@ -190,9 +190,9 @@ export default function CommunityProfilePage() {
         return;
       }
 
-      // Fetch shared data points for this variable using the new function
+      // Fetch shared data points for this variable using the comprehensive function
       const { data: logs, error } = await supabase.rpc(
-        "get_shared_data_points",
+        "get_all_shared_data_points",
         {
           target_user_id: profile.id,
           target_variable_id: currentVariable.variable_id,
