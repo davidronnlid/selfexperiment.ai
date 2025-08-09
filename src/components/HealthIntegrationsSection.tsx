@@ -9,6 +9,7 @@ import {
   CircularProgress,
   Chip,
   Grid,
+  Snackbar,
 } from "@mui/material";
 import {
   Bed as BedIcon,
@@ -40,6 +41,12 @@ export default function HealthIntegrationsSection({
   const [syncingWithings, setSyncingWithings] = useState(false);
   const [syncingAppleHealth, setSyncingAppleHealth] = useState(false);
   const [appleHealthDialogOpen, setAppleHealthDialogOpen] = useState(false);
+  const [withingsSyncMessage, setWithingsSyncMessage] = useState<string>("");
+  const [showWithingsSyncMessage, setShowWithingsSyncMessage] = useState(false);
+  const [ouraSyncMessage, setOuraSyncMessage] = useState<string>("");
+  const [showOuraSyncMessage, setShowOuraSyncMessage] = useState(false);
+  const [appleSyncMessage, setAppleSyncMessage] = useState<string>("");
+  const [showAppleSyncMessage, setShowAppleSyncMessage] = useState(false);
 
   // Show success messages if redirected from callbacks
   const showOuraSuccess = router.query.oura === "success";
@@ -127,13 +134,17 @@ export default function HealthIntegrationsSection({
 
     try {
       setSyncingOura(true);
-      const response = await fetch("/api/oura/fetch", {
+      const response = await fetch("/api/oura/sync-incremental", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId, startYear: 2020, clearExisting: false }),
       });
 
       if (response.ok) {
+        const result = await response.json();
+        const upserted = result.data?.totalUpserted || result.data?.upserted || 0;
+        setOuraSyncMessage(upserted > 0 ? `Oura sync completed: ${upserted} new data points` : "Oura sync completed: no new data");
+        setShowOuraSyncMessage(true);
         // Refresh connection status after sync
         setTimeout(() => {
           checkConnectionStatus();
@@ -151,13 +162,21 @@ export default function HealthIntegrationsSection({
 
     try {
       setSyncingWithings(true);
-      const response = await fetch("/api/withings/sync", {
+      const response = await fetch("/api/withings/sync-incremental", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
       });
 
       if (response.ok) {
+        const result = await response.json();
+        const upserted = result.data?.totalUpserted || result.data?.upserted || 0;
+        setWithingsSyncMessage(
+          upserted > 0
+            ? `Withings sync completed: ${upserted} new data points`
+            : "Withings sync completed: no new data"
+        );
+        setShowWithingsSyncMessage(true);
         // Refresh connection status after sync
         setTimeout(() => {
           checkConnectionStatus();
@@ -172,9 +191,25 @@ export default function HealthIntegrationsSection({
 
   const syncAppleHealth = async () => {
     if (!userId) return;
-    
-    // Open the smart Apple Health connection dialog instead of direct sync
-    setAppleHealthDialogOpen(true);
+    try {
+      setSyncingAppleHealth(true);
+      const response = await fetch("/api/applehealth/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      if (response.ok) {
+        const result = await response.json();
+        const upserted = result.data?.totalUpserted || result.updated_statistics?.total_data_points || 0;
+        setAppleSyncMessage(upserted > 0 ? `Apple Health sync completed: ${upserted} new data points` : "Apple Health sync completed");
+        setShowAppleSyncMessage(true);
+        setTimeout(() => checkConnectionStatus(), 1000);
+      }
+    } catch (e) {
+      console.error("Error syncing Apple Health:", e);
+    } finally {
+      setSyncingAppleHealth(false);
+    }
   };
 
   useEffect(() => {
@@ -340,6 +375,14 @@ export default function HealthIntegrationsSection({
           </Box>
         </Box>
       </CardContent>
+      <Snackbar open={showOuraSyncMessage} autoHideDuration={5000} onClose={() => setShowOuraSyncMessage(false)} message={ouraSyncMessage} />
+      <Snackbar open={showAppleSyncMessage} autoHideDuration={5000} onClose={() => setShowAppleSyncMessage(false)} message={appleSyncMessage} />
+      <Snackbar
+        open={showWithingsSyncMessage}
+        autoHideDuration={5000}
+        onClose={() => setShowWithingsSyncMessage(false)}
+        message={withingsSyncMessage}
+      />
       
       {/* Apple Health Connection Dialog */}
       <AppleHealthConnectionDialog

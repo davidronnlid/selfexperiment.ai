@@ -3,6 +3,7 @@ import { Container, Typography, Box } from "@mui/material";
 import { useUser } from "../_app";
 import { useRouter } from "next/router";
 import RoutineManager from "@/components/RoutineManager";
+import AutoTrackedConfirmList from "@/components/auto/AutoTrackedConfirmList";
 import HealthIntegrationsSection from "@/components/HealthIntegrationsSection";
 import Head from "next/head";
 
@@ -53,7 +54,10 @@ export default function AutoTrackPage() {
         </Box>
 
         <RoutineManager />
-        
+
+        {/* Pending confirmations for auto-tracked data points */}
+        <AutoTrackedConfirmList userId={user.id} />
+
         <HealthIntegrationsSection userId={user.id} />
       </Container>
     </>

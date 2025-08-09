@@ -70,7 +70,7 @@ export default function RoutineLogManager({
 
     const { data: logsData } = await supabase
       .from("data_points")
-      .select("id, variable_id, value, created_at, source")
+      .select("id, variable_id, value, created_at, source, confirmed")
       .eq("user_id", user.id)
       .in("variable_id", allVariableIds)
       .gte("created_at", startISO)
@@ -165,7 +165,7 @@ export default function RoutineLogManager({
     if (log) {
       await supabase
         .from("data_points")
-        .update({ value: value })
+        .update({ value: value, confirmed: true })
         .eq("id", log.id);
     } else {
       await supabase.from("data_points").insert({
@@ -174,6 +174,7 @@ export default function RoutineLogManager({
         value: value,
         created_at: logTimestamp,
         source: ["manual"],
+        confirmed: true,
       });
     }
     setRoutineSaving((prev) => ({

@@ -307,7 +307,10 @@ export default function ManualTrackPage() {
         const [variablesRes, logsRes, experimentsRes, routinesRes] =
           await Promise.all([
             supabase.from("variables").select("*").eq("is_active", true),
-            supabase.from("data_points").select("*").eq("user_id", user.id),
+            supabase
+              .from("data_points")
+              .select("*")
+              .eq("user_id", user.id),
             supabase
               .from("experiments")
               .select("*")

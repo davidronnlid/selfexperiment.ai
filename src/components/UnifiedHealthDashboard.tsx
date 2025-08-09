@@ -389,11 +389,13 @@ export default function UnifiedHealthDashboard({
           variable_id,
           value,
           source,
+          confirmed,
           created_at,
           variables!inner(slug, label)
         `
         )
         .eq("user_id", userId)
+        .eq("confirmed", true)
         .order("date", { ascending: false });
 
       if (manualError) {
