@@ -33,34 +33,13 @@ export default function Document() {
         {/* Manifest */}
         <link rel="manifest" href="/manifest.json" />
 
-        {/* Apple Touch Icons */}
-        <link rel="apple-touch-icon" href="/icon-152x152.png?v=2" />
-        <link
-          rel="apple-touch-icon"
-          sizes="152x152"
-          href="/icon-152x152.png?v=2"
-        />
-        <link
-          rel="apple-touch-icon"
-          sizes="180x180"
-          href="/icon-192x192.png?v=2"
-        />
+        {/* Apple Touch Icons - use the exact PNG with cache-busting */}
+        <link rel="apple-touch-icon" href="/modular-health-logo.png?v=mh1" />
+        <link rel="apple-touch-icon" sizes="152x152" href="/modular-health-logo.png?v=mh1" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/modular-health-logo.png?v=mh1" />
 
-        {/* Favicon */}
-        <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2" />
-        <link
-          rel="icon"
-          type="image/png"
-          sizes="32x32"
-          href="/favicon-32x32.png?v=2"
-        />
-        <link
-          rel="icon"
-          type="image/png"
-          sizes="16x16"
-          href="/favicon-16x16.png?v=2"
-        />
-        <link rel="icon" href="/favicon.ico?v=2" />
+        {/* Favicon - single PNG as requested (with cache-busting) */}
+        <link rel="icon" type="image/png" href="/modular-health-logo.png?v=mh1" />
 
         {/* Note: Viewport meta tag moved to _app.tsx to avoid Next.js warning */}
       </Head>
