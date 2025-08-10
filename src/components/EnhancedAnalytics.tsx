@@ -145,8 +145,9 @@ export default function EnhancedAnalytics({ userId }: EnhancedAnalyticsProps) {
 
       const { data, error } = await supabase
         .from("data_points")
-        .select("id, date, variable_id, value, notes, created_at")
+        .select("id, date, variable_id, value, notes, created_at, confirmed")
         .eq("user_id", userId)
+        .eq("confirmed", true)
         .gte("date", cutoffDate.toISOString())
         .order("date", { ascending: true })
         .limit(200); // Add limit to prevent loading too much data

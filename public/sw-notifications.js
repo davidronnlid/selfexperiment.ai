@@ -24,8 +24,8 @@ self.addEventListener("message", (event) => {
 
     const notificationOptions = {
       body,
-      icon: icon || "/icon-192x192.png",
-      badge: badge || "/icon-96x96.png",
+      icon: icon || "/modular-health-logo.png",
+      badge: badge || "/modular-health-logo.png",
       tag: tag || "selfdev-notification",
       data: data || {},
       vibrate: [200, 100, 200],
@@ -33,12 +33,12 @@ self.addEventListener("message", (event) => {
         {
           action: "open",
           title: "Open App",
-          icon: "/icon-96x96.png",
+          icon: "/modular-health-logo.png",
         },
         {
           action: "dismiss",
           title: "Dismiss",
-          icon: "/icon-96x96.png",
+          icon: "/modular-health-logo.png",
         },
       ],
       renotify: true,
@@ -175,10 +175,10 @@ self.addEventListener("push", (event) => {
 
   // Handle push events even without data for iOS compatibility
   let notificationData = {
-    title: "SelfDev App",
+    title: "Modular Health",
     body: "You have a new notification",
-    icon: "/icon-192x192.png",
-    badge: "/icon-96x96.png",
+    icon: "/modular-health-logo.png",
+    badge: "/modular-health-logo.png",
     tag: "push-notification",
     data: { url: "/" },
   };
@@ -214,12 +214,12 @@ self.addEventListener("push", (event) => {
       {
         action: "open",
         title: "Open App",
-        icon: "/icon-96x96.png",
+        icon: "/modular-health-logo.png",
       },
       {
         action: "dismiss",
         title: "Dismiss",
-        icon: "/icon-96x96.png",
+        icon: "/modular-health-logo.png",
       },
     ],
   };
@@ -236,10 +236,10 @@ self.addEventListener("push", (event) => {
         console.error("[SW] Error displaying push notification:", error);
 
         // Try fallback notification
-        return self.registration.showNotification("SelfDev App", {
+        return self.registration.showNotification("Modular Health", {
           body: "New notification available",
-          icon: "/icon-192x192.png",
-          badge: "/icon-96x96.png",
+          icon: "/modular-health-logo.png",
+          badge: "/modular-health-logo.png",
           tag: "fallback-notification",
         });
       })

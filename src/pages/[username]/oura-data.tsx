@@ -28,7 +28,6 @@ interface OuraDataPoint {
   date: string;
   variable_id: string;
   value: number;
-  raw: any;
   created_at: string;
 }
 
@@ -39,6 +38,11 @@ interface DataStats {
     latest: string;
   };
   variable_breakdown: Record<string, number>;
+}
+
+interface VariableMeta {
+  label: string;
+  slug: string;
 }
 
 const ITEMS_PER_PAGE = 50;
@@ -53,6 +57,7 @@ export default function OuraDataPage() {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [variableMeta, setVariableMeta] = useState<Record<string, VariableMeta>>({});
 
   // Get variable labels mapping for Oura
   const getVariableLabel = (variableId: string) => {
@@ -116,6 +121,20 @@ export default function OuraDataPage() {
     return data.id;
   };
 
+  // Fetch variables meta (id -> {label, slug})
+  const fetchVariablesMeta = async () => {
+    const { data, error } = await supabase
+      .from('variables')
+      .select('id, label, slug')
+      .eq('is_active', true);
+    if (error) throw error;
+    const map: Record<string, VariableMeta> = {};
+    (data || []).forEach((v: any) => {
+      map[v.id] = { label: v.label || v.slug || v.id, slug: v.slug || v.id };
+    });
+    return map;
+  };
+
   // Fetch data statistics
   const fetchDataStats = async (userId: string) => {
     // Get total count
@@ -172,7 +191,7 @@ export default function OuraDataPage() {
     
     const { data, error } = await supabase
       .from('oura_variable_data_points')
-      .select('id, date, variable_id, value, raw, created_at')
+      .select('id, date, variable_id, value, created_at')
       .eq('user_id', userId)
       .order('date', { ascending: false })
       .order('created_at', { ascending: false })
@@ -192,13 +211,15 @@ export default function OuraDataPage() {
 
         const userId = await fetchUserProfile(username as string);
         
-        // Fetch stats and data in parallel
-        const [statsData, dataPoints] = await Promise.all([
+        // Fetch stats, variables meta and data in parallel
+        const [statsData, meta, dataPoints] = await Promise.all([
           fetchDataStats(userId),
-          fetchData(userId, page)
+          fetchVariablesMeta(),
+          fetchData(userId, page),
         ]);
 
         setStats(statsData);
+        setVariableMeta(meta);
         setDataPoints(dataPoints);
         setTotalPages(Math.ceil(statsData.total_count / ITEMS_PER_PAGE));
 
@@ -219,7 +240,8 @@ export default function OuraDataPage() {
   };
 
   const handleVariableClick = (variableId: string) => {
-    router.push(`/variable/${variableId}`);
+    const slug = variableMeta[variableId]?.slug || variableId;
+    router.push(`/variable/${encodeURIComponent(slug)}`);
   };
 
   if (loading) {
@@ -336,7 +358,7 @@ export default function OuraDataPage() {
                   .map(([variableId, count]) => (
                     <Chip
                       key={variableId}
-                      label={`${getVariableLabel(variableId)}: ${count.toLocaleString()}`}
+                      label={`${variableMeta[variableId]?.label || getVariableLabel(variableId)}: ${count.toLocaleString()}`}
                       variant="outlined"
                       className="text-white border-purple-500 cursor-pointer hover:bg-purple-500 hover:text-white transition-colors"
                       onClick={() => handleVariableClick(variableId)}
@@ -379,15 +401,15 @@ export default function OuraDataPage() {
                         </TableCell>
                         <TableCell className="text-white">
                           <Link 
-                            href={`/variable/${encodeURIComponent(point.variable_id)}`}
+                            href={`/variable/${encodeURIComponent(variableMeta[point.variable_id]?.slug || point.variable_id)}`}
                             style={{ 
                               color: '#FFD700', 
                               textDecoration: 'underline',
                               fontWeight: 500
                             }}
-                            title={`View ${getVariableLabel(point.variable_id)} variable page`}
+                            title={`View ${(variableMeta[point.variable_id]?.label || getVariableLabel(point.variable_id))} variable page`}
                           >
-                            {getVariableLabel(point.variable_id)}
+                            {variableMeta[point.variable_id]?.label || getVariableLabel(point.variable_id)}
                           </Link>
                         </TableCell>
                         <TableCell className="text-white font-mono">

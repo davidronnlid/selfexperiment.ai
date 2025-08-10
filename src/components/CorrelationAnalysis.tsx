@@ -127,6 +127,7 @@ export default function CorrelationAnalysis({
   const [minCorrelationStrength, setMinCorrelationStrength] =
     useState<string>("0.1"); // Filter by minimum correlation
   const [showOnlySignificant, setShowOnlySignificant] = useState(false); // Show only statistically significant
+  const [searchQuery, setSearchQuery] = useState<string>(""); // Filter by variable name
 
   // Date range state for filtering
   const [startDate, setStartDate] = useState<string>(() => {
@@ -241,7 +242,15 @@ export default function CorrelationAnalysis({
 
   // Create clickable variable link
   const createVariableLink = (variableId: string, displayName: string) => {
-    const slug = getVariableSlug(variableId);
+    // Prefer slug from variables table when available
+    let slug = variableSlugs[variableId] || getVariableSlug(variableId);
+
+    // If the display name indicates a merged variable (e.g., "Steps (Oura)"),
+    // route to the universal/merged page slug instead of the source-specific slug
+    const nameLower = (displayName || "").toLowerCase();
+    if (nameLower.startsWith("steps")) {
+      slug = "steps";
+    }
 
     const handleClick = (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -1200,22 +1209,7 @@ export default function CorrelationAnalysis({
                 `Date: ${format(parseISO(dataPoint.date), "MMM dd, yyyy")}`,
               ];
 
-              // Add edit hints for editable data points
-              if (dataPoint.var1EditData) {
-                labels.push(
-                  `🖊️ Click X-axis value to edit ${getVariableDisplayName(
-                    variable1
-                  )}`
-                );
-              }
-              if (dataPoint.var2EditData) {
-                labels.push(
-                  `🖊️ Click Y-axis value to edit ${getVariableDisplayName(
-                    variable2
-                  )}`
-                );
-              }
-
+              // Do not include edit prompts in analytics tooltips
               return labels;
             },
             title: function (context: any) {
@@ -1321,6 +1315,17 @@ export default function CorrelationAnalysis({
       return absB - absA;
     });
   }, [logs, minCorrelationStrength, showOnlySignificant]);
+
+  // Apply text search filter against either variable display name
+  const filteredCorrelations = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (query.length === 0) return allCorrelations;
+    return allCorrelations.filter((c) => {
+      const v1 = getVariableDisplayName(c.variable1).toLowerCase();
+      const v2 = getVariableDisplayName(c.variable2).toLowerCase();
+      return v1.includes(query) || v2.includes(query);
+    });
+  }, [allCorrelations, searchQuery, variables]);
 
   // Validate p-value calculations against known statistical values
   const validatePValueCalculations = () => {
@@ -1524,6 +1529,14 @@ export default function CorrelationAnalysis({
             alignItems: "center",
           }}
         >
+          <TextField
+            label="Search variable"
+            size="small"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Type a variable name..."
+            sx={{ minWidth: 220 }}
+          />
           <FormControl size="small" sx={{ minWidth: 150 }}>
             <InputLabel>Min Strength</InputLabel>
             <Select
@@ -1556,15 +1569,15 @@ export default function CorrelationAnalysis({
       </Box>
 
       {/* Main Correlation Table */}
-      {allCorrelations.length > 0 ? (
+      {filteredCorrelations.length > 0 ? (
         <Card>
           <CardContent>
             <Typography variant="h6" component="h4" gutterBottom>
-              Correlation Results ({allCorrelations.length} correlations found)
+              Correlation Results ({filteredCorrelations.length} correlations found)
             </Typography>
 
             {/* Correlation Summary */}
-            {allCorrelations.length > 0 && (
+            {filteredCorrelations.length > 0 && (
               <Card variant="outlined" sx={{ mb: 3, bgcolor: "#f8f9fa" }}>
                 <CardContent sx={{ py: 2 }}>
                   <Typography
@@ -1580,7 +1593,7 @@ export default function CorrelationAnalysis({
                         Total Correlations:
                       </Typography>
                       <Typography variant="h6">
-                        {allCorrelations.length}
+                        {filteredCorrelations.length}
                       </Typography>
                     </Box>
                     <Box>
@@ -1588,10 +1601,7 @@ export default function CorrelationAnalysis({
                         Large Correlations:
                       </Typography>
                       <Typography variant="h6" color="success.main">
-                        {
-                          allCorrelations.filter((c) => c.strength === "large")
-                            .length
-                        }
+                        {filteredCorrelations.filter((c) => c.strength === "large").length}
                       </Typography>
                     </Box>
                     <Box>
@@ -1599,14 +1609,9 @@ export default function CorrelationAnalysis({
                         Significant (p &lt; 0.05):
                       </Typography>
                       <Typography variant="h6" color="info.main">
-                        {
-                          allCorrelations.filter(
-                            (c) =>
-                              c.pValue !== null &&
-                              c.pValue !== undefined &&
-                              c.pValue < 0.05
-                          ).length
-                        }
+                        {filteredCorrelations.filter(
+                          (c) => c.pValue !== null && c.pValue !== undefined && c.pValue < 0.05
+                        ).length}
                       </Typography>
                     </Box>
                     <Box>
@@ -1615,10 +1620,10 @@ export default function CorrelationAnalysis({
                       </Typography>
                       <Typography variant="h6" color="secondary.main">
                         {(
-                          allCorrelations.reduce(
+                          filteredCorrelations.reduce(
                             (sum, c) => sum + (c.rSquared || 0),
                             0
-                          ) / allCorrelations.length
+                          ) / filteredCorrelations.length
                         ).toFixed(3)}
                       </Typography>
                     </Box>
@@ -1650,7 +1655,7 @@ export default function CorrelationAnalysis({
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {allCorrelations.map((corr, index) => {
+                  {filteredCorrelations.map((corr, index) => {
                     const isExpanded =
                       expandedRows[`${corr.variable1}-${corr.variable2}`];
                     const chartData = isExpanded
@@ -2213,8 +2218,8 @@ export default function CorrelationAnalysis({
         </Card>
       ) : (
         <Alert severity="info">
-          No significant correlations found with current data. Try tracking more
-          data points for your variables!
+          No correlations match your current filters or search. Try adjusting
+          the strength/significance filters or clearing the search.
         </Alert>
       )}
     </Box>

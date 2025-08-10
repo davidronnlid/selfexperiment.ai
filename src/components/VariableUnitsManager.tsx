@@ -253,7 +253,21 @@ export default function VariableUnitsManager({
         )}
 
         {/* Add New Unit Section */}
-        <Box sx={{ mb: 3, p: 2, bgcolor: "grey.50", borderRadius: 1 }}>
+        <Box
+          sx={{
+            mb: 3,
+            p: 2,
+            bgcolor: "grey.50",
+            borderRadius: 1,
+            color: "#000",
+            "& .MuiTypography-root": { color: "#000" },
+            "& .MuiFormLabel-root": { color: "#000" },
+            "& .MuiInputBase-input": { color: "#000" },
+            "& .MuiOutlinedInput-input": { color: "#000" },
+            "& .MuiSelect-select": { color: "#000" },
+            "& .MuiSvgIcon-root": { color: "#000" },
+          }}
+        >
           <Typography variant="h6" gutterBottom>
             Add New Unit
           </Typography>

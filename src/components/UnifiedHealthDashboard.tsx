@@ -389,11 +389,13 @@ export default function UnifiedHealthDashboard({
           variable_id,
           value,
           source,
+          confirmed,
           created_at,
           variables!inner(slug, label)
         `
         )
         .eq("user_id", userId)
+        .eq("confirmed", true)
         .order("date", { ascending: false });
 
       if (manualError) {
@@ -564,18 +566,7 @@ export default function UnifiedHealthDashboard({
             const dataIndex = context.dataIndex;
             const dataset = context.dataset;
             if (dataset && dataset.data && dataset.data[dataIndex]) {
-              const dataPoint = dataset.data[dataIndex];
-              if (
-                dataPoint.source === "manual" ||
-                dataPoint.source === "routine" ||
-                dataPoint.source === "auto"
-              ) {
-                return [
-                  "",
-                  "🖊️ Click directly on this data point to edit",
-                  "📝 Modular Health data - editable",
-                ];
-              }
+              // Intentionally do not show edit prompts in tooltips
             }
             return "";
           },

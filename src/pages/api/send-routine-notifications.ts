@@ -266,8 +266,8 @@ async function sendRoutineNotification(
     const notificationPayload = {
       title,
       body,
-      icon: '/icon-192x192.png',
-      badge: '/icon-96x96.png',
+      icon: '/modular-health-logo.png',
+      badge: '/modular-health-logo.png',
       data: {
         type: 'routine_reminder',
         routineName: routine.routineName,

@@ -18,6 +18,8 @@ import {
   FaTrash,
   FaCheck,
   FaTimes,
+  FaCheckCircle,
+  FaUndo,
 } from "react-icons/fa";
 import {
   validateVariableValue,
@@ -71,6 +73,7 @@ interface DataPointEntry {
   value: string;
   notes?: string;
   created_at?: string; // Also a full timestamp
+  confirmed?: boolean;
 }
 
 // Helper to get icon for a variable
@@ -307,7 +310,10 @@ export default function ManualTrackPage() {
         const [variablesRes, logsRes, experimentsRes, routinesRes] =
           await Promise.all([
             supabase.from("variables").select("*").eq("is_active", true),
-            supabase.from("data_points").select("*").eq("user_id", user.id),
+            supabase
+              .from("data_points")
+              .select("*")
+              .eq("user_id", user.id),
             supabase
               .from("experiments")
               .select("*")
@@ -1044,6 +1050,24 @@ export default function ManualTrackPage() {
       setShowSuccess(true);
     } else {
       setExpError("Failed to update log. Please try again.");
+    }
+  };
+
+  // Confirm or unconfirm an auto-tracked data point
+  const handleToggleConfirm = async (log: DataPointEntry) => {
+    try {
+      const newConfirmed = !log.confirmed;
+      const { error } = await supabase
+        .from("data_points")
+        .update({ confirmed: newConfirmed })
+        .eq("id", log.id);
+      if (error) throw error;
+      await fetchLogs();
+      setSuccessMessage(newConfirmed ? "Marked as confirmed" : "Marked as unconfirmed");
+      setShowSuccess(true);
+    } catch (e) {
+      console.error("Failed to toggle confirm:", e);
+      setExpError("Failed to update confirmation status.");
     }
   };
 
@@ -3375,14 +3399,15 @@ export default function ManualTrackPage() {
                                           variant="caption"
                                           sx={{
                                             ml: 0,
-                                            color: "#FFD700",
-                                            fontWeight: 600,
+                                            color: log.confirmed ? "#10b981" : "#f59e0b",
+                                            fontWeight: 700,
                                             fontSize: {
                                               xs: "0.75rem",
                                               sm: "0.8rem",
                                             },
-                                            backgroundColor:
-                                              "rgba(255, 215, 0, 0.18)",
+                                            backgroundColor: log.confirmed
+                                              ? "rgba(16,185,129,0.15)"
+                                              : "rgba(245,158,11,0.15)",
                                             px: 1,
                                             borderRadius: 1,
                                             display: "inline-flex",
@@ -3390,24 +3415,26 @@ export default function ManualTrackPage() {
                                             gap: 0.5,
                                           }}
                                         >
-                                          🤖 Auto
+                                          {log.confirmed ? "Confirmed" : "Pending"}
                                         </Typography>
                                       </Box>
                                       <Box sx={{ display: "flex", gap: 1 }}>
                                         <IconButton
-                                          onClick={() => handleEditLog(log)}
+                                          onClick={() => handleToggleConfirm(log)}
                                           size="small"
                                           sx={{
-                                            color: "#1976d2",
+                                            color: log.confirmed ? "#10b981" : "#f59e0b",
                                             mr: 1,
                                             "&:hover": {
-                                              backgroundColor:
-                                                "rgba(25, 118, 210, 0.1)",
+                                              backgroundColor: log.confirmed
+                                                ? "rgba(16,185,129,0.1)"
+                                                : "rgba(245,158,11,0.1)",
                                               transform: "scale(1.1)",
                                             },
                                           }}
+                                          title={log.confirmed ? "Unconfirm" : "Confirm"}
                                         >
-                                          <FaEdit />
+                                          {log.confirmed ? <FaUndo /> : <FaCheckCircle />}
                                         </IconButton>
                                         <IconButton
                                           onClick={() =>

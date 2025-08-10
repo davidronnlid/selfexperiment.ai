@@ -120,7 +120,6 @@ export default function VariableAdminEditor({
           category: editedVariable.category,
           is_public: editedVariable.is_public,
           is_active: editedVariable.is_active,
-          display_order: editedVariable.display_order,
           updated_at: new Date().toISOString(),
         })
         .eq("id", editedVariable.id);
@@ -167,6 +166,7 @@ export default function VariableAdminEditor({
     "Fitness",
     "Sleep",
     "Nutrition",
+    "Drugs",
     "Mental Health",
     "Productivity",
     "Lifestyle",
@@ -245,15 +245,6 @@ export default function VariableAdminEditor({
                 fullWidth
                 helperText="Emoji or icon character"
                 placeholder="📊"
-              />
-
-              <TextField
-                label="Display Order"
-                type="number"
-                value={editedVariable.display_order || 0}
-                onChange={(e) => handleInputChange("display_order", parseInt(e.target.value) || 0)}
-                fullWidth
-                helperText="Order in lists (lower = first)"
               />
             </Box>
           </Box>

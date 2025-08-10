@@ -17,6 +17,7 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Snackbar,
 } from "@mui/material";
 import { Line, Bar, Scatter } from "react-chartjs-2";
 import {
@@ -225,6 +226,12 @@ export default function ComprehensiveHealthDashboard({
   const [variableSlugs, setVariableSlugs] = useState<Record<string, string>>(
     {}
   );
+  const [withingsSyncMessage, setWithingsSyncMessage] = useState<string>("");
+  const [showWithingsSyncMessage, setShowWithingsSyncMessage] = useState(false);
+  const [ouraSyncMessage, setOuraSyncMessage] = useState<string>("");
+  const [showOuraSyncMessage, setShowOuraSyncMessage] = useState(false);
+  const [appleSyncMessage, setAppleSyncMessage] = useState<string>("");
+  const [showAppleSyncMessage, setShowAppleSyncMessage] = useState(false);
 
   // Add state for pinned variables and correlation
   const [pinnedVariables, setPinnedVariables] = useState<string[]>([]);
@@ -625,28 +632,30 @@ export default function ComprehensiveHealthDashboard({
     }
   }, [userId]);
 
-  // Legacy full sync functions (keep for backward compatibility)
+  // Oura incremental sync with confirmation message
   const syncOura = async () => {
     try {
       setSyncingOura(true);
-      const response = await fetch("/api/v1/functions/oura-sync-all", {
+      const response = await fetch("/api/oura/sync-incremental", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
         },
-        body: JSON.stringify({
-          userId: userId,
-          startYear: 2020,
-          clearExisting: false,
-        }),
+        body: JSON.stringify({ userId: userId, startYear: 2020, clearExisting: false }),
       });
 
       if (response.ok) {
+        const result = await response.json();
         await fetchData();
+        const upserted = result.data?.totalUpserted || result.data?.upserted || 0;
+        setOuraSyncMessage(
+          upserted > 0
+            ? `Oura sync completed: ${upserted} new data points`
+            : "Oura sync completed: no new data"
+        );
+        setShowOuraSyncMessage(true);
       } else {
-        const errorData = await response.json();
-        console.error("Oura sync error:", errorData);
+        console.error("Oura sync error:", await response.text());
       }
     } catch (error) {
       console.error("Error syncing Oura data:", error);
@@ -655,18 +664,15 @@ export default function ComprehensiveHealthDashboard({
     }
   };
 
-  // Legacy full sync for Withings
+  // Withings incremental sync (since last period)
   const syncWithings = async () => {
     try {
       setSyncingWithings(true);
-
-      const response = await fetch("/api/withings/sync-all", {
+      const response = await fetch("/api/withings/sync-incremental", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId,
-          clearExisting: false, // Don't clear existing data during sync
-          startYear: 2020, // Sync from 2020 onwards
         }),
       });
 
@@ -674,11 +680,13 @@ export default function ComprehensiveHealthDashboard({
         const result = await response.json();
         if (result.success) {
           await fetchData();
-          console.log(
-            `[ComprehensiveHealthDashboard] Synced ${
-              result.data?.totalUpserted || 0
-            } Withings data points`
+          const upserted = result.data?.totalUpserted || result.data?.upserted || 0;
+          setWithingsSyncMessage(
+            upserted > 0
+              ? `Withings sync completed: ${upserted} new data points`
+              : "Withings sync completed: no new data"
           );
+          setShowWithingsSyncMessage(true);
         } else {
           console.error("Withings sync failed:", result.error);
         }
@@ -692,7 +700,7 @@ export default function ComprehensiveHealthDashboard({
     }
   };
 
-  // Apple Health sync function
+  // Apple Health sync with confirmation message
   const syncAppleHealth = async () => {
     try {
       setSyncingAppleHealth(true);
@@ -708,11 +716,13 @@ export default function ComprehensiveHealthDashboard({
 
       if (response.ok) {
         const result = await response.json();
-        console.log(
-          `[ComprehensiveHealthDashboard] Synced ${
-            result.data?.totalUpserted || 0
-          } Apple Health data points`
+        const upserted = result.data?.totalUpserted || result.updated_statistics?.total_data_points || 0;
+        setAppleSyncMessage(
+          upserted > 0
+            ? `Apple Health sync completed: ${upserted} new data points`
+            : "Apple Health sync completed"
         );
+        setShowAppleSyncMessage(true);
         await fetchData();
       } else {
         const errorData = await response.json();
@@ -1719,11 +1729,8 @@ export default function ComprehensiveHealthDashboard({
                                           dataPoint.source === "routine" ||
                                           dataPoint.source === "auto"
                                         ) {
-                                          return [
-                                            "",
-                                            "🖊️ Click directly on this data point to edit",
-                                            "📝 Modular Health data - editable",
-                                          ];
+                                          // Hide edit prompts in analytics tooltips
+                                          return "";
                                         } else if (dataPoint.source === "apple_health") {
                                           return [
                                             "",
@@ -1741,7 +1748,7 @@ export default function ComprehensiveHealthDashboard({
                                   beginAtZero: false,
                                 },
                               },
-                              onClick: (event: any, elements: any[]) => {
+                                      onClick: (event: any, elements: any[]) => {
                                 if (elements.length > 0 && elements[0] && elements[0].chart && elements[0].chart.data) {
                                   const elementIndex = elements[0].index;
                                   const dataset =
@@ -2260,6 +2267,28 @@ export default function ComprehensiveHealthDashboard({
           setAppleHealthDialogOpen(false);
           checkConnections();
         }}
+      />
+
+      {/* Withings sync confirmation */}
+      <Snackbar
+        open={showWithingsSyncMessage}
+        autoHideDuration={5000}
+        onClose={() => setShowWithingsSyncMessage(false)}
+        message={withingsSyncMessage}
+      />
+      {/* Oura sync confirmation */}
+      <Snackbar
+        open={showOuraSyncMessage}
+        autoHideDuration={5000}
+        onClose={() => setShowOuraSyncMessage(false)}
+        message={ouraSyncMessage}
+      />
+      {/* Apple Health sync confirmation */}
+      <Snackbar
+        open={showAppleSyncMessage}
+        autoHideDuration={5000}
+        onClose={() => setShowAppleSyncMessage(false)}
+        message={appleSyncMessage}
       />
     </Box>
   );

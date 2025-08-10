@@ -38,6 +38,7 @@ import { generatePlannedRoutineLogs } from "@/utils/batchRoutineLogging";
 import { PlannedRoutineLog } from "@/utils/batchRoutineLogging";
 import BatchRoutineLoggingModal from "./BatchRoutineLoggingModal";
 import VariableUnitSelector from "./VariableUnitSelector";
+import { getEffectiveUnit } from "@/utils/userUnitPreferences";
 
 const weekdays = [
   { value: 1, label: "Monday" },
@@ -56,16 +57,29 @@ const timeString = (time: string): string => {
 };
 
 const formatDefaultValue = (value: any, unit: string, variableInfo: any): string => {
-  if (!value) return "Not set";
-  
-  const valueStr = String(value);
-  
+  // Treat only null/undefined/empty-string as "Not set". Allow 0 and false.
+  const isUnset =
+    value === null ||
+    typeof value === "undefined" ||
+    (typeof value === "string" && value.trim() === "");
+  if (isUnset) return "Not set";
+
+  // Normalize for display
+  const isBoolean = typeof value === "boolean" || value === "true" || value === "false";
+  const valueStr = isBoolean ? String(value) : String(value);
+
   // Special formatting for score units
-  if (unit === "score" || variableInfo?.default_display_unit === "score" || 
-      variableInfo?.label?.toLowerCase().includes("score")) {
-    return unit ? `Score ${valueStr}` : `Score ${valueStr}`;
+  if (
+    unit === "score" ||
+    variableInfo?.default_display_unit === "score" ||
+    variableInfo?.label?.toLowerCase().includes("score")
+  ) {
+    return `Score ${valueStr}`;
   }
-  
+
+  // For booleans, don't append unit
+  if (isBoolean) return valueStr;
+
   // Regular formatting
   return unit ? `${valueStr} ${unit}` : valueStr;
 };
@@ -1656,11 +1670,22 @@ export default function RoutineManager() {
               <Select
                 value=""
                 label="Add Variable"
-                onChange={(e) => {
+                onChange={async (e) => {
                   const variable = allVariables.find(
                     (v) => v.id === e.target.value
                   );
-                  if (variable) {
+                  if (variable && user?.id) {
+                    // Get user's preferred unit for this variable
+                    let preferredUnit = variable.default_display_unit || "";
+                    try {
+                      const { unit } = await getEffectiveUnit(user.id, variable.id);
+                      if (unit) {
+                        preferredUnit = unit.unit_id;
+                      }
+                    } catch (err) {
+                      console.warn("Failed to get effective unit for variable:", err);
+                    }
+
                     setForm((prev: any) => ({
                       ...prev,
                       variables: [
@@ -1668,7 +1693,7 @@ export default function RoutineManager() {
                         {
                           variable_id: variable.id,
                           default_value: "",
-                          default_unit: variable.default_display_unit || "",
+                          default_unit: preferredUnit,
                           weekdays: [1, 2, 3, 4, 5, 6, 7],
                           times: [],
                         },
@@ -1748,9 +1773,11 @@ export default function RoutineManager() {
                       variableId={variable.variable_id}
                       userId={user?.id || ""}
                       currentUnit={variable.default_unit}
-                      onUnitChange={(unitId, unitGroup) =>
-                        handleVariableChange(idx, "default_unit", unitId)
-                      }
+                      onUnitChange={(unitId, unitGroup) => {
+                        // Update the form state for routine creation
+                        handleVariableChange(idx, "default_unit", unitId);
+                        // Unit preference is auto-saved by VariableUnitSelector
+                      }}
                       label="Unit"
                       size="small"
                     />

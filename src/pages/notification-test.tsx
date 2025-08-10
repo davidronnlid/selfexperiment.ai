@@ -194,8 +194,8 @@ export default function NotificationTestPage() {
       await sendNotification("🧪 Test Notification", {
         body: "This is a test notification from your health app!",
         data: { type: "test_notification" },
-        icon: "/icon-192x192.png",
-        badge: "/icon-192x192.png",
+      icon: "/modular-health-logo.png",
+      badge: "/modular-health-logo.png",
       });
       addTestResult(
         "Basic Notification",

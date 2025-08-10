@@ -204,8 +204,8 @@ serve(async (req) => {
         const notificationPayload = {
           title: notificationTitle,
           body: notificationBody,
-          icon: '/icon-192x192.png',
-          badge: '/icon-192x192.png',
+          icon: '/modular-health-logo.png',
+          badge: '/modular-health-logo.png',
           tag: 'routine-reminder-' + pref.user_id,
           data: {
             userId: pref.user_id,
