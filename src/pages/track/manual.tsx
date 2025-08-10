@@ -237,6 +237,13 @@ export default function ManualTrackPage() {
     selectedVariable || undefined
   );
 
+  // Redirect unauthenticated users to the auth page to avoid 401 loops
+  useEffect(() => {
+    if (!userLoading && !user) {
+      router.replace("/auth");
+    }
+  }, [userLoading, user, router]);
+
   // Update selected unit when display unit changes or variable changes
   useEffect(() => {
     if (displayUnit) {

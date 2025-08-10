@@ -36,9 +36,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     // This will help Supabase determine the correct redirect URL
     flowType: 'pkce',
-    // Reduce timeout for faster failure detection
     detectSessionInUrl: true,
-    persistSession: true
+    persistSession: true,
+    autoRefreshToken: true
   },
   global: {
     headers: {

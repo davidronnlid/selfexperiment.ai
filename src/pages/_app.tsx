@@ -730,7 +730,7 @@ export default function App({ Component, pageProps }: AppProps) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log("Auth state change:", event, session?.user?.id);
-      if (event === "SIGNED_IN" && session?.user) {
+      if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session?.user) {
         setUser(session.user);
         const { avatar_url, username } = await fetchUserProfile(
           session.user.id
