@@ -11,6 +11,7 @@ import {
   SelectChangeEvent,
 } from "@mui/material";
 import { supabase } from "@/utils/supaBase";
+import { saveUserUnitPreference, getUserPreferredUnit, getVariableUnits } from "@/utils/userUnitPreferences";
 
 interface Unit {
   unit_id: string;
@@ -26,10 +27,11 @@ interface VariableUnitSelectorProps {
   variableId: string;
   userId: string;
   currentUnit?: string;
-  onUnitChange: (unitId: string, unitGroup: string) => void;
+  onUnitChange?: (unitId: string, unitGroup: string) => void;
   disabled?: boolean;
   label?: string;
   size?: "small" | "medium";
+  autoSavePreference?: boolean; // New prop to control automatic saving
 }
 
 export default function VariableUnitSelector({
@@ -40,56 +42,49 @@ export default function VariableUnitSelector({
   disabled = false,
   label = "Unit",
   size = "medium",
+  autoSavePreference = true,
 }: VariableUnitSelectorProps) {
   const [availableUnits, setAvailableUnits] = useState<Unit[]>([]);
   const [selectedUnit, setSelectedUnit] = useState<string>(currentUnit || "");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch available units for this variable
+  // Fetch available units for this variable (run when variableId/userId change)
   useEffect(() => {
     const fetchUnits = async () => {
       try {
         setLoading(true);
         setError(null);
 
-        // Call the PostgreSQL function to get available units
-        const { data: units, error: unitsError } = await supabase.rpc(
-          "get_variable_units",
-          { var_id: variableId }
-        );
+        // Use our centralized utility function
+        const { units, error: unitsError } = await getVariableUnits(variableId);
 
-        if (unitsError) throw unitsError;
+        if (unitsError) throw new Error(unitsError);
 
         setAvailableUnits(units || []);
 
         // Always prioritize the currentUnit prop if provided (from parent)
         if (currentUnit && units && units.some(u => u.unit_id === currentUnit)) {
-          setSelectedUnit(currentUnit);
+          // Avoid unnecessary setState loops
+          setSelectedUnit(prev => (prev === currentUnit ? prev : currentUnit));
           return; // Exit early if currentUnit is valid
         }
-        
+
         // Only fetch user preference if no currentUnit is provided
         if (!currentUnit && units && units.length > 0) {
-          const { data: preferredUnit, error: prefError } = await supabase.rpc(
-            "get_user_preferred_unit",
-            {
-              user_id_param: userId,
-              variable_id_param: variableId,
-            }
-          );
+          const { unit: preferredUnit, error: prefError } = await getUserPreferredUnit(userId, variableId);
 
           if (prefError) {
             console.warn("Could not get user preferred unit:", prefError);
             // Fall back to highest priority unit (lowest priority number)
-            const defaultUnit = units.sort((a: any, b: any) => a.priority - b.priority)[0];
-            setSelectedUnit(defaultUnit.unit_id);
-          } else if (preferredUnit && preferredUnit.length > 0) {
-            setSelectedUnit(preferredUnit[0].unit_id);
+            const defaultUnit = units.slice().sort((a, b) => a.priority - b.priority)[0];
+            setSelectedUnit(prev => (prev === defaultUnit.unit_id ? prev : defaultUnit.unit_id));
+          } else if (preferredUnit) {
+            setSelectedUnit(prev => (prev === preferredUnit.unit_id ? prev : preferredUnit.unit_id));
           } else {
             // Fall back to highest priority unit (lowest priority number)
-            const defaultUnit = units.sort((a: any, b: any) => a.priority - b.priority)[0];
-            setSelectedUnit(defaultUnit.unit_id);
+            const defaultUnit = units.slice().sort((a, b) => a.priority - b.priority)[0];
+            setSelectedUnit(prev => (prev === defaultUnit.unit_id ? prev : defaultUnit.unit_id));
           }
         }
       } catch (err) {
@@ -103,14 +98,16 @@ export default function VariableUnitSelector({
     if (variableId && userId) {
       fetchUnits();
     }
-  }, [variableId, userId, currentUnit]);
+  }, [variableId, userId]);
 
   // Sync selectedUnit when currentUnit prop changes
   useEffect(() => {
     if (currentUnit && currentUnit !== selectedUnit) {
       setSelectedUnit(currentUnit);
     }
-  }, [currentUnit, selectedUnit]);
+    // Only react to currentUnit changes; avoid tying to selectedUnit to prevent loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUnit]);
 
   const handleUnitChange = async (event: SelectChangeEvent) => {
     const newUnitId = event.target.value;
@@ -120,15 +117,40 @@ export default function VariableUnitSelector({
 
     console.log('🔄 VariableUnitSelector: Unit change detected', {
       newUnitId,
-      selectedUnitData
+      selectedUnitData,
+      autoSavePreference
     });
 
     if (!selectedUnitData) return;
 
     setSelectedUnit(newUnitId);
 
-    // Notify parent component immediately (parent will handle saving preference)
-    onUnitChange(newUnitId, selectedUnitData.unit_group);
+    // Auto-save user preference if enabled (default behavior)
+    if (autoSavePreference) {
+      try {
+        const { success, error } = await saveUserUnitPreference(
+          userId,
+          variableId,
+          newUnitId,
+          selectedUnitData.unit_group
+        );
+        
+        if (!success) {
+          console.warn('⚠️ Failed to save unit preference automatically:', error);
+          console.warn('Unit selection will still work, but preference won\'t be saved');
+          // Continue without breaking the UI - the selection still works locally
+        } else {
+          console.log('✅ Unit preference auto-saved successfully');
+        }
+      } catch (err) {
+        console.warn('⚠️ Error auto-saving unit preference:', err);
+        console.warn('Unit selection will still work, but preference won\'t be saved');
+        // Continue without breaking the UI
+      }
+    }
+
+    // Notify parent component (for additional custom handling)
+    onUnitChange?.(newUnitId, selectedUnitData.unit_group);
   };
 
   // Group units by unit group and sort by priority within each group

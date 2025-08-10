@@ -65,8 +65,8 @@ export function useNotifications(userId: string) {
     try {
       const notification = new Notification(title, {
         body: options.body || 'You have a new notification',
-        icon: options.icon || '/icon-192x192.png',
-        badge: options.badge || '/icon-192x192.png',
+        icon: options.icon || '/modular-health-logo.png',
+        badge: options.badge || '/modular-health-logo.png',
         data: options.data || {},
         tag: options.tag || 'default',
         requireInteraction: options.requireInteraction || false,

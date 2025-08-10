@@ -28,7 +28,6 @@ interface WithingsDataPoint {
   date: string;
   variable_id: string;
   value: number;
-  raw: any;
   created_at: string;
 }
 
@@ -53,9 +52,12 @@ export default function WithingsDataPage() {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [variableLabels, setVariableLabels] = useState<Record<string, string>>({});
 
   // Get variable labels mapping for Withings
   const getVariableLabel = (variableId: string) => {
+    // Prefer labels from variables table when available (uuid ids)
+    if (variableLabels[variableId]) return variableLabels[variableId];
     const mapping: Record<string, string> = {
       'weight': 'Weight',
       'fat_free_mass_kg': 'Fat-Free Mass',
@@ -156,7 +158,7 @@ export default function WithingsDataPage() {
     
     const { data, error } = await supabase
       .from('withings_variable_data_points')
-      .select('id, date, variable_id, value, raw, created_at')
+      .select('id, date, variable_id, value, created_at')
       .eq('user_id', userId)
       .order('date', { ascending: false })
       .order('created_at', { ascending: false })
@@ -164,6 +166,20 @@ export default function WithingsDataPage() {
 
     if (error) throw error;
     return data || [];
+  };
+
+  // Fetch human-readable labels for variable ids found in stats/data
+  const fetchVariableLabels = async (variableIds: string[]) => {
+    if (!variableIds || variableIds.length === 0) return;
+    const uniqueIds = Array.from(new Set(variableIds.filter(Boolean)));
+    if (uniqueIds.length === 0) return;
+    const { data, error } = await supabase
+      .from('variables')
+      .select('id,label')
+      .in('id', uniqueIds);
+    if (error) return; // best-effort; UI will fallback
+    const map = Object.fromEntries((data || []).map((v: { id: string; label: string }) => [v.id, v.label]));
+    setVariableLabels((prev) => ({ ...prev, ...map }));
   };
 
   useEffect(() => {
@@ -185,6 +201,11 @@ export default function WithingsDataPage() {
         setStats(statsData);
         setDataPoints(dataPoints);
         setTotalPages(Math.ceil(statsData.total_count / ITEMS_PER_PAGE));
+
+        // Load labels for any variable ids (uuids) so UI shows names instead of ids
+        const idsForLabels = new Set<string>(Object.keys(statsData.variable_breakdown || {}));
+        for (const dp of dataPoints) idsForLabels.add(dp.variable_id);
+        await fetchVariableLabels(Array.from(idsForLabels));
 
       } catch (err: any) {
         console.error('Error loading Withings data:', err);

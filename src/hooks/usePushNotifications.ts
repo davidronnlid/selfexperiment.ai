@@ -395,8 +395,8 @@ export function usePushNotifications(userId: string): PushNotificationHook {
     const payload = {
       title: '🎉 Server Push Test',
       body: 'This notification was sent from your server! Background notifications are working.',
-      icon: '/icon-192x192.png',
-      badge: '/icon-96x96.png',
+      icon: '/modular-health-logo.png',
+      badge: '/modular-health-logo.png',
       data: { type: 'server_test' },
       tag: 'server-test',
       url: '/',

@@ -1729,11 +1729,8 @@ export default function ComprehensiveHealthDashboard({
                                           dataPoint.source === "routine" ||
                                           dataPoint.source === "auto"
                                         ) {
-                                          return [
-                                            "",
-                                            "🖊️ Click directly on this data point to edit",
-                                            "📝 Modular Health data - editable",
-                                          ];
+                                          // Hide edit prompts in analytics tooltips
+                                          return "";
                                         } else if (dataPoint.source === "apple_health") {
                                           return [
                                             "",
@@ -1751,7 +1748,7 @@ export default function ComprehensiveHealthDashboard({
                                   beginAtZero: false,
                                 },
                               },
-                              onClick: (event: any, elements: any[]) => {
+                                      onClick: (event: any, elements: any[]) => {
                                 if (elements.length > 0 && elements[0] && elements[0].chart && elements[0].chart.data) {
                                   const elementIndex = elements[0].index;
                                   const dataset =

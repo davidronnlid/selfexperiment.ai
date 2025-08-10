@@ -18,6 +18,8 @@ import {
   FaTrash,
   FaCheck,
   FaTimes,
+  FaCheckCircle,
+  FaUndo,
 } from "react-icons/fa";
 import {
   validateVariableValue,
@@ -32,6 +34,7 @@ import VariableCreationDialog from "@/components/VariableCreationDialog";
 import VariableLabel from "@/components/VariableLabel";
 import VariableUnitSelector from "@/components/VariableUnitSelector";
 import ManualUnitSelector from "@/components/ManualUnitSelector";
+import { saveUserUnitPreference } from "@/utils/userUnitPreferences";
 import { useUserDisplayUnit } from "@/hooks/useUserDisplayUnit";
 import Link from "next/link";
 import {
@@ -50,6 +53,7 @@ import { useUser } from "../_app";
 import SearchIcon from "@mui/icons-material/Search";
 import "react-datepicker/dist/react-datepicker.css";
 import { LinearProgress, CircularProgress } from "@mui/material";
+import { MenuItem } from "@mui/material";
 import { LOG_LABELS, validateValue } from "@/utils/logLabels";
 import {
   validateVariableValue as validateWithConstraints,
@@ -84,6 +88,7 @@ interface DataPointEntry {
   value: string;
   notes?: string;
   created_at?: string; // Also a full timestamp
+  confirmed?: boolean;
 }
 
 // Helper to get icon for a variable
@@ -158,7 +163,7 @@ export default function ManualTrackPage() {
   const [experimentsNeedingLogs, setExperimentsNeedingLogs] = useState<any[]>(
     []
   );
-  const [logs, setLogs] = useState<DataPointEntry[]>([]);
+  const [dataPoints, setDataPoints] = useState<DataPointEntry[]>([]);
   const [successMessage, setSuccessMessage] = useState<string>("");
   const [showSuccess, setShowSuccess] = useState<boolean>(false);
   const [expError, setExpError] = useState("");
@@ -269,7 +274,7 @@ export default function ManualTrackPage() {
   const [routineNames, setRoutineNames] = useState<Record<string, string>>({});
 
   // Enhanced grouping function that uses fetched routine names
-  const groupLogsBySourceWithNames = (logs: any[]) => {
+  const groupDataPointsBySourceWithNames = (dataPoints: any[]) => {
     const grouped: Record<string, any> = {
       manual: {
         sourceName: "Manual Data Points",
@@ -281,7 +286,7 @@ export default function ManualTrackPage() {
       },
     };
 
-    logs.forEach((log) => {
+    dataPoints.forEach((log) => {
       const source =
         log.source && Array.isArray(log.source) ? log.source[0] : log.source;
 
@@ -316,10 +321,10 @@ export default function ManualTrackPage() {
     return grouped;
   };
 
-  // Merge manual and planned logs for display
-  const allLogs = useMemo(() => {
+  // Merge manual and planned data points for display
+  const allDataPoints = useMemo(() => {
     return [
-      ...logs.map((log) => ({ ...log, _source: "manual" })),
+      ...dataPoints.map((log) => ({ ...log, _source: "manual" })),
       ...todaysPlannedLogs.map((log) => ({ ...log, _source: "planned" })),
     ].sort((a, b) => {
       // Use logged_at or date for sorting
@@ -327,11 +332,11 @@ export default function ManualTrackPage() {
       const bDate = new Date(b.date);
       return bDate.getTime() - aDate.getTime();
     });
-  }, [logs, todaysPlannedLogs]);
+  }, [dataPoints, todaysPlannedLogs]);
 
-  const groupedLogs = useMemo(() => {
-    return groupLogsBySourceWithNames(allLogs);
-  }, [allLogs, routineNames]);
+  const groupedDataPoints = useMemo(() => {
+    return groupDataPointsBySourceWithNames(allDataPoints);
+  }, [allDataPoints, routineNames]);
 
   useEffect(() => {
     if (!user) {
@@ -456,10 +461,10 @@ export default function ManualTrackPage() {
           (variablesRes_processed.data || []).length
         );
 
-        // Set empty planned logs for now
+        // Set empty planned data points for now
         setTodaysPlannedLogs([]);
 
-        // Process experiments filtering using existing logs data
+        // Process experiments filtering using existing data points
         if (experimentsRes_processed.data && logsRes_processed.data) {
           const now = new Date();
           const pad = (n: number) => n.toString().padStart(2, "0");
@@ -471,16 +476,16 @@ export default function ManualTrackPage() {
           );
 
           // Set only today's data points for the Today's Data Points section
-          setLogs(todaysLogs);
+          setDataPoints(todaysLogs);
 
           const filtered = filterExperimentsNeedingLogs(
-            experimentsRes.data,
+            experimentsRes_processed.data,
             todaysLogs
           );
           setExperimentsNeedingLogs(filtered);
         } else {
-          // If no logs data, set empty array
-          setLogs([]);
+          // If no data points, set empty array
+          setDataPoints([]);
         }
 
         // Additional debugging for variables
@@ -500,7 +505,7 @@ export default function ManualTrackPage() {
         setLoading(false);
         // Set fallback data to prevent complete failure
         setVariables([]);
-        setAllLogs([]);
+        setDataPoints([]);
         setActiveExperiments([]);
         setExperimentsNeedingLogs([]);
       }
@@ -690,7 +695,7 @@ export default function ManualTrackPage() {
   // Check and refresh user state if needed
   useEffect(() => {
     const checkUserState = async () => {
-      if (!userLoading && !user) {
+    if (!userLoading && !user) {
         console.log("LogPage: User state is undefined, attempting refresh...");
         try {
           await refreshUser();
@@ -705,7 +710,7 @@ export default function ManualTrackPage() {
 
   // Calculate logging streak
   const calculateLoggingStreak = async () => {
-    if (!user || experimentsNeedingLogs.length === 0 || !logs.length) return;
+    if (!user || experimentsNeedingLogs.length === 0 || !dataPoints.length) return;
 
     const experiment = experimentsNeedingLogs[0];
     const experimentVariable = variables.find(
@@ -714,7 +719,7 @@ export default function ManualTrackPage() {
     if (!experimentVariable) return;
 
     // Use existing logs data instead of making a new database call
-    const recentLogs = logs
+    const recentLogs = dataPoints
       .filter(
         (log) =>
           log.variable_id === experimentVariable.id ||
@@ -815,7 +820,7 @@ export default function ManualTrackPage() {
         (v) => v.label === (experiment.effect || experiment.dependent_variable)
       );
 
-      // Count how many logs for the independent variable were made today
+      // Count how many data points for the independent variable were made today
       const independentLogsToday = todaysLogs.filter(
         (log) =>
           (log.variable_id === independentVariable?.id ||
@@ -823,7 +828,7 @@ export default function ManualTrackPage() {
           log.date.startsWith(today)
       ).length;
 
-      // Count how many logs for the dependent variable were made today
+      // Count how many data points for the dependent variable were made today
       const dependentLogsToday = dependentVariable
         ? todaysLogs.filter(
             (log) =>
@@ -846,7 +851,7 @@ export default function ManualTrackPage() {
         experiment.time_intervals
       );
 
-      // Only include if we need more logs for either variable and we're in time interval
+      // Only include if we need more data points for either variable and we're in time interval
       return (
         (independentNeedsMoreLogs || dependentNeedsMoreLogs) && inTimeInterval
       );
@@ -862,11 +867,11 @@ export default function ManualTrackPage() {
   // Fetch logs when selectedViewDate changes
   useEffect(() => {
     if (user) {
-      fetchLogs(selectedViewDate);
+      fetchDataPoints(selectedViewDate);
     }
   }, [selectedViewDate, user]);
 
-  const fetchLogs = async (targetDate?: Date) => {
+  const fetchDataPoints = async (targetDate?: Date) => {
     if (!user) return;
 
     const dateToUse = targetDate || selectedViewDate;
@@ -886,7 +891,7 @@ export default function ManualTrackPage() {
     };
 
     try {
-      // Fetch more logs since we'll filter in JavaScript with timeout
+      // Fetch more data points since we'll filter in JavaScript with timeout
       const logsPromise = supabase
         .from("data_points")
         .select("*")
@@ -896,24 +901,24 @@ export default function ManualTrackPage() {
 
       const { data } = await withTimeout(logsPromise, 5000, "Logs fetch");
 
-      // Filter logs to the selected date using JavaScript since date is stored as text
+      // Filter data points to the selected date using JavaScript since date is stored as text
       const selectedDateLogs = (data || []).filter(
         (log) => log.date && log.date.startsWith(dateString)
       );
 
-      setLogs(selectedDateLogs);
+      setDataPoints(selectedDateLogs);
 
       // Also refresh experiments filtering
       if (selectedDateLogs && activeExperiments.length > 0) {
         const filtered = filterExperimentsNeedingLogs(
           activeExperiments,
-          selectedDateLogs
+           selectedDateLogs
         );
         setExperimentsNeedingLogs(filtered);
       }
     } catch (error) {
       console.error("Error fetching logs:", error);
-      setLogs([]);
+      setDataPoints([]);
     }
   };
 
@@ -1044,8 +1049,8 @@ export default function ManualTrackPage() {
         console.log('Variables not loaded yet, will retry auto-selection later');
       }
 
-      // Refresh logs
-      await fetchLogs(selectedViewDate);
+      // Refresh data points
+      await fetchDataPoints(selectedViewDate);
 
       // Refresh experiments filtering in case this log affects experiment requirements
       await refreshExperimentsFiltering();
@@ -1144,8 +1149,8 @@ export default function ManualTrackPage() {
         [experimentVariableName]: "",
       }));
 
-      // Refresh today's logs and experiments
-      await fetchLogs(selectedViewDate);
+      // Refresh today's data points and experiments
+      await fetchDataPoints(selectedViewDate);
       setSuccessMessage(`Successfully logged ${experimentVariableName}!`);
       setShowSuccess(true);
     } catch (error) {
@@ -1238,8 +1243,8 @@ export default function ManualTrackPage() {
     );
     setShowSuccess(true);
 
-    // Refresh logs and experiments filtering
-    await fetchLogs();
+    // Refresh data points and experiments filtering
+    await fetchDataPoints();
     await refreshExperimentsFiltering();
   };
 
@@ -1250,7 +1255,7 @@ export default function ManualTrackPage() {
   const handleDateChange = async (newDate: Date | null) => {
     if (newDate) {
       setSelectedViewDate(newDate);
-      await fetchLogs(newDate);
+      await fetchDataPoints(newDate);
     }
   };
 
@@ -1311,10 +1316,10 @@ export default function ManualTrackPage() {
         (log) => log.date && log.date.startsWith(today)
       );
 
-      if (todaysLogs) {
-        setLogs(todaysLogs);
+    if (todaysLogs) {
+        setDataPoints(todaysLogs);
 
-        // Refilter experiments based on updated logs
+        // Refilter experiments based on updated data points
         const filtered = filterExperimentsNeedingLogs(
           activeExperiments,
           todaysLogs
@@ -1362,7 +1367,7 @@ export default function ManualTrackPage() {
 
     const { error } = await supabase
       .from("data_points")
-      .update({ value: editingValue, notes: editingNotes })
+      .update({ value: editingValue, notes: editingNotes, confirmed: true })
       .eq("id", editingLogId);
     if (!error) {
       setEditingLogId(null);
@@ -1370,11 +1375,29 @@ export default function ManualTrackPage() {
       setEditingNotes("");
       setEditingValidationError("");
       setEditingIsValid(true);
-      await fetchLogs();
+    await fetchDataPoints();
       setSuccessMessage("Log updated successfully!");
       setShowSuccess(true);
     } else {
       setExpError("Failed to update log. Please try again.");
+    }
+  };
+
+  // Confirm or unconfirm an auto-tracked data point
+  const handleToggleConfirm = async (log: DataPointEntry) => {
+    try {
+      const newConfirmed = !log.confirmed;
+      const { error } = await supabase
+        .from("data_points")
+        .update({ confirmed: newConfirmed })
+        .eq("id", log.id);
+      if (error) throw error;
+      await fetchDataPoints();
+      setSuccessMessage(newConfirmed ? "Marked as confirmed" : "Marked as unconfirmed");
+      setShowSuccess(true);
+    } catch (e) {
+      console.error("Failed to toggle confirm:", e);
+      setExpError("Failed to update confirmation status.");
     }
   };
 
@@ -1386,7 +1409,7 @@ export default function ManualTrackPage() {
       .delete()
       .eq("id", logId);
     if (!error) {
-      await fetchLogs();
+    await fetchDataPoints();
       setSuccessMessage("Log deleted successfully!");
       setShowSuccess(true);
     } else {
@@ -2375,18 +2398,22 @@ export default function ManualTrackPage() {
                     setSelectedUnit(unitId);
                   }}
                   onDefaultUnitChange={async (unitId, unitGroup) => {
-                    // Save as new default unit preference
+                    // Save as new default unit preference using centralized utility
+                    if (!user?.id) return;
+                    
                     try {
-                      const { error } = await supabase.rpc("set_user_unit_preference", {
-                        user_id_param: user?.id,
-                        variable_id_param: selectedVariable.id,
-                        unit_id_param: unitId,
-                        unit_group_param: unitGroup,
-                      });
+                      const { success, error } = await saveUserUnitPreference(
+                        user.id,
+                        selectedVariable.id,
+                        unitId,
+                        unitGroup
+                      );
                       
-                      if (!error) {
+                      if (success) {
                         // Refresh the display unit to reflect the new preference
                         await refetchDisplayUnit();
+                      } else {
+                        console.error("Failed to save unit preference:", error);
                       }
                     } catch (err) {
                       console.error("Error setting default unit:", err);
@@ -2689,8 +2716,8 @@ export default function ManualTrackPage() {
         </Box>
       </Paper>
 
-      {/* Today's Logs */}
-      {allLogs.length > 0 && (
+      {/* Today's Data Points */}
+      {allDataPoints.length > 0 && (
         <Paper
           elevation={6}
           sx={{
@@ -2849,7 +2876,7 @@ export default function ManualTrackPage() {
             }}
           >
             {/* Manual Data Points Section */}
-            {groupedLogs.manual && groupedLogs.manual.logs.length > 0 && (
+            {groupedDataPoints.manual && groupedDataPoints.manual.logs.length > 0 && (
               <Card className="mb-6 border border-border bg-surface">
                 {/* Manual Data Points Header */}
                 <CardHeader
@@ -2872,7 +2899,7 @@ export default function ManualTrackPage() {
                       gap: { xs: 1.5, sm: 2 },
                     }}
                   >
-                    {groupedLogs.manual.logs.map((log: any) => (
+                    {groupedDataPoints.manual.logs.map((log: any) => (
                       <Box
                         key={log.id}
                         sx={{
@@ -3054,9 +3081,46 @@ export default function ManualTrackPage() {
                                 </Box>
 
                                 {/* Value Field */}
-                                <TextField
-                                  fullWidth
-                                  label={`Value for ${(() => {
+                                {(() => {
+                                  // Render dropdown for boolean/categorical variables with options
+                                  let variableObj: any = null;
+                                  if (log.variable_id && variables.length > 0) {
+                                    variableObj = variables.find((v) => v.id === log.variable_id);
+                                  }
+                                  const isBoolean = variableObj?.data_type === 'boolean';
+                                  const hasOptions = Array.isArray(variableObj?.validation_rules?.options) && variableObj.validation_rules.options.length > 0;
+                                  if (isBoolean || hasOptions) {
+                                    const options = isBoolean
+                                      ? ['true', 'false']
+                                      : (variableObj.validation_rules.options as string[]);
+                                    return (
+                                      <TextField
+                                        fullWidth
+                                        select
+                                        label={`Value for ${variableObj?.label || log.variable || 'Unknown Variable'}`}
+                                        value={editingValue}
+                                        onChange={(e) => {
+                                          const newValue = e.target.value;
+                                          setEditingValue(newValue);
+                                          const validation = validateEditValue(newValue, log);
+                                          setEditingValidationError(validation.error || '');
+                                          setEditingIsValid(validation.isValid);
+                                        }}
+                                        error={!editingIsValid}
+                                        helperText={editingValidationError}
+                                      >
+                                        {options.map((opt) => (
+                                          <MenuItem key={opt} value={opt}>
+                                            {opt}
+                                          </MenuItem>
+                                        ))}
+                                      </TextField>
+                                    );
+                                  }
+                                  return (
+                                    <TextField
+                                      fullWidth
+                                      label={`Value for ${(() => {
                                     if (
                                       log.variable_id &&
                                       variables.length > 0
@@ -3067,9 +3131,9 @@ export default function ManualTrackPage() {
                                       if (variable) return variable.label;
                                     }
                                     return log.variable || "Unknown Variable";
-                                  })()}`}
-                                  value={editingValue}
-                                  onChange={(e) => {
+                                      })()}`}
+                                      value={editingValue}
+                                      onChange={(e) => {
                                     const newValue = e.target.value;
                                     setEditingValue(newValue);
 
@@ -3088,8 +3152,8 @@ export default function ManualTrackPage() {
                                       setEditingIsValid(true);
                                     }
                                   }}
-                                  error={!editingIsValid}
-                                  helperText={editingValidationError}
+                                      error={!editingIsValid}
+                                      helperText={editingValidationError}
                                   sx={{
                                     "& .MuiInputLabel-root": {
                                       color: "#666",
@@ -3143,7 +3207,7 @@ export default function ManualTrackPage() {
                                       color: "#d32f2f",
                                     },
                                   }}
-                                  InputProps={{
+                                      InputProps={{
                                     startAdornment: (
                                       <InputAdornment position="start">
                                         <span style={{ fontSize: "1.1rem" }}>
@@ -3151,8 +3215,10 @@ export default function ManualTrackPage() {
                                         </span>
                                       </InputAdornment>
                                     ),
-                                  }}
-                                />
+                                      }}
+                                    />
+                                  );
+                                })()}
 
                                 {/* Notes Field */}
                                 <TextField
@@ -3249,17 +3315,31 @@ export default function ManualTrackPage() {
                                     fontSize: { xs: "0.9rem", sm: "1rem" },
                                   }}
                                 />
-                                <Typography
-                                  variant="h6"
-                                  sx={{
-                                    color: "#00E676",
-                                    fontWeight: "bold",
-                                    fontSize: { xs: "1.1rem", sm: "1.3rem" },
-                                    textShadow: "0 1px 2px rgba(0,0,0,0.1)",
-                                  }}
-                                >
-                                  {log.value}
-                                </Typography>
+                                <Box sx={{ display: "flex", alignItems: "baseline", gap: 0.75 }}>
+                                  <Typography
+                                    variant="h6"
+                                    sx={{
+                                      color: "#00E676",
+                                      fontWeight: "bold",
+                                      fontSize: { xs: "1.1rem", sm: "1.3rem" },
+                                      textShadow: "0 1px 2px rgba(0,0,0,0.1)",
+                                    }}
+                                  >
+                                    {log.value}
+                                  </Typography>
+                                  {log.display_unit && (
+                                    <Typography
+                                      variant="subtitle2"
+                                      sx={{
+                                        color: "#FFD700",
+                                        fontWeight: 600,
+                                        fontSize: { xs: "0.9rem", sm: "1rem" },
+                                      }}
+                                    >
+                                      {log.display_unit}
+                                    </Typography>
+                                  )}
+                                </Box>
                                 {log._source === "planned" && (
                                   <Box
                                     sx={{
@@ -3330,7 +3410,7 @@ export default function ManualTrackPage() {
                                   </Box>
                                 )}
                               </Box>
-                              {log._source === "manual" && (
+                               {log._source === "manual" && (
                                 <Box>
                                   <IconButton
                                     onClick={() => handleEditLog(log)}
@@ -3361,6 +3441,41 @@ export default function ManualTrackPage() {
                                   >
                                     <FaTrash />
                                   </IconButton>
+                                   {/* Confirm/Unconfirm toggle for manual entries */}
+                                   {typeof log.data_point?.confirmed === "boolean" ? (
+                                     log.data_point.confirmed ? (
+                                       <Button
+                                         variant="outlined"
+                                         size="small"
+                                         sx={{ ml: 1, color: '#f59e0b', borderColor: '#f59e0b', '&:hover': { backgroundColor: 'rgba(245,158,11,0.1)' } }}
+                                         onClick={async () => {
+                                           await supabase
+                                             .from("data_points")
+                                             .update({ confirmed: false })
+                                             .eq("id", log.id);
+                                           // refresh local state
+                                           setDataPoints((prev:any[]) => prev.map((l:any)=> l.id===log.id ? { ...l, data_point:{...(l.data_point||{}), confirmed:false} } : l));
+                                         }}
+                                       >
+                                         Unconfirm
+                                       </Button>
+                                     ) : (
+                                       <Button
+                                         variant="outlined"
+                                         size="small"
+                                         sx={{ ml: 1, color: '#10b981', borderColor: '#10b981', '&:hover': { backgroundColor: 'rgba(16,185,129,0.1)' } }}
+                                         onClick={async () => {
+                                           await supabase
+                                             .from("data_points")
+                                             .update({ confirmed: true })
+                                             .eq("id", log.id);
+                                           setDataPoints((prev:any[]) => prev.map((l:any)=> l.id===log.id ? { ...l, data_point:{...(l.data_point||{}), confirmed:true} } : l));
+                                         }}
+                                       >
+                                         Confirm
+                                       </Button>
+                                     )
+                                   ) : null}
                                 </Box>
                               )}
                             </Box>
@@ -3406,8 +3521,8 @@ export default function ManualTrackPage() {
             )}
 
             {/* Auto Data Points Section */}
-            {groupedLogs.auto &&
-              Object.keys(groupedLogs.auto.routines).length > 0 && (
+            {groupedDataPoints.auto &&
+              Object.keys(groupedDataPoints.auto.routines).length > 0 && (
                 <Card className="mb-6 border border-border bg-surface">
                   {/* Auto Data Points Header */}
                   <CardHeader
@@ -3423,7 +3538,7 @@ export default function ManualTrackPage() {
                   />
                   {/* Auto Data Points by Routine */}
                   <CardContent className="p-0">
-                    {Object.entries(groupedLogs.auto.routines).map(
+                    {Object.entries(groupedDataPoints.auto.routines).map(
                       ([routineId, routineData]) => (
                         <Box key={routineId} sx={{ p: { xs: 2, sm: 2.5 } }}>
                           {/* Routine Header */}
@@ -3822,33 +3937,51 @@ export default function ManualTrackPage() {
                                             },
                                           }}
                                         />
-                                        <Typography
-                                          variant="h6"
-                                          sx={{
-                                            color: "#00E676",
-                                            fontWeight: "bold",
-                                            fontSize: {
-                                              xs: "1.1rem",
-                                              sm: "1.3rem",
-                                            },
-                                            textShadow:
-                                              "0 1px 2px rgba(0,0,0,0.1)",
-                                          }}
-                                        >
-                                          {log.value}
-                                        </Typography>
+                                        <Box sx={{ display: "flex", alignItems: "baseline", gap: 0.75 }}>
+                                          <Typography
+                                            variant="h6"
+                                            sx={{
+                                              color: "#00E676",
+                                              fontWeight: "bold",
+                                              fontSize: {
+                                                xs: "1.1rem",
+                                                sm: "1.3rem",
+                                              },
+                                              textShadow:
+                                                "0 1px 2px rgba(0,0,0,0.1)",
+                                            }}
+                                          >
+                                            {log.value}
+                                          </Typography>
+                                          {log.display_unit && (
+                                            <Typography
+                                              variant="subtitle2"
+                                              sx={{
+                                                color: "#FFD700",
+                                                fontWeight: 600,
+                                                fontSize: {
+                                                  xs: "0.9rem",
+                                                  sm: "1rem",
+                                                },
+                                              }}
+                                            >
+                                              {log.display_unit}
+                                            </Typography>
+                                          )}
+                                        </Box>
                                         <Typography
                                           variant="caption"
                                           sx={{
                                             ml: 0,
-                                            color: "#FFD700",
-                                            fontWeight: 600,
+                                            color: (log as any).confirmed ? "#10b981" : "#f59e0b",
+                                            fontWeight: 700,
                                             fontSize: {
                                               xs: "0.7rem",
                                               sm: "0.75rem",
                                             },
-                                            backgroundColor:
-                                              "rgba(255, 215, 0, 0.15)",
+                                            backgroundColor: (log as any).confirmed
+                                              ? "rgba(16,185,129,0.15)"
+                                              : "rgba(245,158,11,0.15)",
                                             px: 0.75,
                                             py: 0.25,
                                             borderRadius: 0.75,
@@ -3857,10 +3990,27 @@ export default function ManualTrackPage() {
                                             gap: 0.5,
                                           }}
                                         >
-                                          🤖 Auto
+                                          {(log as any).confirmed ? "Confirmed" : "Pending"}
                                         </Typography>
                                       </Box>
                                       <Box sx={{ display: "flex", gap: 1 }}>
+                                        <IconButton
+                                          onClick={() => handleToggleConfirm(log as any)}
+                                          size="small"
+                                          sx={{
+                                            color: (log as any).confirmed ? "#f59e0b" : "#10b981",
+                                            mr: 1,
+                                            "&:hover": {
+                                              backgroundColor: (log as any).confirmed
+                                                ? "rgba(245,158,11,0.1)"
+                                                : "rgba(16,185,129,0.1)",
+                                              transform: "scale(1.1)",
+                                            },
+                                          }}
+                                          title={(log as any).confirmed ? "Unconfirm" : "Confirm"}
+                                        >
+                                          {(log as any).confirmed ? <FaUndo /> : <FaCheckCircle color="#10b981" />}
+                                        </IconButton>
                                         <IconButton
                                           onClick={() => handleEditLog(log)}
                                           size="small"

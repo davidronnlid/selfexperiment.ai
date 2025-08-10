@@ -11,6 +11,16 @@ import type {
   CreateVariableLogRequest,
 } from "../types/variables";
 
+// Normalize slugs to lowercase with underscores only
+function normalizeSlug(input: string): string {
+  if (!input) return "";
+  return input
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_{2,}/g, "_");
+}
+
 // ============================================================================
 // VARIABLE VALIDATION
 // ============================================================================
@@ -178,10 +188,14 @@ export async function createVariable(
   userId: string
 ): Promise<Variable | null> {
   try {
+    const normalized: CreateVariableRequest = {
+      ...request,
+      slug: normalizeSlug(request.slug || (request as any).label || ""),
+    } as CreateVariableRequest;
     const { data, error } = await supabase
       .from("variables")
       .insert({
-        ...request,
+        ...normalized,
         created_by: userId,
       })
       .select()
@@ -203,10 +217,14 @@ export async function updateVariable(
   request: UpdateVariableRequest
 ): Promise<Variable | null> {
   try {
+    const normalized: UpdateVariableRequest = {
+      ...request,
+      ...(request.slug ? { slug: normalizeSlug(request.slug) } : {}),
+    } as UpdateVariableRequest;
     const { data, error } = await supabase
       .from("variables")
       .update({
-        ...request,
+        ...normalized,
         updated_at: new Date().toISOString(),
       })
       .eq("id", variableId)

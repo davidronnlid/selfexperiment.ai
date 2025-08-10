@@ -168,8 +168,8 @@ async function handleSendNotification(req: NextApiRequest, res: NextApiResponse)
     const notificationPayload = {
       title: payload.title,
       body: payload.body,
-      icon: payload.icon || '/icon-192x192.png',
-      badge: payload.badge || '/icon-96x96.png',
+      icon: payload.icon || '/modular-health-logo.png',
+      badge: payload.badge || '/modular-health-logo.png',
       data: {
         ...payload.data,
         url: payload.url || '/',

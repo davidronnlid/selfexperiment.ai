@@ -1,7 +1,0 @@
-<svg width="400" height="200" viewBox="0 0 400 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="400" height="200" fill="white"/>
-<!-- Main "M" shape -->
-<path d="M100 34H133V200L200 134L267 200V34H300V334H267V224L200 290L133 224V334H100V34Z" fill="#FFD700"/>
-<!-- Integrated "H" shape -->
-<path d="M267 34H300V200H267V34ZM133 34H166V200H133V34ZM133 100H267V134H133V100Z" fill="#FFD700"/>
-</svg> 

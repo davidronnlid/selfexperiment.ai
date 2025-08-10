@@ -166,6 +166,7 @@ export default function VariableAdminEditor({
     "Fitness",
     "Sleep",
     "Nutrition",
+    "Drugs",
     "Mental Health",
     "Productivity",
     "Lifestyle",

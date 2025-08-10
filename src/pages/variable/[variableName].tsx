@@ -497,6 +497,9 @@ export default function VariableDataPointsPage() {
 
     setSharingUpdateLoading(true);
     try {
+      // Optimistically update UI
+      const previousShared = isShared;
+      setIsShared(shared);
       // Determine variable type based on source
       let variableType = "predefined"; // default
       if (variableInfo?.source_type === "oura") {
@@ -532,6 +535,8 @@ export default function VariableDataPointsPage() {
       setShowSuccess(true);
     } catch (error: any) {
       console.error("Error updating sharing status:", error);
+      // Revert optimistic update on error
+      setIsShared((prev) => prev); // no-op to ensure state consistency
 
       // Provide more specific error messages
       let errorMsg = "Failed to update sharing settings. ";
@@ -953,11 +958,14 @@ export default function VariableDataPointsPage() {
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
               <Typography variant="body2" color="textSecondary">
-                Data Type:
+                Data & Category
               </Typography>
-              <Typography variant="body1">
-                {variableInfo?.data_type || "Unknown"}
-              </Typography>
+              <Box sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap", mt: 0.5 }}>
+                <Chip label={variableInfo?.data_type || "Unknown"} size="small" variant="outlined" />
+                {variableInfo?.category && (
+                  <Chip label={`Category: ${variableInfo.category}`} size="small" variant="outlined" />
+                )}
+              </Box>
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
               <Box sx={{ maxWidth: 300 }}>
@@ -966,9 +974,8 @@ export default function VariableDataPointsPage() {
                   userId={user?.id || ""}
                   currentUnit={displayUnit}
                   onUnitChange={async (unitId, unitGroup) => {
-                    // Update the user's display unit preference
-                    await updateDisplayUnit(unitId, unitGroup);
-                    // Refresh the display unit
+                    // The VariableUnitSelector now auto-saves preferences by default
+                    // Just refresh the display unit to update the UI
                     await refetchDisplayUnit();
                   }}
                   disabled={displayUnitLoading}
@@ -1019,17 +1026,7 @@ export default function VariableDataPointsPage() {
                       label="Filter by Source"
                     >
                       <MenuItem value="all">
-                        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                          <Chip
-                            label="all"
-                            size="small"
-                            sx={{ 
-                              backgroundColor: "#666",
-                              color: "white"
-                            }}
-                          />
-                          All Sources
-                        </Box>
+                        All Sources
                       </MenuItem>
                       {(() => {
                         // Get unique source types from main variable and child variables
@@ -1045,22 +1042,10 @@ export default function VariableDataPointsPage() {
                         
                         return allSources.map((sourceType) => (
                           <MenuItem key={sourceType} value={sourceType}>
-                            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                              <Chip
-                                label={sourceType}
-                                size="small"
-                                sx={{ 
-                                  backgroundColor: sourceType === "oura" ? "#9C27B0" :
-                                                sourceType === "apple_health" ? "#FF9800" :
-                                                sourceType === "withings" ? "#00BCD4" : "#4CAF50",
-                                  color: "white"
-                                }}
-                              />
-                              {sourceType === "apple_health" ? "Apple Health" :
-                               sourceType === "oura" ? "Oura Ring" :
-                               sourceType === "withings" ? "Withings" :
-                               sourceType.charAt(0).toUpperCase() + sourceType.slice(1)}
-                            </Box>
+                            {sourceType === "apple_health" ? "Apple Health" :
+                             sourceType === "oura" ? "Oura Ring" :
+                             sourceType === "withings" ? "Withings" :
+                             sourceType.charAt(0).toUpperCase() + sourceType.slice(1)}
                           </MenuItem>
                         ));
                       })()}

@@ -169,8 +169,10 @@ export default function Header() {
       <AppBar
         position="static"
         elevation={0}
+        square
         className="bg-surface border-b border-border"
         sx={{
+          borderRadius: 0,
           borderBottomLeftRadius: 0,
           borderBottomRightRadius: 0,
           backdropFilter: "blur(10px)",
@@ -186,7 +188,7 @@ export default function Header() {
           >
             <Box className="flex items-center gap-2 lg:gap-3">
               <img 
-                src="/modular-health-logo.svg" 
+                src="/modular-health-logo.png?v=mh1" 
                 alt="Modular Health" 
                 className="h-8 w-auto"
                 style={{ height: '32px', width: 'auto' }}

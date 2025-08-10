@@ -464,7 +464,12 @@ export default function VariableManager({
             label="Slug"
             value={createForm.slug}
             onChange={(e) =>
-              setCreateForm((prev) => ({ ...prev, slug: e.target.value }))
+              setCreateForm((prev) => ({
+                ...prev,
+                slug: e.target.value
+                  .toLowerCase()
+                  .replace(/[^a-z0-9_]/g, "_")
+              }))
             }
             helperText="Internal identifier (auto-generated if empty)"
             required
