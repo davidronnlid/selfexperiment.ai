@@ -159,9 +159,27 @@ CREATE POLICY "Authenticated users can delete units" ON public.units
 -- 6) DROP DUPLICATE INDEXES SAFELY (idempotent)
 -- ---------------------------------------------------------------------------
 
--- data_points: drop duplicate unique constraint when identical to pkey
+-- data_points: handle foreign key dependency then drop duplicate constraint
 DO $$
 BEGIN
+  -- First, check if there's a foreign key referencing logs_id_key
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint c1
+    JOIN pg_constraint c2 ON c1.conname = 'logs_id_key' AND c2.confkey = c1.conkey
+    WHERE c1.conrelid = 'public.data_points'::regclass
+      AND c2.contype = 'f'
+  ) THEN
+    -- Update foreign key to reference the primary key instead
+    IF EXISTS (SELECT 1 FROM information_schema.table_constraints 
+               WHERE constraint_name = 'log_likes_data_point_id_fkey' 
+                 AND table_name = 'data_point_likes') THEN
+      EXECUTE 'ALTER TABLE public.data_point_likes DROP CONSTRAINT log_likes_data_point_id_fkey';
+      EXECUTE 'ALTER TABLE public.data_point_likes ADD CONSTRAINT log_likes_data_point_id_fkey 
+               FOREIGN KEY (data_point_id) REFERENCES public.data_points(id)';
+    END IF;
+  END IF;
+  
+  -- Now drop the duplicate constraint if it exists
   IF EXISTS (
     SELECT 1 FROM pg_constraint 
     WHERE conname = 'logs_id_key' 

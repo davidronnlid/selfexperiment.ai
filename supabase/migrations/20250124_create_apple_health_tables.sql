@@ -42,8 +42,12 @@ CREATE TABLE IF NOT EXISTS apple_health_tokens (
 
 -- INSERT COMPREHENSIVE APPLE HEALTH VARIABLES
 -- This covers ALL major HealthKit data types for complete health tracking
+-- Only insert if variables table exists
 
-INSERT INTO variables (id, name, data_type, category, created_at) VALUES 
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'variables' AND table_schema = 'public') THEN
+    INSERT INTO variables (id, name, data_type, category, created_at) VALUES 
 -- Activity & Fitness Variables
 ('ah_steps', 'Steps (Apple Health)', 'numeric', 'activity', NOW()),
 ('ah_distance_walking_running', 'Walking + Running Distance (Apple Health)', 'numeric', 'activity', NOW()),
@@ -91,12 +95,17 @@ INSERT INTO variables (id, name, data_type, category, created_at) VALUES
 ('ah_body_temperature', 'Body Temperature (Apple Health)', 'numeric', 'vitals', NOW()),
 ('ah_blood_glucose', 'Blood Glucose (Apple Health)', 'numeric', 'vitals', NOW())
 
-ON CONFLICT (id) DO NOTHING;
+    ON CONFLICT (id) DO NOTHING;
+  END IF;
+END $$;
 
 -- CREATE COMPREHENSIVE VARIABLE UNITS
 -- This ensures all Apple Health variables have proper unit definitions
 
-INSERT INTO variable_units (variable_id, unit_id, is_default) VALUES
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'variable_units' AND table_schema = 'public') THEN
+    INSERT INTO variable_units (variable_id, unit_id, is_default) VALUES
 -- Activity & Fitness Units
 ('ah_steps', 'steps', TRUE),
 ('ah_distance_walking_running', 'meters', TRUE),
@@ -144,7 +153,9 @@ INSERT INTO variable_units (variable_id, unit_id, is_default) VALUES
 ('ah_body_temperature', '°C', TRUE),
 ('ah_blood_glucose', 'mg/dL', TRUE)
 
-ON CONFLICT (variable_id, unit_id) DO NOTHING;
+    ON CONFLICT (variable_id, unit_id) DO NOTHING;
+  END IF;
+END $$;
 
 -- ENHANCED DATA SYNC TRIGGER
 -- Automatically syncs Apple Health data to the universal data_points table
@@ -254,20 +265,31 @@ SELECT
 FROM apple_health_variable_data_points
 GROUP BY user_id, variable_id;
 
--- Create view for data point counts by category
-CREATE OR REPLACE VIEW apple_health_category_summary AS
-SELECT 
-    ahdp.user_id,
-    v.category,
-    COUNT(*) as total_data_points,
-    COUNT(DISTINCT ahdp.variable_id) as unique_variables,
-    MIN(ahdp.date) as first_data_date,
-    MAX(ahdp.date) as last_data_date
-FROM apple_health_variable_data_points ahdp
-JOIN variables v ON ahdp.variable_id = v.id
-GROUP BY ahdp.user_id, v.category;
+-- Create view for data point counts by category (if variables table exists)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'variables' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE OR REPLACE VIEW apple_health_category_summary AS
+    SELECT 
+        ahdp.user_id,
+        v.category,
+        COUNT(*) as total_data_points,
+        COUNT(DISTINCT ahdp.variable_id) as unique_variables,
+        MIN(ahdp.date) as first_data_date,
+        MAX(ahdp.date) as last_data_date
+    FROM apple_health_variable_data_points ahdp
+    JOIN variables v ON ahdp.variable_id = v.id
+    GROUP BY ahdp.user_id, v.category';
+  END IF;
+END $$;
 
 COMMENT ON TABLE apple_health_variable_data_points IS 'Stores comprehensive Apple Health/HealthKit data for all supported data types including activity, heart, body measurements, nutrition, sleep, mindfulness, and health vitals';
 COMMENT ON TABLE apple_health_tokens IS 'Stores Apple Health connection tokens and sync metadata';
 COMMENT ON VIEW apple_health_summary IS 'Provides statistical summary of Apple Health data by user and variable';
-COMMENT ON VIEW apple_health_category_summary IS 'Provides summary of Apple Health data by user and health category'; 
+-- Conditional comment on view (only if it exists)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.views WHERE table_name = 'apple_health_category_summary' AND table_schema = 'public') THEN
+    EXECUTE 'COMMENT ON VIEW apple_health_category_summary IS ''Provides summary of Apple Health data by user and health category''';
+  END IF;
+END $$; 
